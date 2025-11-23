@@ -1,0 +1,29 @@
+{
+  "name": "envio-api",
+  "version": "1.0.50",
+  "scripts": {
+    "test": "bun run scripts/test-all-endpoints.ts",
+    "test:simple": "bun run scripts/test-endpoints.ts",
+    "dev": "bun run --watch src/index.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:studio": "drizzle-kit studio",
+    "verify": "bun run scripts/verify-data.ts"
+  },
+  "dependencies": {
+    "@elysiajs/cors": "^1.4.0",
+    "@elysiajs/openapi": "^1.4.11",
+    "@elysiajs/opentelemetry": "^1.4.7",
+    "@sinclair/typebox": "^0.34.40",
+    "@types/pg": "^8.15.5",
+    "drizzle-kit": "^0.31.4",
+    "drizzle-orm": "^0.44.4",
+    "elysia": "latest",
+    "pg": "^8.16.3",
+    "viem": "^2.39.3"
+  },
+  "devDependencies": {
+    "bun-types": "latest"
+  },
+  "module": "src/index.js"
+}

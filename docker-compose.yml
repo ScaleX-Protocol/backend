@@ -3,25 +3,26 @@
 # Use docker-compose.dev.yml for local development with port access
 
 services:
-  # SCALEX API service
-  scalex-api:
+  # ENVIO API service
+  envio-api:
     build:
-      context: ./api
+      context: ./envio-api
       dockerfile: Dockerfile
     env_file:
-      - ./.env.core-chain
+      - .env
     environment:
-      - DATABASE_URL=postgresql://postgres:password@scalex-postgres:5432/scalex_api
+      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:password@scalex-postgres:5432/scalex_api}
+      - ENVIO_DATABASE_URL=${ENVIO_DATABASE_URL:-postgresql://postgres:testing@envio-postgres:5432/envio-dev}
+      - FAUCET_DATABASE_URL=${FAUCET_DATABASE_URL:-postgresql://postgres:password@scalex-postgres:5432/envio_faucet}
       - NODE_ENV=production
       - PORT=3000
     depends_on:
       - scalex-postgres
+      - envio-postgres
       - redis
     networks:
       - scalex-network
     restart: unless-stopped
-    volumes:
-      - ./api/logs:/app/logs
 
   # SCALEX API database
   scalex-postgres:
@@ -38,28 +39,30 @@ services:
       - scalex-network
     restart: unless-stopped
 
-  # Core indexer service
-  clob-indexer:
+  # Envio indexer service (primary indexer)
+  envio-indexer:
     build:
-      context: .
+      context: ./envio-indexer
       dockerfile: Dockerfile
     env_file:
-      - ./.env.core-chain
+      - .env
     environment:
-      # Override .env.core-chain with container networking
-      - PONDER_DATABASE_URL=postgresql://postgres:password@postgres:5432/ponder_core
-      - REDIS_URL=redis://redis:6379
-      - ENABLE_EVENT_PUBLISHING=true
-      - ENABLE_WEBSOCKET=false
-      - PONDER_PORT=42070
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://${ENVIO_PG_USER:-postgres}:${ENVIO_PG_PASSWORD:-testing}@envio-postgres:5432/${ENVIO_PG_DATABASE:-envio-dev}
+      - ENVIO_PG_PASSWORD=${ENVIO_PG_PASSWORD:-testing}
+      - ENVIO_PG_USER=${ENVIO_PG_USER:-postgres}
+      - ENVIO_PG_DATABASE=${ENVIO_PG_DATABASE:-envio-dev}
+      - ENVIO_PG_HOST=envio-postgres
+      - ENVIO_PG_PORT=5432
+      - HASURA_GRAPHQL_DATABASE_URL=postgresql://${ENVIO_PG_USER:-postgres}:${ENVIO_PG_PASSWORD:-testing}@envio-postgres:5432/${ENVIO_PG_DATABASE:-envio-dev}
+      - HASURA_GRAPHQL_ADMIN_SECRET=${HASURA_GRAPHQL_ADMIN_SECRET:-testing}
+      - HASURA_GRAPHQL_ENABLE_CONSOLE=${HASURA_GRAPHQL_ENABLE_CONSOLE:-false}
     depends_on:
-      - postgres
+      - envio-postgres
       - redis
     networks:
       - scalex-network
-    restart: unless-stopped
-    volumes:
-      - ./logs:/app/logs
+    restart: "no"
 
   # WebSocket service
   websocket-service:
@@ -67,20 +70,20 @@ services:
       context: ./websocket-service
       dockerfile: Dockerfile
     env_file:
-      - ./.env.core-chain
+      - .env
     environment:
-      - PORT=42080
+      - PORT=${WEBSOCKET_PORT:-42080}
       - HEALTH_PORT=8080
-      - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql://postgres:password@postgres:5432/ponder_core
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - DATABASE_URL=${WEBSOCKET_DATABASE_URL:-postgresql://postgres:testing@envio-postgres:5432/envio-dev}
       - CONSUMER_GROUP=websocket-consumers
       - CONSUMER_ID=ws-consumer-1
-      - BATCH_SIZE=10
-      - POLL_INTERVAL=1000
-      - WS_PING_INTERVAL=30000
-      - MAX_CONNECTIONS=1000
+      - BATCH_SIZE=${WS_BATCH_SIZE:-10}
+      - POLL_INTERVAL=${WS_POLL_INTERVAL:-1000}
+      - WS_PING_INTERVAL=${WS_PING_INTERVAL:-30000}
+      - MAX_CONNECTIONS=${WS_MAX_CONNECTIONS:-1000}
     depends_on:
-      - postgres
+      - envio-postgres
       - redis
     networks:
       - scalex-network
@@ -92,37 +95,39 @@ services:
       context: ./analytics-service
       dockerfile: Dockerfile
     env_file:
-      - ./.env.core-chain
+      - .env
     environment:
-      - PORT=42090
-      - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql://postgres:password@postgres:5432/ponder_core
-      - TIMESCALE_DATABASE_URL=postgresql://postgres:password@timescaledb:5432/analytics
+      - PORT=${ANALYTICS_PORT:-42090}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - DATABASE_URL=${ANALYTICS_DATABASE_URL:-postgresql://postgres:testing@envio-postgres:5432/envio-dev}
+      - TIMESCALE_DATABASE_URL=${TIMESCALE_DATABASE_URL:-postgresql://postgres:password@timescaledb:5432/analytics}
       - CONSUMER_GROUP=analytics-consumers
       - CONSUMER_ID=analytics-consumer-1
-      - ANALYTICS_BATCH_SIZE=5
-      - ANALYTICS_POLL_INTERVAL=5000
-      - CACHE_TTL=300
-      - ENABLE_DAILY_SNAPSHOTS=true
-      - ENABLE_HOURLY_AGGREGATION=true
-      - ENABLE_CACHE_REFRESH=true
+      - ANALYTICS_BATCH_SIZE=${ANALYTICS_BATCH_SIZE:-5}
+      - ANALYTICS_POLL_INTERVAL=${ANALYTICS_POLL_INTERVAL:-5000}
+      - CACHE_TTL=${ANALYTICS_CACHE_TTL:-300}
+      - ENABLE_DAILY_SNAPSHOTS=${ENABLE_DAILY_SNAPSHOTS:-true}
+      - ENABLE_HOURLY_AGGREGATION=${ENABLE_HOURLY_AGGREGATION:-true}
+      - ENABLE_CACHE_REFRESH=${ENABLE_CACHE_REFRESH:-true}
     depends_on:
-      - postgres
+      - envio-postgres
       - timescaledb
       - redis
     networks:
       - scalex-network
     restart: unless-stopped
 
-  # PostgreSQL database (Main indexer DB)
-  postgres:
-    image: postgres:15-alpine
+  # PostgreSQL database for Envio indexer
+  envio-postgres:
+    image: postgres:17.5
     environment:
-      - POSTGRES_DB=ponder_core
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=${ENVIO_PG_DATABASE:-envio-dev}
+      - POSTGRES_USER=${ENVIO_PG_USER:-postgres}
+      - POSTGRES_PASSWORD=${ENVIO_PG_PASSWORD:-testing}
+    ports:
+      - "5433:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - envio_postgres_data:/var/lib/postgresql/data
     networks:
       - scalex-network
     restart: unless-stopped
@@ -151,6 +156,7 @@ services:
       - scalex-network
     restart: unless-stopped
     command: redis-server --appendonly yes
+
 
 
   # Monitoring services (COMMENTED OUT)
@@ -202,8 +208,8 @@ services:
     restart: unless-stopped
 
 volumes:
-  postgres_data:
   scalex_postgres_data:
+  envio_postgres_data:
   timescale_data:
   redis_data:
   # prometheus_data:

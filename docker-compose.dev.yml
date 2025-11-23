@@ -2,28 +2,27 @@
 # Includes host port mappings for local access
 
 services:
-  # SCALEX API service
-  scalex-api:
+  # ENVIO API service
+  envio-api:
     build:
-      context: ./api
+      context: ./envio-api
       dockerfile: Dockerfile
     ports:
-      - "8000:3000"  # Host port 8000 for local development
+      - "3000:3000"  # Host port 3000 for local development
     env_file:
-      - ./.env.core-chain
+      - .env
     environment:
-      - DATABASE_URL=postgresql://postgres:password@scalex-postgres:5432/scalex_api
       - NODE_ENV=development
       - PORT=3000
     depends_on:
       - scalex-postgres
+      - envio-postgres
       - redis
     networks:
       - scalex-network
     restart: unless-stopped
     volumes:
-      - ./api/logs:/app/logs
-      - ./api:/app  # Mount for hot reloading in dev
+      - ./envio-api:/app  # Mount for hot reloading in dev
 
   # SCALEX API database
   scalex-postgres:
@@ -40,27 +39,26 @@ services:
       - scalex-network
     restart: unless-stopped
 
-  # Core indexer service (existing)
-  clob-indexer:
+  # Envio indexer service (primary indexer)
+  envio-indexer:
     build:
-      context: .
+      context: ./envio-indexer
       dockerfile: Dockerfile
-    # Use host networking to connect to localhost:5433
-    network_mode: "host"
+    ports:
+      - "8081:8080"  # GraphQL endpoint for local access (changed from 8080 to avoid OrbStack conflict)
     env_file:
-      - ./.env.core-chain
+      - .env
     environment:
-      - PONDER_DATABASE_URL=postgresql://postgres:password@localhost:5433/ponder_core
-      - REDIS_URL=redis://localhost:6380
-      - ENABLE_EVENT_PUBLISHING=true
-      - ENABLE_WEBSOCKET=false  # Disabled in favor of separate websocket service
-      - PONDER_PORT=42070
+      - NODE_ENV=development
+      - HASURA_GRAPHQL_ENABLE_CONSOLE=true  # Enable console for development
     depends_on:
-      - postgres
+      - envio-postgres
       - redis
+    networks:
+      - scalex-network
+    restart: unless-stopped
     volumes:
-      - ./logs:/app/logs
-      - .:/app  # Mount for hot reloading in dev
+      - ./envio-indexer:/app  # Mount for hot reloading in dev
 
   # WebSocket service
   websocket-service:
@@ -71,20 +69,11 @@ services:
       - "42080:42080"  # Host ports for local development
       - "42084:8080"  # Health port
     env_file:
-      - ./.env.core-chain
+      - .env
     environment:
-      - PORT=42080
-      - HEALTH_PORT=8080
-      - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql://postgres:password@postgres:5432/ponder_core
-      - CONSUMER_GROUP=websocket-consumers
-      - CONSUMER_ID=ws-consumer-1
-      - BATCH_SIZE=10
-      - POLL_INTERVAL=1000
-      - WS_PING_INTERVAL=30000
-      - MAX_CONNECTIONS=1000
+      - NODE_ENV=development
     depends_on:
-      - postgres
+      - envio-postgres
       - redis
     networks:
       - scalex-network
@@ -100,22 +89,11 @@ services:
     ports:
       - "42090:42090"  # Host port for local development
     env_file:
-      - ./.env.core-chain
+      - .env
     environment:
-      - PORT=42090
-      - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql://postgres:password@postgres:5432/ponder_core
-      - TIMESCALE_DATABASE_URL=postgresql://postgres:password@timescaledb:5432/analytics
-      - CONSUMER_GROUP=analytics-consumers
-      - CONSUMER_ID=analytics-consumer-1
-      - ANALYTICS_BATCH_SIZE=5
-      - ANALYTICS_POLL_INTERVAL=5000
-      - CACHE_TTL=300
-      - ENABLE_DAILY_SNAPSHOTS=true
-      - ENABLE_HOURLY_AGGREGATION=true
-      - ENABLE_CACHE_REFRESH=true
+      - NODE_ENV=development
     depends_on:
-      - postgres
+      - envio-postgres
       - timescaledb
       - redis
     networks:
@@ -124,17 +102,17 @@ services:
     volumes:
       - ./analytics-service:/app  # Mount for hot reloading in dev
 
-  # PostgreSQL database (Main indexer DB)
-  postgres:
-    image: postgres:15-alpine
+  # PostgreSQL database for Envio indexer
+  envio-postgres:
+    image: postgres:17.5
     environment:
-      - POSTGRES_DB=ponder_core
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=${ENVIO_PG_DATABASE:-envio-dev}
+      - POSTGRES_USER=${ENVIO_PG_USER:-postgres}
+      - POSTGRES_PASSWORD=${ENVIO_PG_PASSWORD:-testing}
     ports:
-      - "5433:5432"  # Host port for local access
+      - "5434:5432"  # Host port for local access
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - envio_postgres_data:/var/lib/postgresql/data
     networks:
       - scalex-network
     restart: unless-stopped
@@ -147,7 +125,7 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=password
     ports:
-      - "5434:5432"  # Host port for local access
+      - "5436:5432"  # Host port for local access (changed from 5434 to avoid Ponder conflict)
     volumes:
       - timescale_data:/var/lib/postgresql/data
       - ./analytics-service/init:/docker-entrypoint-initdb.d
@@ -168,6 +146,7 @@ services:
     restart: unless-stopped
     command: redis-server --appendonly yes
 
+
   # Development tools
   redis-commander:
     image: rediscommander/redis-commander:latest
@@ -182,8 +161,8 @@ services:
     restart: unless-stopped
 
 volumes:
-  postgres_data:
   scalex_postgres_data:
+  envio_postgres_data:
   timescale_data:
   redis_data:
 

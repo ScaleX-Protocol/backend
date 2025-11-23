@@ -17,4 +17,4 @@ COPY . .
 # Expose ponder port
 EXPOSE 42070
 
-CMD ["pnpm", "run", "dev:core-chain"]
+CMD ["pnpm", "run", "dev:ponder:core-chain"]

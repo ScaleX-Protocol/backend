@@ -12,7 +12,8 @@ const app = new Elysia()
     origin: [
       /^http:\/\/localhost:\d+$/,
       /^https:\/\/.*\.vercel\.app$/,
-      /^https:\/\/.*\.netlify\.app$/
+      /^https:\/\/.*\.netlify\.app$/,
+      /^https:\/\/.*\.scalex\.money$/
     ],
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization'],

@@ -1,0 +1,12 @@
+node_modules
+dist
+.claude
+.cursor
+.env*
+README.md
+scripts
+*.md
+.git
+.gitignore
+docker-compose*
+Dockerfile*
