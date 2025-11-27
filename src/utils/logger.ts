@@ -242,7 +242,6 @@ export const log = (
   data: any,
   filename: string,
   functionName: string,
-  timestamp?: string,
   fileLoggingEnabled: boolean = true
 ) => {
   try {
@@ -250,9 +249,10 @@ export const log = (
     const safeData = data && typeof data === 'object' ? data : { value: String(data || '') };
     const safeFunctionName = String(functionName || 'unknown').substring(0, 100);
     const safeFilename = String(filename || 'unknown').substring(0, 100);
+    const currentTimestamp = new Date().toISOString();
 
     const logEntry = {
-      timestamp: timestamp || new Date().toISOString(),
+      timestamp: currentTimestamp,
       level: level.toUpperCase(),
       service: String(serviceName?.valueOf() || 'unknown'),
       label: String(label?.valueOf() || 'general'),
@@ -264,7 +264,8 @@ export const log = (
 
     // Console output with emojis for visibility (matching mm-bot format)
     const emoji = level === LogLevel.ERROR ? '❌' : level === LogLevel.WARN ? '⚠️' : level === LogLevel.INFO ? 'ℹ️' : '🔍';
-    const consoleMessage = `${emoji} [${level.toUpperCase()}] [${serviceName}/${label}] ${safeFilename}:${safeFunctionName}() - ${safeMessage}`;
+    const shortTimestamp = currentTimestamp.substring(11, 19); // Extract HH:MM:SS
+    const consoleMessage = `${emoji} [${level.toUpperCase()}] [${shortTimestamp}] [${serviceName}/${label}] ${safeFilename}:${safeFunctionName}() - ${safeMessage}`;
     
     try {
       switch (level) {

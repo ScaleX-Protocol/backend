@@ -14,6 +14,10 @@ import {
 import { ORDER_STATUS, OrderSide, OrderType, TIME_INTERVALS } from "./constants";
 import { createBucketId, createOrderId } from "./id";
 import { OrderMatchedEventArgs, OrderPlacedEventArgs } from "@/types";
+import { createLogger, LogLabel } from "./logger";
+
+// Create logger instance for this file
+const logger = createLogger('orderHelpers.ts');
 
 export async function insertOrder(db: any, orderData: any) {
 	await db.insert(orders).values(orderData).onConflictDoNothing();
@@ -171,7 +175,7 @@ export async function insertOrderBookTrades(
 	tradeId: string,
 	transactionHash: string,
 	poolId: string,
-	{ user, side, timestamp, executionPrice, executedQuantity }: Partial<OrderMatchedEventArgs>
+	{ side, timestamp, executionPrice, executedQuantity }: Partial<OrderMatchedEventArgs>
 ) {
 	await db.insert(orderBookTrades).values({
 		id: tradeId,
@@ -196,18 +200,6 @@ export async function updatePoolVolume(db: any, poolId: string, quantity: bigint
 			timestamp,
 		};
 	});
-}
-
-export async function updateOrder(db: any, chainId: number, buyOrderId: string, quantity: bigint) {
-	await db
-		.update(orders, {
-			id: buyOrderId,
-			chainId,
-		})
-		.set((row: any) => ({
-			filled: row.filled + quantity,
-			status: row.filled + quantity === row.quantity ? "FILLED" : "PARTIALLY_FILLED",
-		}));
 }
 
 export async function updateCandlestickBuckets(
@@ -294,22 +286,92 @@ export function createDepthData(
 	};
 }
 
-export async function updateOrderStatusAndTimestamp(
+export async function updateOrder(
 	db: any,
 	chainId: number,
 	hashedOrderId: string,
 	event: any,
 	timestamp: number
 ) {
-	await db
-		.update(orders, {
-			id: hashedOrderId,
-			chainId: chainId,
-		})
-		.set((row: any) => ({
-			status: ORDER_STATUS[Number(event.args.status)],
-			timestamp: timestamp,
-		}));
+	// First check if the order exists
+	const existingOrder = await db.find(orders, {
+		id: hashedOrderId,
+		chainId: chainId,
+	});
+
+	if (!existingOrder) {
+		logger.warn('Order not found for update', LogLabel.VALIDATION, 'updateOrder', {
+			hashedOrderId,
+			chainId,
+			orderId: event.args.orderId,
+			status: event.args.status
+		});
+		return false;
+	}
+
+	try {
+		await db
+			.update(orders, {
+				id: hashedOrderId,
+				chainId: chainId,
+			})
+			.set({
+				status: ORDER_STATUS[Number(event.args.status)],
+				timestamp: timestamp,
+			});
+		return true; // Indicate successful update
+	} catch (error) {
+		logger.error('Failed to update order status', LogLabel.DATABASE, 'updateOrder', {
+			error: error instanceof Error ? error.message : String(error),
+			hashedOrderId,
+			chainId,
+			orderId: event.args.orderId,
+			status: event.args.status
+		});
+		return false;
+	}
+}
+
+export async function updateOrderQuantity(
+	db: any,
+	chainId: number,
+	hashedOrderId: string,
+	filledQuantity: bigint
+) {
+	// First check if the order exists
+	const existingOrder = await db.find(orders, {
+		id: hashedOrderId,
+		chainId: chainId,
+	});
+
+	if (!existingOrder) {
+		logger.warn('Order not found for quantity update', LogLabel.VALIDATION, 'updateOrderQuantity', {
+			hashedOrderId,
+			chainId,
+			filledQuantity: filledQuantity.toString()
+		});
+		return false;
+	}
+
+	try {
+		await db
+			.update(orders, {
+				id: hashedOrderId,
+				chainId: chainId,
+			})
+			.set({
+				filled: existingOrder.filled + filledQuantity,
+			});
+		return true; // Indicate successful update
+	} catch (error) {
+		logger.error('Failed to update order quantity', LogLabel.DATABASE, 'updateOrderQuantity', {
+			error: error instanceof Error ? error.message : String(error),
+			hashedOrderId,
+			chainId,
+			filledQuantity: filledQuantity.toString()
+		});
+		return false;
+	}
 }
 
 export async function upsertOrderBookDepthOnCancel(
