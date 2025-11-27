@@ -35,12 +35,35 @@ export function withEventValidator(handler: Function, eventType: string) {
     try {
       await handler(context);
     } catch (error) {
-      console.error(`ERROR in ${eventType} handler:`, error, {
+      const errorInfo = {
         txHash: event.transaction.hash,
         blockNumber: event.block.number,
         timestamp: new Date().toISOString()
-      });
-      throw error;
+      };
+
+      // Check if this is a database shutdown/connection error
+      if (error instanceof Error && (
+        error.message.includes('ShutdownError') ||
+        error.message.includes('Connection terminated') ||
+        error.message.includes('database connection')
+      )) {
+        console.error(`💀 FATAL: Database connection error in ${eventType} handler:`, error.message, errorInfo);
+      }
+
+      // For business logic errors, log but don't crash the indexer
+      if (error instanceof Error && (
+        error.message.includes('Failed to insert') ||
+        error.message.includes('duplicate key') ||
+        error.message.includes('constraint')
+      )) {
+        console.error(`⚠️  BUSINESS LOGIC ERROR in ${eventType} handler (event skipped):`, error.message, errorInfo);
+        return; // Skip this event but continue processing others
+      }
+
+      // For unknown errors, log with full context and re-throw
+      console.error(`❌ ERROR in ${eventType} handler:`, error, errorInfo);
+
+      // TODO :: Store error
     }
   };
 }
