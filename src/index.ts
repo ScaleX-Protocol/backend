@@ -7,43 +7,44 @@ import * as tokenRegistryHandler from "../src/handlers/tokenRegistryHandler";
 import * as lendingManagerHandler from "../src/handlers/lendingManagerHandler";
 import * as oracleHandler from "../src/handlers/oracleHandler";
 import { PonderEvents } from "../src/types/ponder-core-chain";
+import { withEventValidator } from "../src/utils/eventValidator";
 
 // Pool Manager Events
 ponder.on(PonderEvents.POOL_CREATED, poolManagerHandler.handlePoolCreated);
 
-// Balance Manager Events
-ponder.on(PonderEvents.DEPOSIT, balanceManagerHandler.handleDeposit);
-ponder.on(PonderEvents.WITHDRAWAL, balanceManagerHandler.handleWithdrawal);
-ponder.on(PonderEvents.TRANSFER_FROM, balanceManagerHandler.handleTransferFrom);
-ponder.on(PonderEvents.TRANSFER_LOCKED_FROM, balanceManagerHandler.handleTransferLockedFrom);
-ponder.on(PonderEvents.LOCK, balanceManagerHandler.handleLock);
-ponder.on(PonderEvents.UNLOCK, balanceManagerHandler.handleUnlock);
+// Balance Manager Events - With transaction validation
+ponder.on(PonderEvents.DEPOSIT, withEventValidator(balanceManagerHandler.handleDeposit, 'deposit'));
+ponder.on(PonderEvents.WITHDRAWAL, withEventValidator(balanceManagerHandler.handleWithdrawal, 'withdrawal'));
+ponder.on(PonderEvents.TRANSFER_FROM, withEventValidator(balanceManagerHandler.handleTransferFrom, 'transferFrom'));
+ponder.on(PonderEvents.TRANSFER_LOCKED_FROM, withEventValidator(balanceManagerHandler.handleTransferLockedFrom, 'transferLockedFrom'));
+ponder.on(PonderEvents.LOCK, withEventValidator(balanceManagerHandler.handleLock, 'lock'));
+ponder.on(PonderEvents.UNLOCK, withEventValidator(balanceManagerHandler.handleUnlock, 'unlock'));
 
-// Order Book Events
-ponder.on(PonderEvents.ORDER_PLACED, orderBookHandler.handleOrderPlaced);
-ponder.on(PonderEvents.ORDER_MATCHED, orderBookHandler.handleOrderMatched);
-ponder.on(PonderEvents.ORDER_CANCELLED, orderBookHandler.handleOrderCancelled);
-ponder.on(PonderEvents.UPDATE_ORDER, orderBookHandler.handleUpdateOrder);
+// Order Book Events - With transaction validation
+ponder.on(PonderEvents.ORDER_PLACED, withEventValidator(orderBookHandler.handleOrderPlaced, 'orderPlaced'));
+ponder.on(PonderEvents.ORDER_MATCHED, withEventValidator(orderBookHandler.handleOrderMatched, 'orderMatched'));
+ponder.on(PonderEvents.ORDER_CANCELLED, withEventValidator(orderBookHandler.handleOrderCancelled, 'orderCancelled'));
+ponder.on(PonderEvents.UPDATE_ORDER, withEventValidator(orderBookHandler.handleUpdateOrder, 'updateOrder'));
 
-// Hyperlane Mailbox Events (cross-chain message processing)
-ponder.on(PonderEvents.HYPERLANEMAILBOX_DISPATCH_ID, crossChainHandler.handleHyperlaneMailboxDispatchId);
-ponder.on(PonderEvents.HYPERLANEMAILBOX_PROCESS_ID, crossChainHandler.handleHyperlaneMailboxProcessId);
+// Hyperlane Mailbox Events - With transaction validation
+ponder.on(PonderEvents.HYPERLANEMAILBOX_DISPATCH_ID, withEventValidator(crossChainHandler.handleHyperlaneMailboxDispatchId, 'hyperlaneDispatch'));
+ponder.on(PonderEvents.HYPERLANEMAILBOX_PROCESS_ID, withEventValidator(crossChainHandler.handleHyperlaneMailboxProcessId, 'hyperlaneProcess'));
 
-// TokenRegistry Events (cross-chain token mapping)
-ponder.on(PonderEvents.TOKEN_MAPPING_REGISTERED, tokenRegistryHandler.handleTokenMappingRegistered);
-ponder.on(PonderEvents.TOKEN_MAPPING_UPDATED, tokenRegistryHandler.handleTokenMappingUpdated);
-ponder.on(PonderEvents.TOKEN_MAPPING_REMOVED, tokenRegistryHandler.handleTokenMappingRemoved);
-ponder.on(PonderEvents.TOKEN_STATUS_CHANGED, tokenRegistryHandler.handleTokenStatusChanged);
-ponder.on(PonderEvents.TOKEN_OWNERSHIP_TRANSFERRED, tokenRegistryHandler.handleOwnershipTransferred);
-ponder.on(PonderEvents.TOKEN_INITIALIZED, tokenRegistryHandler.handleInitialized);
+// TokenRegistry Events - With transaction validation
+ponder.on(PonderEvents.TOKEN_MAPPING_REGISTERED, withEventValidator(tokenRegistryHandler.handleTokenMappingRegistered, 'tokenMappingRegistered'));
+ponder.on(PonderEvents.TOKEN_MAPPING_UPDATED, withEventValidator(tokenRegistryHandler.handleTokenMappingUpdated, 'tokenMappingUpdated'));
+ponder.on(PonderEvents.TOKEN_MAPPING_REMOVED, withEventValidator(tokenRegistryHandler.handleTokenMappingRemoved, 'tokenMappingRemoved'));
+ponder.on(PonderEvents.TOKEN_STATUS_CHANGED, withEventValidator(tokenRegistryHandler.handleTokenStatusChanged, 'tokenStatusChanged'));
+ponder.on(PonderEvents.TOKEN_OWNERSHIP_TRANSFERRED, withEventValidator(tokenRegistryHandler.handleOwnershipTransferred, 'tokenOwnershipTransferred'));
+ponder.on(PonderEvents.TOKEN_INITIALIZED, withEventValidator(tokenRegistryHandler.handleInitialized, 'tokenInitialized'));
 
-// LendingManager Events - Testing one by one
-ponder.on(PonderEvents.LENDING_MANAGER_SUPPLY, lendingManagerHandler.handleSupply);
-ponder.on(PonderEvents.LENDING_MANAGER_BORROW, lendingManagerHandler.handleBorrow);
-ponder.on(PonderEvents.LENDING_MANAGER_REPAY, lendingManagerHandler.handleRepay);
-ponder.on(PonderEvents.LENDING_MANAGER_WITHDRAW, lendingManagerHandler.handleWithdraw);
-ponder.on(PonderEvents.LENDING_MANAGER_LIQUIDATION, lendingManagerHandler.handleLiquidation);
-ponder.on(PonderEvents.LENDING_MANAGER_ASSET_CONFIGURED, lendingManagerHandler.handleAssetConfigured);
+// LendingManager Events - With transaction validation
+ponder.on(PonderEvents.LENDING_MANAGER_SUPPLY, withEventValidator(lendingManagerHandler.handleSupply, 'supply'));
+ponder.on(PonderEvents.LENDING_MANAGER_BORROW, withEventValidator(lendingManagerHandler.handleBorrow, 'borrow'));
+ponder.on(PonderEvents.LENDING_MANAGER_REPAY, withEventValidator(lendingManagerHandler.handleRepay, 'repay'));
+ponder.on(PonderEvents.LENDING_MANAGER_WITHDRAW, withEventValidator(lendingManagerHandler.handleWithdraw, 'withdraw'));
+ponder.on(PonderEvents.LENDING_MANAGER_LIQUIDATION, withEventValidator(lendingManagerHandler.handleLiquidation, 'liquidation'));
+ponder.on(PonderEvents.LENDING_MANAGER_ASSET_CONFIGURED, withEventValidator(lendingManagerHandler.handleAssetConfigured, 'assetConfigured'));
 
 // Oracle Events - Temporarily disabled due to telemetry issue
 ponder.on(PonderEvents.ORACLE_PRICE_UPDATED, oracleHandler.handleOraclePriceUpdate);
