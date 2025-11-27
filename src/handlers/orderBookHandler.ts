@@ -19,7 +19,7 @@ import {
   TIME_INTERVALS,
   updateCandlestickBuckets,
   updateOrder,
-  updateOrderStatusAndTimestamp,
+  updateOrderQuantity,
   updatePoolVolume,
   upsertOrderBookDepth,
   upsertOrderBookDepthOnCancel,
@@ -45,43 +45,43 @@ dotenv.config();
 const logger = createLogger('orderBookHandler.ts');
 
 async function upsertUserForOrder(db: any, chainId: number, user: string, timestamp: number, volume: bigint) {
-	const userId = `${chainId}-${user}`;
-	await db
-		.insert(users)
-		.values({
-			id: userId,
-			chainId: chainId,
-			address: user,
-			firstSeenTimestamp: timestamp,
-			lastSeenTimestamp: timestamp,
-			totalOrders: 1,
-			totalDeposits: 0,
-			totalVolume: volume,
-		})
-		.onConflictDoUpdate((row: any) => ({
-			lastSeenTimestamp: timestamp,
-			totalOrders: row.totalOrders + 1,
-			totalVolume: row.totalVolume + volume,
-		}));
+  const userId = `${chainId}-${user}`;
+  await db
+    .insert(users)
+    .values({
+      id: userId,
+      chainId: chainId,
+      address: user,
+      firstSeenTimestamp: timestamp,
+      lastSeenTimestamp: timestamp,
+      totalOrders: 1,
+      totalDeposits: 0,
+      totalVolume: volume,
+    })
+    .onConflictDoUpdate((row: any) => ({
+      lastSeenTimestamp: timestamp,
+      totalOrders: row.totalOrders + 1,
+      totalVolume: row.totalVolume + volume,
+    }));
 }
 
 async function upsertUserActivity(db: any, chainId: number, user: string, timestamp: number) {
-	const userId = `${chainId}-${user}`;
-	await db
-		.insert(users)
-		.values({
-			id: userId,
-			chainId: chainId,
-			address: user,
-			firstSeenTimestamp: timestamp,
-			lastSeenTimestamp: timestamp,
-			totalOrders: 0,
-			totalDeposits: 0,
-			totalVolume: BigInt(0),
-		})
-		.onConflictDoUpdate((row: any) => ({
-			lastSeenTimestamp: timestamp,
-		}));
+  const userId = `${chainId}-${user}`;
+  await db
+    .insert(users)
+    .values({
+      id: userId,
+      chainId: chainId,
+      address: user,
+      firstSeenTimestamp: timestamp,
+      lastSeenTimestamp: timestamp,
+      totalOrders: 0,
+      totalDeposits: 0,
+      totalVolume: BigInt(0),
+    })
+    .onConflictDoUpdate((row: any) => ({
+      lastSeenTimestamp: timestamp,
+    }));
 }
 
 // Helper function to publish events
@@ -344,12 +344,12 @@ export async function handleOrderMatched({ event, context }: any) {
   const buyTradeId = createTradeId(chainId, txHash, args.user, OrderSide.BUY, args);
   const buyOrderId = createOrderId(chainId, BigInt(args.buyOrderId), poolAddress);
   await insertTrade(db, chainId, buyTradeId, buyOrderId, price, quantity, event);
-  await updateOrder(db, chainId, buyOrderId, quantity);
+  await updateOrderQuantity(db, chainId, buyOrderId, quantity);
 
   const sellTradeId = createTradeId(chainId, txHash, args.user, OrderSide.SELL, args);
   const sellOrderId = createOrderId(chainId, BigInt(args.sellOrderId), poolAddress);
   await insertTrade(db, chainId, sellTradeId, sellOrderId, price, quantity, event);
-  await updateOrder(db, chainId, sellOrderId, quantity);
+  await updateOrderQuantity(db, chainId, sellOrderId, quantity);
 
   await upsertOrderBookDepth(db, chainId, poolAddress, getSide(args.side), price, quantity, timestamp);
   await upsertOrderBookDepth(db, chainId, poolAddress, getOppositeSide(args.side), price, quantity, timestamp);
@@ -446,7 +446,7 @@ export async function handleOrderCancelled({ event, context }: any) {
   const timestamp = Number(event.args.timestamp);
 
   try {
-    await updateOrderStatusAndTimestamp(db, chainId, hashedOrderId, event, timestamp);
+    await updateOrder(db, chainId, hashedOrderId, event, timestamp);
     await upsertOrderBookDepthOnCancel(db, chainId, hashedOrderId, event, timestamp);
 
     // Track user activity for order cancellation
@@ -509,7 +509,17 @@ export async function handleUpdateOrder({ event, context }: any) {
   try {
     await upsertOrderHistory(db, historyData);
 
-    await updateOrderStatusAndTimestamp(db, chainId, hashedOrderId, event, timestamp);
+    const orderUpdateSuccess = await updateOrder(db, chainId, hashedOrderId, event, timestamp);
+
+    if (!orderUpdateSuccess) {
+      logger.warn('Skipping order update - order does not exist', LogLabel.VALIDATION, 'handleUpdateOrder', {
+        hashedOrderId,
+        chainId,
+        orderId: event.args.orderId,
+        message: 'Order not found, possibly due to event processing order or missing CreateOrder event'
+      });
+      return;
+    }
 
     // Track user activity for order update (get user from order)
     const order = await db.find(orders, { id: hashedOrderId });
