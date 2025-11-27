@@ -45,7 +45,9 @@ services:
     volumes:
       - scalex_postgres_data:/var/lib/postgresql/data
     networks:
-      - scalex-network
+      scalex-network:
+        aliases:
+          - scalex-postgres
     restart: unless-stopped
 
   # Core indexer service
@@ -132,7 +134,10 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
-      - scalex-network
+      scalex-network:
+        aliases:
+          - postgres
+          - db
     restart: unless-stopped
 
   # TimescaleDB for Analytics
@@ -147,7 +152,9 @@ services:
       - ./analytics-service/init:/docker-entrypoint-initdb.d
     command: ["postgres", "-c", "shared_preload_libraries=timescaledb"]
     networks:
-      - scalex-network
+      scalex-network:
+        aliases:
+          - timescaledb
     restart: unless-stopped
 
   # Redis for caching and message queuing
@@ -156,10 +163,11 @@ services:
     volumes:
       - redis_data:/data
     networks:
-      - scalex-network
+      scalex-network:
+        aliases:
+          - redis
     restart: unless-stopped
     command: redis-server --appendonly yes
-
 
   # Monitoring services (COMMENTED OUT)
   # prometheus:
