@@ -1,6 +1,7 @@
 import { getEventPublisher } from "@/events/index";
 import { createBalanceId, createLendingPositionId } from "@/utils";
 import { executeIfInSync } from "@/utils/syncState";
+import { createLogger, LogLabel } from "../utils/logger";
 import { sql } from "ponder";
 import {
   assetConfigurations,
@@ -14,6 +15,9 @@ import {
   userLendingStats
 } from "ponder:schema";
 import { getAddress } from "viem";
+
+// Create logger instance for this file
+const logger = createLogger('lendingManagerHandler.ts');
 
 // Helper functions for lending statistics
 async function upsertUserLendingStats(
@@ -86,7 +90,7 @@ async function publishLendingEvent(
       ...additionalData
     });
   } catch (error) {
-    console.error('Failed to publish lending event:', error);
+    logger.error('Failed to publish lending event', LogLabel.EVENT_HANDLER, 'publishLendingEvent', { error: error instanceof Error ? error.message : String(error), action, user, token, amount });
   }
 }
 
@@ -292,8 +296,7 @@ export async function handleBorrow({ event, context }: any) {
       });
     }, 'handleBorrow');
   } catch (error) {
-    console.error('❌ handleBorrow ERROR:', error);
-    console.error('Error details:', error instanceof Error ? error.message : String(error));
+    logger.error('handleBorrow ERROR', LogLabel.EVENT_HANDLER, 'handleBorrow', { error: error instanceof Error ? error.message : String(error), user, token, amount: amount.toString() });
     throw error;
   }
 }
@@ -614,8 +617,8 @@ async function initializePoolLendingStats(
         lastUpdated: timestamp,
       }));
 
-    console.log(`Pool stats initialized for ${token}: Supply APY ${baseSupplyAPY / 100}%, Borrow APY ${baseBorrowAPY / 100}%`);
+    logger.info(`Pool stats initialized for ${token}: Supply APY ${baseSupplyAPY / 100}%, Borrow APY ${baseBorrowAPY / 100}%`, LogLabel.SYSTEM, 'initializePoolLendingStats', { token, baseSupplyAPY, baseBorrowAPY, collateralFactor, reserveFactor });
   } catch (error) {
-    console.error(`Failed to initialize pool lending stats for ${token}:`, error);
+    logger.error(`Failed to initialize pool lending stats for ${token}`, LogLabel.DATABASE, 'initializePoolLendingStats', { token, error: error instanceof Error ? error.message : String(error) });
   }
 }

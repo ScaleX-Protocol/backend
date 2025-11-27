@@ -1,186 +1,338 @@
-import dotenv from "dotenv";
-import { writeFileSync, existsSync, readFileSync } from "fs";
-import { join } from "path";
+import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
 
 dotenv.config();
 
-// Configurable logging options
-export interface LogConfig {
-  includeBlockNumber?: boolean;
-  includeTransactionHash?: boolean;
-  includeFile?: boolean;
-  includeFunction?: boolean;
-  includeStep?: boolean;
+// Enums for consistent logging
+export enum LogLevel {
+  DEBUG = 'debug',
+  INFO = 'info', 
+  WARN = 'warn',
+  ERROR = 'error'
 }
 
-// Get log configuration from environment variables
-const getLogConfigFromEnv = (): LogConfig => {
-  return {
-    includeBlockNumber: process.env.LOG_INCLUDE_BLOCK_NUMBER !== 'false',
-    includeTransactionHash: process.env.LOG_INCLUDE_TRANSACTION_HASH !== 'false',
-    includeFile: process.env.LOG_INCLUDE_FILE !== 'false',
-    includeFunction: process.env.LOG_INCLUDE_FUNCTION !== 'false',
-    includeStep: process.env.LOG_INCLUDE_STEP !== 'false'
-  };
-};
-
-// Default log configuration from environment
-export const DEFAULT_LOG_CONFIG: LogConfig = getLogConfigFromEnv();
-
-// Helper function to format log prefix with configurable fields
-export const formatLogPrefix = (
-  event: any, 
-  fileName: string, 
-  functionName: string, 
-  step?: string, 
-  config: LogConfig = DEFAULT_LOG_CONFIG
-) => {
-  const parts: string[] = [];
-  
-  if (config.includeBlockNumber && event?.block?.number) {
-    parts.push(`Block number: ${event.block.number}`);
-  }
-  
-  if (config.includeTransactionHash && event?.transaction?.hash) {
-    parts.push(`Transaction hash: ${event.transaction.hash}`);
-  }
-  
-  if (config.includeFile) {
-    parts.push(`File: ${fileName}`);
-  }
-  
-  if (config.includeFunction) {
-    parts.push(`Function: ${functionName}`);
-  }
-  
-  if (config.includeStep && step) {
-    parts.push(step);
-  }
-  
-  return parts.join(', ');
-};
-
-// Utility function for functions without event context
-export const formatLogPrefixSimple = (
-  blockNumber: number | undefined,
-  fileName: string,
-  functionName: string,
-  step?: string,
-  config: LogConfig = DEFAULT_LOG_CONFIG
-) => {
-  const parts: string[] = [];
-  
-  if (config.includeBlockNumber && blockNumber !== undefined) {
-    parts.push(`Block number: ${blockNumber}`);
-  }
-  
-  if (config.includeFile) {
-    parts.push(`File: ${fileName}`);
-  }
-  
-  if (config.includeFunction) {
-    parts.push(`Function: ${functionName}`);
-  }
-  
-  if (config.includeStep && step) {
-    parts.push(step);
-  }
-  
-  return parts.join(', ');
-};
-
-// Utility function to safely stringify objects containing BigInt values
-export const safeStringify = (obj: any, space?: string | number): string => {
-  return JSON.stringify(obj, (_key, value) => {
-    if (typeof value === 'bigint') {
-      return value.toString();
-    }
-    return value;
-  }, space);
-};
-
-// Error logging interface
-export interface ErrorLogEntry {
-  timestamp: string;
-  functionName: string;
-  fileName: string;
-  error: {
-    message: string;
-    stack?: string;
-    name: string;
-  };
-  context: {
-    blockNumber?: number;
-    transactionHash?: string;
-    eventArgs?: any;
-    functionParameters?: any;
-  };
+export enum LogLabel {
+  INDEXER = 'indexer',
+  EVENT_HANDLER = 'event-handler',
+  DATABASE = 'database',
+  VALIDATION = 'validation',
+  SYNC = 'sync',
+  API = 'api',
+  SYSTEM = 'system'
 }
 
-// Write error to log file
-export const writeErrorToFile = (
-  functionName: string,
-  fileName: string,
-  error: Error,
-  functionParameters: any = {},
-  event?: any
+export enum ServiceName {
+  CLOB_INDEXER = 'clob-indexer',
+  CORE_CHAIN = 'core-chain',
+  SIDE_CHAIN = 'side-chain'
+}
+
+// Ensure logs directory exists
+const logsDir = path.join(process.cwd(), 'logs');
+if (!fs.existsSync(logsDir)) {
+  fs.mkdirSync(logsDir, { recursive: true });
+}
+
+// Simple structured logging without external dependencies for now
+// Enhanced event error logging with transaction context
+export const logEventError = (
+  error: Error, 
+  eventType: string,
+  txHash?: string, 
+  blockNumber?: bigint | number,
+  eventArgs?: any,
+  additionalContext?: any
 ) => {
-  const errorLogPath = join(process.cwd(), 'error-logs.json');
-  
-  const errorEntry: ErrorLogEntry = {
-    timestamp: new Date().toISOString(),
-    functionName,
-    fileName,
-    error: {
-      message: error.message,
-      stack: error.stack,
-      name: error.name
-    },
-    context: {
-      blockNumber: event?.block?.number,
-      transactionHash: event?.transaction?.hash,
-      eventArgs: event ? safeStringify(event.args) : undefined,
-      functionParameters: safeStringify(functionParameters)
-    }
-  };
-
-  let existingLogs: ErrorLogEntry[] = [];
-  
-  if (existsSync(errorLogPath)) {
-    try {
-      const fileContent = readFileSync(errorLogPath, 'utf8');
-      existingLogs = JSON.parse(fileContent);
-    } catch (parseError) {
-      console.error('Failed to parse existing error log file:', parseError);
-      existingLogs = [];
-    }
-  }
-
-  existingLogs.push(errorEntry);
-  
   try {
-    // Use a custom replacer function to handle BigInt serialization
-    const jsonString = JSON.stringify(existingLogs, (key, value) => {
-      if (typeof value === 'bigint') {
-        return value.toString();
+    const safeError = error || new Error('Unknown event error');
+    const errorInfo = {
+      level: 'ERROR',
+      service: 'clob-indexer',
+      label: 'event-handler',
+      eventType: eventType || 'unknown',
+      transaction: {
+        hash: txHash || 'unknown',
+        blockNumber: blockNumber?.toString() || 'unknown',
+      },
+      error: {
+        message: safeError.message,
+        name: safeError.name,
+        stack: safeError.stack?.split('\n').slice(0, 3).join('\n') || 'no stack',
+      },
+      eventData: eventArgs ? JSON.stringify(eventArgs).substring(0, 1000) : 'unavailable',
+      context: additionalContext || {},
+      timestamp: new Date().toISOString(),
+      processId: process.pid,
+    };
+
+    // Console output with emoji for visibility
+    const consoleMsg = `❌ [ERROR] Event: ${eventType} | TX: ${txHash} | Block: ${blockNumber} | ${safeError.message}`;
+    console.error(consoleMsg);
+
+    // File logging (non-blocking)
+    setImmediate(() => {
+      try {
+        const logLine = JSON.stringify(errorInfo) + '\n';
+        fs.appendFileSync(path.join(logsDir, 'events-error.log'), logLine);
+      } catch {
+        // File logging failed - ignore silently
       }
-      return value;
-    }, 2);
-    writeFileSync(errorLogPath, jsonString);
-  } catch (writeError) {
-    console.error('Failed to write error to log file:', writeError);
+    });
+  } catch {
+    try {
+      console.error(`[CRITICAL EVENT LOG FAILURE] ${eventType}:`, error?.message || 'Unknown error');
+    } catch {
+      // Complete failure - ignore
+    }
   }
 };
 
-// Helper to create a log function for a specific file and function
-export const createLogger = (fileName: string, functionName: string) => {
+// Log successful event processing
+export const logEventSuccess = (
+  eventType: string,
+  txHash?: string,
+  blockNumber?: bigint | number, 
+  processingTimeMs?: number,
+  eventArgs?: any
+) => {
+  try {
+    const eventInfo = {
+      level: 'INFO',
+      service: 'clob-indexer',
+      label: 'event-handler',
+      eventType: eventType || 'unknown',
+      transaction: {
+        hash: txHash || 'unknown',
+        blockNumber: blockNumber?.toString() || 'unknown',
+      },
+      performance: {
+        processingTimeMs: processingTimeMs || 0,
+      },
+      eventData: eventArgs ? JSON.stringify(eventArgs).substring(0, 500) : 'unavailable',
+      timestamp: new Date().toISOString(),
+    };
+
+    // Console output with emoji
+    const consoleMsg = `✅ [SUCCESS] Event: ${eventType} | TX: ${txHash} | Block: ${blockNumber}${processingTimeMs ? ` | ${processingTimeMs}ms` : ''}`;
+    console.log(consoleMsg);
+
+    setImmediate(() => {
+      try {
+        const logLine = JSON.stringify(eventInfo) + '\n';
+        fs.appendFileSync(path.join(logsDir, 'events-success.log'), logLine);
+      } catch {
+        // File logging failed - ignore
+      }
+    });
+  } catch {
+    try {
+      console.log(`[EVENT LOG FAILURE] ${eventType}`);
+    } catch {
+      // Ignore complete failure
+    }
+  }
+};
+
+// Log validation failures
+export const logValidationError = (
+  eventType: string,
+  reason: string,
+  blockNumber?: bigint | number,
+  blockHash?: string,
+  eventArgs?: any
+) => {
+  try {
+    const validationInfo = {
+      level: 'WARN',
+      service: 'clob-indexer',
+      label: 'validation',
+      eventType: eventType || 'unknown',
+      validationFailure: reason || 'unknown',
+      block: {
+        number: blockNumber?.toString() || 'unknown',
+        hash: blockHash || 'unknown',
+      },
+      eventData: eventArgs ? JSON.stringify(eventArgs).substring(0, 500) : 'unavailable',
+      timestamp: new Date().toISOString(),
+    };
+
+    // Console output with emoji
+    const consoleMsg = `⚠️ [VALIDATION] Event: ${eventType} | Reason: ${reason} | Block: ${blockNumber}`;
+    console.warn(consoleMsg);
+
+    setImmediate(() => {
+      try {
+        const logLine = JSON.stringify(validationInfo) + '\n';
+        fs.appendFileSync(path.join(logsDir, 'validation.log'), logLine);
+      } catch {
+        // File logging failed - ignore
+      }
+    });
+  } catch {
+    try {
+      console.warn(`[VALIDATION LOG FAILURE] ${eventType}: ${reason}`);
+    } catch {
+      // Ignore complete failure
+    }
+  }
+};
+
+// Log database operations
+export const logDatabaseOperation = (
+  operation: string,
+  tableName?: string,
+  recordCount?: number,
+  durationMs?: number,
+  error?: Error
+) => {
+  try {
+    const dbInfo = {
+      level: error ? 'ERROR' : 'DEBUG',
+      service: 'clob-indexer',
+      label: 'database',
+      database: {
+        operation: operation || 'unknown',
+        table: tableName || 'unknown',
+        recordCount: recordCount || 0,
+        durationMs: durationMs || 0,
+      },
+      error: error ? {
+        message: error.message,
+        name: error.name,
+        stack: error.stack?.split('\n').slice(0, 2).join('\n') || 'no stack',
+      } : null,
+      timestamp: new Date().toISOString(),
+    };
+
+    // Console output with emoji
+    const emoji = error ? '💀' : '🗃️';
+    const consoleMsg = `${emoji} [DB] ${operation} | Table: ${tableName} | Records: ${recordCount}${error ? ` | ERROR: ${error.message}` : ''}`;
+    
+    if (error) {
+      console.error(consoleMsg);
+    } else {
+      console.debug(consoleMsg);
+    }
+
+    setImmediate(() => {
+      try {
+        const logFile = error ? 'database-error.log' : 'database.log';
+        const logLine = JSON.stringify(dbInfo) + '\n';
+        fs.appendFileSync(path.join(logsDir, logFile), logLine);
+      } catch {
+        // File logging failed - ignore
+      }
+    });
+  } catch {
+    try {
+      console.log(`[DB LOG FAILURE] ${operation}`);
+    } catch {
+      // Ignore complete failure  
+    }
+  }
+};
+
+// General safe logging function (matching mm-bot structure)
+export const log = (
+  level: LogLevel,
+  message: string,
+  label: LogLabel,
+  serviceName: ServiceName,
+  data: any,
+  filename: string,
+  functionName: string,
+  timestamp?: string,
+  fileLoggingEnabled: boolean = true
+) => {
+  try {
+    const safeMessage = String(message || '').substring(0, 10000);
+    const safeData = data && typeof data === 'object' ? data : { value: String(data || '') };
+    const safeFunctionName = String(functionName || 'unknown').substring(0, 100);
+    const safeFilename = String(filename || 'unknown').substring(0, 100);
+
+    const logEntry = {
+      timestamp: timestamp || new Date().toISOString(),
+      level: level.toUpperCase(),
+      service: String(serviceName?.valueOf() || 'unknown'),
+      label: String(label?.valueOf() || 'general'),
+      filename: safeFilename,
+      function: safeFunctionName,
+      message: safeMessage,
+      data: safeData,
+    };
+
+    // Console output with emojis for visibility (matching mm-bot format)
+    const emoji = level === LogLevel.ERROR ? '❌' : level === LogLevel.WARN ? '⚠️' : level === LogLevel.INFO ? 'ℹ️' : '🔍';
+    const consoleMessage = `${emoji} [${level.toUpperCase()}] [${serviceName}/${label}] ${safeFilename}:${safeFunctionName}() - ${safeMessage}`;
+    
+    try {
+      switch (level) {
+        case LogLevel.DEBUG:
+          console.debug(consoleMessage);
+          break;
+        case LogLevel.INFO:
+          console.log(consoleMessage);
+          break;
+        case LogLevel.WARN:
+          console.warn(consoleMessage);
+          break;
+        case LogLevel.ERROR:
+          console.error(consoleMessage);
+          break;
+        default:
+          console.log(consoleMessage);
+      }
+    } catch {
+      console.log(`[LOG ERROR] ${safeMessage}`);
+    }
+
+    // File logging (non-blocking) - only if enabled
+    if (fileLoggingEnabled) {
+      setImmediate(() => {
+        try {
+          const logFile = level === LogLevel.ERROR ? 'general-error.log' : 'general.log';
+          const logLine = JSON.stringify(logEntry) + '\n';
+          fs.appendFileSync(path.join(logsDir, logFile), logLine);
+        } catch {
+          // File logging failed - ignore silently
+        }
+      });
+    }
+  } catch {
+    try {
+      console.log(`[CRITICAL LOG ERROR] ${message}`);
+    } catch {
+      // Complete logging failure - ignore
+    }
+  }
+};
+
+// Helper function to create logging functions with pre-filled filename
+export const createLogger = (filename: string, serviceName: ServiceName = ServiceName.CORE_CHAIN) => {
   return {
-    // For functions with event context
-    log: (event: any, step: string) => formatLogPrefix(event, fileName, functionName, step),
-    // For functions without event context
-    logSimple: (blockNumber: number | undefined, step: string) => formatLogPrefixSimple(blockNumber, fileName, functionName, step),
-    // For error logging
-    writeError: (error: Error, functionParameters: any = {}, event?: any) => 
-      writeErrorToFile(functionName, fileName, error, functionParameters, event)
+    debug: (message: string, label: LogLabel, functionName: string, data?: any) =>
+      log(LogLevel.DEBUG, message, label, serviceName, data || {}, filename, functionName),
+    
+    info: (message: string, label: LogLabel, functionName: string, data?: any) =>
+      log(LogLevel.INFO, message, label, serviceName, data || {}, filename, functionName),
+    
+    warn: (message: string, label: LogLabel, functionName: string, data?: any) =>
+      log(LogLevel.WARN, message, label, serviceName, data || {}, filename, functionName),
+    
+    error: (message: string, label: LogLabel, functionName: string, data?: any) =>
+      log(LogLevel.ERROR, message, label, serviceName, data || {}, filename, functionName),
   };
+};
+
+export default {
+  logEventError,
+  logEventSuccess,
+  logValidationError,
+  logDatabaseOperation,
+  log,
+  createLogger,
+  LogLevel,
+  LogLabel,
+  ServiceName
 };

@@ -6,12 +6,16 @@ import { ERC20ABI } from "../../abis/ERC20";
 import { createPoolCacheKey, setChainCachedData } from "../utils/redis";
 import { executeIfInSync } from "../utils/syncState";
 import { pushMiniTicker } from "../websocket/broadcaster";
+import { createLogger, LogLabel } from "../utils/logger";
 
 const REDIS_CACHE_TTL = parseInt(process.env.REDIS_CACHE_TTL || '2147483647');
 const USE_RAW_SQL = process.env.USE_RAW_SQL === 'true';
 const USE_STATIC_TOKEN_DATA = process.env.USE_STATIC_TOKEN_DATA !== 'false';
 
 dotenv.config();
+
+// Create logger instance for this file
+const logger = createLogger('poolManagerHandler.ts');
 
 // Static token data mapping for core chain tokens to avoid RPC calls
 const STATIC_TOKEN_DATA: Record<string, { symbol: string; name: string; decimals: number }> = {
@@ -55,10 +59,10 @@ async function fetchTokenData(client: any, address: string) {
 		const normalizedAddress = address.toLowerCase();
 		const staticData = STATIC_TOKEN_DATA[normalizedAddress];
 
-		console.log(`Fetching token data for ${address}: ${staticData ? 'Using static data' : 'Using RPC call'}`);
+		logger.debug(`Fetching token data for ${address}: ${staticData ? 'Using static data' : 'Using RPC call'}`, LogLabel.API, 'fetchTokenData', { address, useStatic: !!staticData });
 
 		if (staticData) {
-			console.log(`Using static token data for ${address}: ${staticData.symbol}`);
+			logger.debug(`Using static token data for ${address}: ${staticData.symbol}`, LogLabel.API, 'fetchTokenData', { address, symbol: staticData.symbol });
 			return staticData;
 		}
 	}
@@ -104,7 +108,7 @@ async function safeReadContract(client: any, address: string, functionName: stri
 			blockTag: "latest"
 		});
 	} catch (e) {
-		console.error(`Failed to get ${functionName} for ${address}:`, e);
+		logger.error(`Failed to get ${functionName} for ${address}`, LogLabel.API, 'safeReadContract', { address, functionName, error: e instanceof Error ? e.message : String(e) });
 		return functionName === "decimals" ? 18 : "";
 	}
 }

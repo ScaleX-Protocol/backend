@@ -1,6 +1,10 @@
 import { createCurrencyId } from "@/utils";
 import { currencies, tokenMappings } from "ponder:schema";
 import { ERC20ABI } from "../../abis/ERC20";
+import { createLogger, LogLabel } from "../utils/logger";
+
+// Create logger instance for this file
+const logger = createLogger('tokenRegistryHandler.ts');
 
 // Helper function to fetch token data from blockchain
 async function fetchTokenData(client: any, address: string) {
@@ -45,7 +49,7 @@ async function safeReadContract(client: any, address: string, functionName: stri
 			blockTag: "latest"
 		});
 	} catch (e) {
-		console.error(`Failed to get ${functionName} for ${address}:`, e);
+		logger.error(`Failed to get ${functionName} for ${address}`, LogLabel.API, 'safeReadContract', { address, functionName, error: e instanceof Error ? e.message : String(e) });
 		return functionName === "decimals" ? 18 : "";
 	}
 }
@@ -109,9 +113,9 @@ async function insertCurrency(context: any, chainId: number, address: string, da
 				registeredAt: data.registeredAt || Math.floor(Date.now() / 1000),
 			});
 
-		console.log(`✅ Recorded currency: ${data.symbol} (${address}) on chain ${chainId} [${data.tokenType || "underlying"}]`);
+		logger.info(`Recorded currency: ${data.symbol} (${address}) on chain ${chainId} [${data.tokenType || "underlying"}]`, LogLabel.DATABASE, 'insertCurrency', { symbol: data.symbol, address, chainId, tokenType: data.tokenType });
 	} catch (error) {
-		console.error(`❌ Failed to record currency ${data.symbol}:`, error);
+		logger.error(`Failed to record currency ${data.symbol}`, LogLabel.DATABASE, 'insertCurrency', { symbol: data.symbol, error: error instanceof Error ? error.message : String(error) });
 	}
 }
 
@@ -169,7 +173,7 @@ export async function handleTokenMappingRegistered({ event, context }: any) {
 					blockNumber: BigInt(event.block.number),
 					timestamp: timestamp,
 				});
-			console.log(`✅ Stored/updated token mapping: ${symbol} from chain ${sourceChainId} to ${targetChainId}`);
+			logger.info(`Stored/updated token mapping: ${symbol} from chain ${sourceChainId} to ${targetChainId}`, LogLabel.DATABASE, 'handleTokenMappingRegistered', { symbol, sourceChainId, targetChainId });
 
 			// Fetch actual token data from blockchain for source token
 			const sourceTokenData = await fetchTokenData(client, sourceToken);
@@ -193,11 +197,11 @@ export async function handleTokenMappingRegistered({ event, context }: any) {
 			});
 
 		} catch (error) {
-			console.error('Token mapping insertion failed:', error);
+			logger.error('Token mapping insertion failed', LogLabel.DATABASE, 'handleTokenMappingRegistered', { error: error instanceof Error ? error.message : String(error) });
 			throw new Error(`Failed to insert token mapping: ${(error as Error).message}`);
 		}
 	} catch (error) {
-		console.error('TokenMappingRegistered handler error:', error);
+		logger.error('TokenMappingRegistered handler error', LogLabel.EVENT_HANDLER, 'handleTokenMappingRegistered', { error: error instanceof Error ? error.message : String(error) });
 		throw error;
 	}
 }
@@ -216,7 +220,7 @@ export async function handleTokenMappingUpdated({ event, context }: any) {
 		const targetChainIdNum = Number(targetChainId);
 
 		if (!shouldProcessTokenMapping(sourceChainIdNum, targetChainIdNum)) {
-			console.log(`⏭️  Skipping cross-chain token mapping update: from chain ${sourceChainId} to ${targetChainId} (filtered out)`);
+			logger.debug(`Skipping cross-chain token mapping update: from chain ${sourceChainId} to ${targetChainId} (filtered out)`, LogLabel.VALIDATION, 'handleTokenMappingUpdated', { sourceChainId, targetChainId });
 			return; // Skip processing cross-chain mappings
 		}
 
@@ -235,16 +239,16 @@ export async function handleTokenMappingUpdated({ event, context }: any) {
 						blockNumber: BigInt(event.block.number),
 						timestamp: timestamp,
 					});
-				console.log(`✅ Updated token mapping: ${id} -> new synthetic: ${newSynthetic}`);
+				logger.info(`Updated token mapping: ${id} -> new synthetic: ${newSynthetic}`, LogLabel.DATABASE, 'handleTokenMappingUpdated', { id, newSynthetic });
 			} else {
-				console.log(`⚠️ Token mapping not found for update: ${id}`);
+				logger.warn(`Token mapping not found for update: ${id}`, LogLabel.DATABASE, 'handleTokenMappingUpdated', { id });
 			}
 		} catch (error) {
-			console.error('Token mapping update failed:', error);
+			logger.error('Token mapping update failed', LogLabel.DATABASE, 'handleTokenMappingUpdated', { error: error instanceof Error ? error.message : String(error) });
 			throw new Error(`Failed to update token mapping: ${(error as Error).message}`);
 		}
 	} catch (error) {
-		console.error('TokenMappingUpdated handler error:', error);
+		logger.error('TokenMappingUpdated handler error', LogLabel.EVENT_HANDLER, 'handleTokenMappingUpdated', { error: error instanceof Error ? error.message : String(error) });
 		throw error;
 	}
 }
@@ -263,7 +267,7 @@ export async function handleTokenMappingRemoved({ event, context }: any) {
 		const targetChainIdNum = Number(targetChainId);
 
 		if (!shouldProcessTokenMapping(sourceChainIdNum, targetChainIdNum)) {
-			console.log(`⏭️  Skipping cross-chain token mapping removal: from chain ${sourceChainId} to ${targetChainId} (filtered out)`);
+			logger.debug(`Skipping cross-chain token mapping removal: from chain ${sourceChainId} to ${targetChainId} (filtered out)`, LogLabel.VALIDATION, 'handleTokenMappingRemoved', { sourceChainId, targetChainId });
 			return; // Skip processing cross-chain mappings
 		}
 
@@ -282,16 +286,16 @@ export async function handleTokenMappingRemoved({ event, context }: any) {
 						blockNumber: BigInt(event.block.number),
 						timestamp: timestamp,
 					});
-				console.log(`✅ Deactivated token mapping: ${id}`);
+				logger.info(`Deactivated token mapping: ${id}`, LogLabel.DATABASE, 'handleTokenMappingRemoved', { id });
 			} else {
-				console.log(`⚠️ Token mapping not found for removal: ${id}`);
+				logger.warn(`Token mapping not found for removal: ${id}`, LogLabel.DATABASE, 'handleTokenMappingRemoved', { id });
 			}
 		} catch (error) {
-			console.error('Token mapping removal failed:', error);
+			logger.error('Token mapping removal failed', LogLabel.DATABASE, 'handleTokenMappingRemoved', { error: error instanceof Error ? error.message : String(error) });
 			throw new Error(`Failed to remove token mapping: ${(error as Error).message}`);
 		}
 	} catch (error) {
-		console.error('TokenMappingRemoved handler error:', error);
+		logger.error('TokenMappingRemoved handler error', LogLabel.EVENT_HANDLER, 'handleTokenMappingRemoved', { error: error instanceof Error ? error.message : String(error) });
 		throw error;
 	}
 }
@@ -320,16 +324,16 @@ export async function handleTokenStatusChanged({ event, context }: any) {
 						blockNumber: BigInt(event.block.number),
 						timestamp: timestamp,
 					});
-				console.log(`✅ Updated token mapping status: ${id} -> ${isActive ? 'ACTIVE' : 'INACTIVE'}`);
+				logger.info(`Updated token mapping status: ${id} -> ${isActive ? 'ACTIVE' : 'INACTIVE'}`, LogLabel.DATABASE, 'handleTokenStatusChanged', { id, isActive });
 			} else {
-				console.log(`⚠️ Token mapping not found for status change: ${id}`);
+				logger.warn(`Token mapping not found for status change: ${id}`, LogLabel.DATABASE, 'handleTokenStatusChanged', { id });
 			}
 		} catch (error) {
-			console.error('Token mapping status update failed:', error);
+			logger.error('Token mapping status update failed', LogLabel.DATABASE, 'handleTokenStatusChanged', { error: error instanceof Error ? error.message : String(error) });
 			throw new Error(`Failed to update token mapping status: ${(error as Error).message}`);
 		}
 	} catch (error) {
-		console.error('TokenStatusChanged handler error:', error);
+		logger.error('TokenStatusChanged handler error', LogLabel.EVENT_HANDLER, 'handleTokenStatusChanged', { error: error instanceof Error ? error.message : String(error) });
 		throw error;
 	}
 }
@@ -339,9 +343,9 @@ export async function handleOwnershipTransferred({ event, context }: any) {
 		const { previousOwner, newOwner } = event.args;
 		const chainId = context.network.chainId;
 
-		console.log(`TokenRegistry ownership transferred on chain ${chainId}: ${previousOwner} -> ${newOwner} at block ${event.block.number}`);
+		logger.info(`TokenRegistry ownership transferred on chain ${chainId}: ${previousOwner} -> ${newOwner} at block ${event.block.number}`, LogLabel.SYSTEM, 'handleOwnershipTransferred', { chainId, previousOwner, newOwner, blockNumber: event.block.number });
 	} catch (error) {
-		console.error('OwnershipTransferred handler error:', error);
+		logger.error('OwnershipTransferred handler error', LogLabel.EVENT_HANDLER, 'handleOwnershipTransferred', { error: error instanceof Error ? error.message : String(error) });
 		throw error;
 	}
 }
@@ -351,9 +355,9 @@ export async function handleInitialized({ event, context }: any) {
 		const { version } = event.args;
 		const chainId = context.network.chainId;
 
-		console.log(`TokenRegistry initialized on chain ${chainId} with version ${version} at block ${event.block.number}`);
+		logger.info(`TokenRegistry initialized on chain ${chainId} with version ${version} at block ${event.block.number}`, LogLabel.SYSTEM, 'handleInitialized', { chainId, version, blockNumber: event.block.number });
 	} catch (error) {
-		console.error('Initialized handler error:', error);
+		logger.error('Initialized handler error', LogLabel.EVENT_HANDLER, 'handleInitialized', { error: error instanceof Error ? error.message : String(error) });
 		throw error;
 	}
 }

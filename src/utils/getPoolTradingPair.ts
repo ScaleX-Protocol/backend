@@ -2,8 +2,12 @@ import { eq } from "ponder";
 import { pools } from "../../ponder.schema";
 import { createPoolCacheKey, getChainCachedData, setChainCachedData } from "./redis";
 import { validatePoolId } from "./validation";
+import { createLogger, LogLabel } from "./logger";
 import * as fs from "node:fs";
 import * as path from "node:path";
+
+// Create logger instance for this file
+const logger = createLogger('getPoolTradingPair.ts');
 
 type PoolData = {
   id: string;
@@ -33,7 +37,7 @@ const loadStaticPoolData = () => {
         STATIC_POOL_DATA = { data: { poolss: { items: [] } } };
       }
     } catch (error) {
-      console.error('Error loading pool data from file:', error);
+      logger.error('Error loading pool data from file', LogLabel.SYSTEM, 'loadStaticPoolData', { error: error instanceof Error ? error.message : String(error) });
       STATIC_POOL_DATA = { data: { poolss: { items: [] } } };
     }
   }

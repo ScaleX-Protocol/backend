@@ -4,8 +4,12 @@ import { createBalanceId } from "@/utils";
 import { getAddress } from "viem";
 import { executeIfInSync } from "../utils/syncState";
 import { getEventPublisher } from "@/events/index";
+import { createLogger, LogLabel } from "../utils/logger";
 
 dotenv.config();
+
+// Create logger instance for this file
+const logger = createLogger('balanceManagerHandler.ts');
 
 async function upsertUserForDeposit(db: any, chainId: number, user: string, timestamp: number) {
 	const userId = `${chainId}-${user}`;
@@ -61,7 +65,7 @@ async function fetchAndPushBalance(context: any, balanceId: string, timestamp: n
 					timestamp: timestamp.toString()
 				});
 			} catch (error) {
-				console.error('Failed to publish balance update event:', error);
+				logger.error('Failed to publish balance update event', LogLabel.EVENT_HANDLER, 'fetchAndPushBalance', { error: error instanceof Error ? error.message : String(error), balanceId });
 			}
 
 		}

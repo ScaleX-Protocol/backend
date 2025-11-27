@@ -1,7 +1,11 @@
 import dotenv from "dotenv";
 import { getCachedData } from "./redis";
+import { createLogger, LogLabel } from "./logger";
 
 dotenv.config();
+
+// Create logger instance for this file
+const logger = createLogger('syncState.ts');
 
 let cachedEnabledBlockNumber: number | null = null;
 
@@ -19,7 +23,7 @@ export const shouldEnableWebSocket = async (currentBlockNumber: number, callerFu
 
         return currentBlockNumber >= enabledBlockNumber;
     } catch (error) {
-        console.error('Error checking WebSocket enable status:', error);
+        logger.error('Error checking WebSocket enable status', LogLabel.SYSTEM, 'shouldEnableWebSocket', { error: error instanceof Error ? error.message : String(error), currentBlockNumber, callerFunction });
         return false;
     }
 };

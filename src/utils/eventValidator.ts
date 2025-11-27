@@ -1,3 +1,8 @@
+import { createLogger, LogLabel } from './logger';
+
+// Create logger instance for this file
+const logger = createLogger('eventValidator.ts');
+
 /**
  * Validates event has required transaction data before executing handler
  * @param handler - The actual event handler function
@@ -6,39 +11,66 @@
  */
 export function withEventValidator(handler: Function, eventType: string) {
   return async (context: any) => {
+    const startTime = Date.now();
     const { event } = context;
 
     // Validate required transaction data
     if (!event.transaction?.hash) {
-      console.error(`SKIPPED: Missing transaction hash for ${eventType} event`, {
-        blockNumber: event.block?.number,
-        blockHash: event.block?.hash,
-        logIndex: event.logIndex,
-        eventArgs: event.args,
-        timestamp: new Date().toISOString()
-      });
+      logger.warn(
+        `Event validation failed: Missing transaction hash`,
+        LogLabel.VALIDATION,
+        'withEventValidator',
+        {
+          eventType,
+          blockNumber: event.block?.number,
+          blockHash: event.block?.hash,
+          logIndex: event.logIndex,
+          eventArgs: event.args
+        }
+      );
       return;
     }
 
     if (!event.block?.number) {
-      console.error(`SKIPPED: Missing block number for ${eventType} event`, {
-        txHash: event.transaction.hash,
-        blockHash: event.block?.hash,
-        logIndex: event.logIndex,
-        eventArgs: event.args,
-        timestamp: new Date().toISOString()
-      });
+      logger.warn(
+        `Event validation failed: Missing block number`,
+        LogLabel.VALIDATION,
+        'withEventValidator',
+        {
+          eventType,
+          txHash: event.transaction.hash,
+          blockHash: event.block?.hash,
+          logIndex: event.logIndex,
+          eventArgs: event.args
+        }
+      );
       return;
     }
 
     // Execute the actual handler if validation passes
     try {
       await handler(context);
+      
+      // Log successful processing
+      const processingTime = Date.now() - startTime;
+      logger.debug(
+        `Event processed successfully`,
+        LogLabel.EVENT_HANDLER,
+        'withEventValidator',
+        {
+          eventType,
+          txHash: event.transaction.hash,
+          blockNumber: event.block.number,
+          processingTimeMs: processingTime
+        }
+      );
     } catch (error) {
       const errorInfo = {
+        eventType,
         txHash: event.transaction.hash,
         blockNumber: event.block.number,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        eventArgs: event.args
       };
 
       // Check if this is a database shutdown/connection error
@@ -47,7 +79,18 @@ export function withEventValidator(handler: Function, eventType: string) {
         error.message.includes('Connection terminated') ||
         error.message.includes('database connection')
       )) {
-        console.error(`💀 FATAL: Database connection error in ${eventType} handler:`, error.message, errorInfo);
+        logger.error(
+          `FATAL: Database connection error - ${error.message}`,
+          LogLabel.DATABASE,
+          'withEventValidator',
+          {
+            ...errorInfo,
+            errorType: 'DatabaseConnection',
+            errorMessage: error.message,
+            stack: error.stack?.split('\n').slice(0, 3).join('\n')
+          }
+        );
+        throw error; // Re-throw database errors as they need immediate attention
       }
 
       // For business logic errors, log but don't crash the indexer
@@ -56,14 +99,33 @@ export function withEventValidator(handler: Function, eventType: string) {
         error.message.includes('duplicate key') ||
         error.message.includes('constraint')
       )) {
-        console.error(`⚠️  BUSINESS LOGIC ERROR in ${eventType} handler (event skipped):`, error.message, errorInfo);
+        logger.warn(
+          `Business logic error - event skipped: ${error.message}`,
+          LogLabel.EVENT_HANDLER,
+          'withEventValidator',
+          {
+            ...errorInfo,
+            errorType: 'BusinessLogic',
+            errorMessage: error.message,
+            action: 'event_skipped'
+          }
+        );
         return; // Skip this event but continue processing others
       }
 
       // For unknown errors, log with full context and re-throw
-      console.error(`❌ ERROR in ${eventType} handler:`, error, errorInfo);
-
-      // TODO :: Store error
+      logger.error(
+        `Unknown error in event handler: ${error instanceof Error ? error.message : String(error)}`,
+        LogLabel.EVENT_HANDLER,
+        'withEventValidator',
+        {
+          ...errorInfo,
+          errorType: 'Unknown',
+          errorMessage: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack?.split('\n').slice(0, 5).join('\n') : 'no stack'
+        }
+      );
+      throw error;
     }
   };
 }

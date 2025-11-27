@@ -1,5 +1,6 @@
 import { getEventPublisher } from "@/events/index";
 import dotenv from "dotenv";
+import { createLogger, LogLabel } from "../utils/logger";
 import {
   chainBalanceDeposits,
   chainBalanceStates,
@@ -10,6 +11,9 @@ import {
 } from "ponder:schema";
 
 dotenv.config();
+
+// Create logger instance for this file
+const logger = createLogger('chainBalanceManagerHandler.ts');
 
 // Helper function to publish chain balance events
 async function publishChainBalanceEvent(
@@ -36,7 +40,7 @@ async function publishChainBalanceEvent(
       blockNumber
     });
   } catch (error) {
-    console.error('Failed to publish chain balance event:', error);
+    logger.error('Failed to publish chain balance event', LogLabel.EVENT_HANDLER, 'publishChainBalanceEvent', { error: error instanceof Error ? error.message : String(error), eventType, user, token, amount: amount.toString() });
   }
 }
 
@@ -67,7 +71,7 @@ export async function handleDeposit({ event, context }: any) {
         blockNumber: event.block.number.toString(),
       });
     } catch (error) {
-      console.error('Deposit insertion failed:', error);
+      logger.error('Deposit insertion failed', LogLabel.DATABASE, 'handleDeposit', { error: error instanceof Error ? error.message : String(error) });
       throw new Error(`Failed to insert deposit: ${(error as Error).message}`);
     }
 
@@ -104,9 +108,9 @@ export async function handleDeposit({ event, context }: any) {
         status: "PENDING",
       });
 
-      console.log(`✅ Created transfer record from deposit: ${transferId}`);
+      logger.info(`Created transfer record from deposit: ${transferId}`, LogLabel.DATABASE, 'handleDeposit', { transferId });
     } catch (error) {
-      console.error('Cross-chain transfer creation failed:', error);
+      logger.warn('Cross-chain transfer creation failed', LogLabel.DATABASE, 'handleDeposit', { error: error instanceof Error ? error.message : String(error) });
       // Don't throw error here as it's not critical for deposit processing
     }
 
@@ -140,7 +144,7 @@ export async function handleDeposit({ event, context }: any) {
         });
       }
     } catch (error) {
-      console.error('Balance state update failed:', error);
+      logger.error('Balance state update failed', LogLabel.DATABASE, 'handleDeposit', { error: error instanceof Error ? error.message : String(error) });
       throw new Error(`Failed to update balance state for deposit: ${(error as Error).message}`);
     }
 
@@ -157,10 +161,10 @@ export async function handleDeposit({ event, context }: any) {
         event.block.number.toString()
       );
     } catch (error) {
-      console.error('Failed to publish deposit event:', error);
+      logger.error('Failed to publish deposit event', LogLabel.EVENT_HANDLER, 'handleDeposit', { error: error instanceof Error ? error.message : String(error) });
     }
   } catch (error) {
-    console.error('Deposit handler error:', error);
+    logger.error('Deposit handler error', LogLabel.EVENT_HANDLER, 'handleDeposit', { error: error instanceof Error ? error.message : String(error) });
     throw error;
   }
 }
@@ -193,7 +197,7 @@ export async function handleWithdraw({ event, context }: any) {
         withdrawalType: 'withdraw', // Traditional seamless withdrawal
       });
     } catch (error) {
-      console.error('Withdrawal insertion failed:', error);
+      logger.error('Withdrawal insertion failed', LogLabel.DATABASE, 'handleWithdraw', { error: error instanceof Error ? error.message : String(error) });
       throw new Error(`Failed to insert withdrawal: ${(error as Error).message}`);
     }
 
@@ -214,7 +218,7 @@ export async function handleWithdraw({ event, context }: any) {
           });
       }
     } catch (error) {
-      console.error('Balance state update failed:', error);
+      logger.error('Balance state update failed', LogLabel.DATABASE, 'handleWithdraw', { error: error instanceof Error ? error.message : String(error) });
       throw new Error(`Failed to update balance state for withdraw: ${(error as Error).message}`);
     }
 
@@ -231,10 +235,10 @@ export async function handleWithdraw({ event, context }: any) {
         block.number.toString()
       );
     } catch (error) {
-      console.error('Failed to publish withdraw event:', error);
+      logger.error('Failed to publish withdraw event', LogLabel.EVENT_HANDLER, 'handleWithdraw', { error: error instanceof Error ? error.message : String(error) });
     }
   } catch (error) {
-    console.error('Withdraw handler error:', error);
+    logger.error('Withdraw handler error', LogLabel.EVENT_HANDLER, 'handleWithdraw', { error: error instanceof Error ? error.message : String(error) });
     throw error;
   }
 }
@@ -266,7 +270,7 @@ export async function handleUnlock({ event, context }: any) {
         blockNumber: block.number.toString(),
       });
     } catch (error) {
-      console.error('Unlock insertion failed:', error);
+      logger.error('Unlock insertion failed', LogLabel.DATABASE, 'handleUnlock', { error: error instanceof Error ? error.message : String(error) });
       throw new Error(`Failed to insert unlock: ${(error as Error).message}`);
     }
 
@@ -288,7 +292,7 @@ export async function handleUnlock({ event, context }: any) {
           });
       }
     } catch (error) {
-      console.error('Balance state update failed:', error);
+      logger.error('Balance state update failed', LogLabel.DATABASE, 'handleUnlock', { error: error instanceof Error ? error.message : String(error) });
       throw new Error(`Failed to update balance state for unlock: ${(error as Error).message}`);
     }
 
@@ -305,10 +309,10 @@ export async function handleUnlock({ event, context }: any) {
         block.number.toString()
       );
     } catch (error) {
-      console.error('Failed to publish unlock event:', error);
+      logger.error('Failed to publish unlock event', LogLabel.EVENT_HANDLER, 'handleUnlock', { error: error instanceof Error ? error.message : String(error) });
     }
   } catch (error) {
-    console.error('Unlock handler error:', error);
+    logger.error('Unlock handler error', LogLabel.EVENT_HANDLER, 'handleUnlock', { error: error instanceof Error ? error.message : String(error) });
     throw error;
   }
 }
@@ -341,7 +345,7 @@ export async function handleClaim({ event, context }: any) {
         withdrawalType: 'claim', // User-initiated claim
       });
     } catch (error) {
-      console.error('Claim insertion failed:', error);
+      logger.error('Claim insertion failed', LogLabel.DATABASE, 'handleClaim', { error: error instanceof Error ? error.message : String(error) });
       throw new Error(`Failed to insert claim: ${(error as Error).message}`);
     }
 
@@ -362,7 +366,7 @@ export async function handleClaim({ event, context }: any) {
           });
       }
     } catch (error) {
-      console.error('Balance state update failed:', error);
+      logger.error('Balance state update failed', LogLabel.DATABASE, 'handleClaim', { error: error instanceof Error ? error.message : String(error) });
       throw new Error(`Failed to update balance state for claim: ${(error as Error).message}`);
     }
 
@@ -379,10 +383,10 @@ export async function handleClaim({ event, context }: any) {
         block.number.toString()
       );
     } catch (error) {
-      console.error('Failed to publish claim event:', error);
+      logger.error('Failed to publish claim event', LogLabel.EVENT_HANDLER, 'handleClaim', { error: error instanceof Error ? error.message : String(error) });
     }
   } catch (error) {
-    console.error('Claim handler error:', error);
+    logger.error('Claim handler error', LogLabel.EVENT_HANDLER, 'handleClaim', { error: error instanceof Error ? error.message : String(error) });
     throw error;
   }
 }
@@ -412,11 +416,11 @@ export async function handleTokenWhitelisted({ event, context }: any) {
         action: 'added',
       });
     } catch (error) {
-      console.error('Token whitelist insertion failed:', error);
+      logger.error('Token whitelist insertion failed', LogLabel.DATABASE, 'handleTokenWhitelisted', { error: error instanceof Error ? error.message : String(error) });
       throw new Error(`Failed to insert token whitelist: ${(error as Error).message}`);
     }
   } catch (error) {
-    console.error('TokenWhitelisted handler error:', error);
+    logger.error('TokenWhitelisted handler error', LogLabel.EVENT_HANDLER, 'handleTokenWhitelisted', { error: error instanceof Error ? error.message : String(error) });
     throw error;
   }
 }
@@ -446,11 +450,11 @@ export async function handleTokenRemoved({ event, context }: any) {
         action: 'removed',
       });
     } catch (error) {
-      console.error('Token removal insertion failed:', error);
+      logger.error('Token removal insertion failed', LogLabel.DATABASE, 'handleTokenRemoved', { error: error instanceof Error ? error.message : String(error) });
       throw new Error(`Failed to insert token removal: ${(error as Error).message}`);
     }
   } catch (error) {
-    console.error('TokenRemoved handler error:', error);
+    logger.error('TokenRemoved handler error', LogLabel.EVENT_HANDLER, 'handleTokenRemoved', { error: error instanceof Error ? error.message : String(error) });
     throw error;
   }
 }
@@ -460,9 +464,9 @@ export async function handleOwnershipTransferred({ event, context }: any) {
     const { previousOwner, newOwner } = event.args;
     const chainId = context.network.chainId;
 
-    console.log(`ChainBalanceManager ownership transferred on chain ${chainId}: ${previousOwner} -> ${newOwner} at block ${event.block.number}`);
+    logger.info(`ChainBalanceManager ownership transferred on chain ${chainId}: ${previousOwner} -> ${newOwner} at block ${event.block.number}`, LogLabel.SYSTEM, 'handleOwnershipTransferred', { chainId, previousOwner, newOwner, blockNumber: event.block.number });
   } catch (error) {
-    console.error('OwnershipTransferred handler error:', error);
+    logger.error('OwnershipTransferred handler error', LogLabel.EVENT_HANDLER, 'handleOwnershipTransferred', { error: error instanceof Error ? error.message : String(error) });
     throw error;
   }
 }
@@ -472,9 +476,9 @@ export async function handleInitialized({ event, context }: any) {
     const { version } = event.args;
     const chainId = context.network.chainId;
 
-    console.log(`ChainBalanceManager initialized on chain ${chainId} with version ${version} at block ${event.block.number}`);
+    logger.info(`ChainBalanceManager initialized on chain ${chainId} with version ${version} at block ${event.block.number}`, LogLabel.SYSTEM, 'handleInitialized', { chainId, version, blockNumber: event.block.number });
   } catch (error) {
-    console.error('Initialized handler error:', error);
+    logger.error('Initialized handler error', LogLabel.EVENT_HANDLER, 'handleInitialized', { error: error instanceof Error ? error.message : String(error) });
     throw error;
   }
 }

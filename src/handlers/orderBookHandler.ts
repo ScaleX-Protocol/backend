@@ -1,5 +1,6 @@
 import { getEventPublisher } from "@/events/index";
 import { OrderMatchedEventArgs, OrderPlacedEventArgs } from "@/types";
+import { createLogger, LogLabel } from "../utils/logger";
 import {
   createDepthData,
   createOrderData,
@@ -39,6 +40,9 @@ import {
 } from "ponder:schema";
 
 dotenv.config();
+
+// Create logger instance for this file
+const logger = createLogger('orderBookHandler.ts');
 
 async function upsertUserForOrder(db: any, chainId: number, user: string, timestamp: number, volume: bigint) {
 	const userId = `${chainId}-${user}`;
@@ -114,7 +118,7 @@ async function publishOrderEvent(order: any, symbol: string, timestamp: number, 
       executionType: executionType
     });
   } catch (error) {
-    console.error('Failed to publish order event:', error);
+    logger.error('Failed to publish order event', LogLabel.EVENT_HANDLER, 'publishOrderEvent', { error: error instanceof Error ? error.message : String(error), orderId: order.orderId, symbol });
   }
 }
 
@@ -134,7 +138,7 @@ async function publishTradeEvent(symbol: string, price: string, quantity: string
       makerOrderId: makerOrderId
     });
   } catch (error) {
-    console.error('Failed to publish trade event:', error);
+    logger.error('Failed to publish trade event', LogLabel.EVENT_HANDLER, 'publishTradeEvent', { error: error instanceof Error ? error.message : String(error), symbol, tradeId, orderId });
   }
 }
 
@@ -149,7 +153,7 @@ async function publishDepthEvent(symbol: string, bids: any[], asks: any[], times
       timestamp: timestamp.toString()
     });
   } catch (error) {
-    console.error('Failed to publish depth event:', error);
+    logger.error('Failed to publish depth event', LogLabel.EVENT_HANDLER, 'publishDepthEvent', { error: error instanceof Error ? error.message : String(error), symbol });
   }
 }
 
@@ -170,7 +174,7 @@ async function publishKlineEvent(symbol: string, interval: string, klinePayload:
       trades: klinePayload.n.toString()
     });
   } catch (error) {
-    console.error('Failed to publish kline event:', error);
+    logger.error('Failed to publish kline event', LogLabel.EVENT_HANDLER, 'publishKlineEvent', { error: error instanceof Error ? error.message : String(error), symbol, interval });
   }
 }
 
@@ -221,7 +225,7 @@ export async function handleOrderPlaced({ event, context }: any) {
     try {
       await insertOrder(db, orderData);
     } catch (error) {
-      console.error('Order insertion failed:', error);
+      logger.error('Order insertion failed', LogLabel.DATABASE, 'handleOrderPlaced', { error: error instanceof Error ? error.message : String(error) });
       throw new Error(`Failed to insert order: ${(error as Error).message}`);
     }
 
@@ -235,7 +239,7 @@ export async function handleOrderPlaced({ event, context }: any) {
     try {
       await upsertOrderHistory(db, historyData);
     } catch (error) {
-      console.error('Order history upsert failed:', error);
+      logger.error('Order history upsert failed', LogLabel.DATABASE, 'handleOrderPlaced', { error: error instanceof Error ? error.message : String(error) });
       throw new Error(`Failed to upsert order history: ${(error as Error).message}`);
     }
 
@@ -244,14 +248,14 @@ export async function handleOrderPlaced({ event, context }: any) {
     try {
       depthData = createDepthData(chainId, depthId, poolAddress, side, price, quantity, timestamp);
     } catch (error) {
-      console.error('Depth data creation failed:', error);
+      logger.error('Depth data creation failed', LogLabel.VALIDATION, 'handleOrderPlaced', { error: error instanceof Error ? error.message : String(error) });
       throw new Error(`Failed to create depth data: ${(error as Error).message}`);
     }
 
     try {
       await insertOrderBookDepth(db, depthData);
     } catch (error) {
-      console.error('Order book depth insertion failed:', error);
+      logger.error('Order book depth insertion failed', LogLabel.DATABASE, 'handleOrderPlaced', { error: error instanceof Error ? error.message : String(error) });
       throw new Error(`Failed to insert order book depth: ${(error as Error).message}`);
     }
 
@@ -266,7 +270,7 @@ export async function handleOrderPlaced({ event, context }: any) {
 
           symbol = (await getPoolTradingPair(context, event.log.address, chainId, 'handleOrderPlaced', Number(event.block.number))).toUpperCase();
         } catch (error) {
-          console.error('Failed to get trading pair:', error);
+          logger.error('Failed to get trading pair', LogLabel.API, 'handleOrderPlaced', { error: error instanceof Error ? error.message : String(error) });
           throw new Error(`Failed to get trading pair: ${(error as Error).message}`);
         }
 
@@ -278,7 +282,7 @@ export async function handleOrderPlaced({ event, context }: any) {
             throw new Error(`Order not found in database with id: ${id}`);
           }
         } catch (error) {
-          console.error('Failed to find order:', error);
+          logger.error('Failed to find order', LogLabel.DATABASE, 'handleOrderPlaced', { error: error instanceof Error ? error.message : String(error) });
           throw new Error(`Failed to find order: ${(error as Error).message}`);
         }
 
@@ -286,7 +290,7 @@ export async function handleOrderPlaced({ event, context }: any) {
           // Publish events
           await publishOrderEvent(order, symbol, timestamp, "new", BigInt(0), BigInt(0));
         } catch (error) {
-          console.error('Failed to publish order event:', error);
+          logger.error('Failed to publish order event', LogLabel.EVENT_HANDLER, 'handleOrderPlaced', { error: error instanceof Error ? error.message : String(error) });
           throw new Error(`Failed to publish order event: ${(error as Error).message}`);
         }
 
@@ -300,7 +304,7 @@ export async function handleOrderPlaced({ event, context }: any) {
         try {
           await publishDepthEvent(symbol, latestDepth.bids as any, latestDepth.asks as any, timestamp);
         } catch (error) {
-          console.error('Failed to publish depth event:', error);
+          logger.error('Failed to publish depth event', LogLabel.EVENT_HANDLER, 'handleOrderPlaced', { error: error instanceof Error ? error.message : String(error) });
           throw new Error(`Failed to publish depth event: ${(error as Error).message}`);
         }
 
@@ -461,7 +465,7 @@ export async function handleOrderCancelled({ event, context }: any) {
       await publishDepthEvent(symbol, latestDepth.bids as any, latestDepth.asks as any, timestamp);
     }, 'handleOrderCancelled');
   } catch (e) {
-    console.error('OrderCancelled error:', e);
+    logger.error('OrderCancelled error', LogLabel.EVENT_HANDLER, 'handleOrderCancelled', { error: e instanceof Error ? e.message : String(e) });
     throw e;
   }
 }
@@ -472,13 +476,13 @@ export async function handleUpdateOrder({ event, context }: any) {
 
   // Validate required event args exist
   if (event.args.orderId === undefined || event.args.filled === undefined || event.args.status === undefined || event.args.timestamp === undefined) {
-    console.error('UpdateOrder event missing required arguments:', event.args);
+    logger.error('UpdateOrder event missing required arguments', LogLabel.VALIDATION, 'handleUpdateOrder', { eventArgs: event.args });
     return;
   }
 
   // Validate log address exists
   if (!event.log.address) {
-    console.error('UpdateOrder event missing log address:', event.log);
+    logger.error('UpdateOrder event missing log address', LogLabel.VALIDATION, 'handleUpdateOrder', { eventLog: event.log });
     return;
   }
 
@@ -547,7 +551,7 @@ export async function handleUpdateOrder({ event, context }: any) {
       await publishDepthEvent(symbol, latestDepth.bids as any, latestDepth.asks as any, timestamp);
     }, 'handleUpdateOrder');
   } catch (e) {
-    console.error('UpdateOrder error:', e);
+    logger.error('UpdateOrder error', LogLabel.EVENT_HANDLER, 'handleUpdateOrder', { error: e instanceof Error ? e.message : String(e) });
     throw e;
   }
 
