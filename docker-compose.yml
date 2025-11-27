@@ -8,9 +8,11 @@ services:
     build: 
       context: ./envio-api
       dockerfile: Dockerfile
-    env_file: /envio-api/.env
     environment:
-      - NODE_ENV=production
+      NODE_ENV: 'production'
+      ENVIO_API_CORS_ORIGIN: '*'
+      ENVIO_API_DATBASE_URL: '${ENVIO_API_DATBASE_URL:-url}'
+      ENVIO_API_PORT: '${ENVIO_API_DATBASE_URL:-3000}'
     ports:
       - 3333:3000
   # SCALEX API service

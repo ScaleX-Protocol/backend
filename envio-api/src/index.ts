@@ -7,15 +7,32 @@ import { app as appConfig } from './config/app';
 import { createErrorResponse } from './utils/response.utils';
 import { HttpStatus } from './enums';
 
+const allowedOrigins = process.env.ENVIO_API_CORS_ORIGIN
+  ? process.env.ENVIO_API_CORS_ORIGIN.split(',').map(origin => {
+      const trimmed = origin.trim();
+      // If it's a wildcard, convert to regex that matches any origin
+      if (trimmed === '*') return /.*/;
+      // If it contains wildcards, convert to regex
+      if (trimmed.includes('*')) {
+        const pattern = trimmed
+          .replace(/\./g, '\\.')
+          .replace(/\*/g, '.*');
+        return new RegExp(`^${pattern}$`);
+      }
+      // Otherwise return as string for exact match
+      return trimmed;
+    })
+  : [
+      /^http:\/\/localhost:\d+$/,
+      /^https:\/\/.*\.vercel\.app$/,
+      /^https:\/\/.*\.netlify\.app$/,
+    ];
+
 const app = new Elysia()
   // CORS configuration
   .use(
     cors({
-      origin: [
-        /^http:\/\/localhost:\d+$/,
-        /^https:\/\/.*\.vercel\.app$/,
-        /^https:\/\/.*\.netlify\.app$/,
-      ],
+      origin: allowedOrigins,
       credentials: true,
       allowedHeaders: ['Content-Type', 'Authorization'],
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],

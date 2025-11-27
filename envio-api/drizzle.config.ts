@@ -5,6 +5,6 @@ export default defineConfig({
   schema: './src/schema/index.ts',
   out: './drizzle',
   dbCredentials: {
-    url: process.env.DATABASE_URL || 'postgresql://postgres:password@localhost:5432/envio',
+    url: process.env.ENVIO_API_DATABASE_URL || 'postgresql://postgres:password@localhost:5432/envio',
   },
 });
