@@ -1,0 +1,18 @@
+{
+  "START_BLOCK_ORDERBOOK": {
+    "riseSepolia": 11799229,
+    "pharosDevnet": 18834552
+  },
+  "START_BLOCK_POOLMANAGER": {
+    "riseSepolia": 11799229,
+    "pharosDevnet": 18834552
+  },
+  "START_BLOCK_BALANCEMANAGER": {
+    "riseSepolia": 11799229,
+    "pharosDevnet": 18834552
+  },
+  "START_BLOCK_ROUTER": {
+    "riseSepolia": 11799229,
+    "pharosDevnet": 18834552
+  }
+}
