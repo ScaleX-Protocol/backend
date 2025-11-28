@@ -1,7 +1,7 @@
 import { createCurrencyId } from "@/utils";
 import { currencies, tokenMappings } from "ponder:schema";
 import { ERC20ABI } from "../../abis/ERC20";
-import { createLogger, LogLabel } from "../utils/logger";
+import { createLogger, LogLabel, log, LogLevel, ServiceName } from "../utils/logger";
 
 // Create logger instance for this file
 const logger = createLogger('tokenRegistryHandler.ts');
@@ -125,9 +125,18 @@ export async function handleTokenMappingRegistered({ event, context }: any) {
 		const { client, db } = context;
 		const timestamp = Number(event.block.timestamp);
 
-		if (!client) throw new Error('Client context is null or undefined');
-		if (!db) throw new Error('Database context is null or undefined');
-		if (!event.transaction?.hash) throw new Error('Transaction hash is missing');
+		if (!client) {
+			log(LogLevel.ERROR, 'Client context is null or undefined', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'tokenRegistryHandler.ts', 'handleTokenMapped');
+			return;
+		}
+		if (!db) {
+			log(LogLevel.ERROR, 'Database context is null or undefined', LogLabel.DATABASE, ServiceName.CORE_CHAIN, {}, 'tokenRegistryHandler.ts', 'handleTokenMapped');
+			return;
+		}
+		if (!event.transaction?.hash) {
+			log(LogLevel.ERROR, 'Transaction hash is missing', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'tokenRegistryHandler.ts', 'handleTokenMapped');
+			return;
+		}
 
 		// Exclude cross-chain mappings
 		const sourceChainIdNum = Number(sourceChainId);
@@ -198,11 +207,12 @@ export async function handleTokenMappingRegistered({ event, context }: any) {
 
 		} catch (error) {
 			logger.error('Token mapping insertion failed', LogLabel.DATABASE, 'handleTokenMappingRegistered', { error: error instanceof Error ? error.message : String(error) });
-			throw new Error(`Failed to insert token mapping: ${(error as Error).message}`);
+			log(LogLevel.ERROR, 'Failed to insert token mapping', LogLabel.DATABASE, ServiceName.CORE_CHAIN, { error: (error as Error).message }, 'tokenRegistryHandler.ts', 'handleTokenMapped');
+			return;
 		}
 	} catch (error) {
-		logger.error('TokenMappingRegistered handler error', LogLabel.EVENT_HANDLER, 'handleTokenMappingRegistered', { error: error instanceof Error ? error.message : String(error) });
-		throw error;
+		log(LogLevel.ERROR, 'TokenMappingRegistered handler error', LogLabel.EVENT_HANDLER, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'tokenRegistryHandler.ts', 'handleTokenMappingRegistered');
+		return;
 	}
 }
 
@@ -212,8 +222,14 @@ export async function handleTokenMappingUpdated({ event, context }: any) {
 		const db = context.db;
 		const timestamp = Number(event.block.timestamp);
 
-		if (!db) throw new Error('Database context is null or undefined');
-		if (!event.transaction?.hash) throw new Error('Transaction hash is missing');
+		if (!db) {
+			log(LogLevel.ERROR, 'Database context is null or undefined', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'tokenRegistryHandler.ts', 'handleTokenMappingUpdated');
+			return;
+		}
+		if (!event.transaction?.hash) {
+			log(LogLevel.ERROR, 'Transaction hash is missing', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'tokenRegistryHandler.ts', 'handleTokenMappingUpdated');
+			return;
+		}
 
 		// Exclude cross-chain mappings - only process local chain mappings
 		const sourceChainIdNum = Number(sourceChainId);
@@ -245,11 +261,12 @@ export async function handleTokenMappingUpdated({ event, context }: any) {
 			}
 		} catch (error) {
 			logger.error('Token mapping update failed', LogLabel.DATABASE, 'handleTokenMappingUpdated', { error: error instanceof Error ? error.message : String(error) });
-			throw new Error(`Failed to update token mapping: ${(error as Error).message}`);
+			log(LogLevel.ERROR, 'Failed to update token mapping', LogLabel.DATABASE, ServiceName.CORE_CHAIN, { error: (error as Error).message }, 'tokenRegistryHandler.ts', 'handleTokenMappingUpdated');
+		return;
 		}
 	} catch (error) {
-		logger.error('TokenMappingUpdated handler error', LogLabel.EVENT_HANDLER, 'handleTokenMappingUpdated', { error: error instanceof Error ? error.message : String(error) });
-		throw error;
+		log(LogLevel.ERROR, 'TokenMappingUpdated handler error', LogLabel.EVENT_HANDLER, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'tokenRegistryHandler.ts', 'handleTokenMappingUpdated');
+		return;
 	}
 }
 
@@ -259,8 +276,14 @@ export async function handleTokenMappingRemoved({ event, context }: any) {
 		const db = context.db;
 		const timestamp = Number(event.block.timestamp);
 
-		if (!db) throw new Error('Database context is null or undefined');
-		if (!event.transaction?.hash) throw new Error('Transaction hash is missing');
+		if (!db) {
+			log(LogLevel.ERROR, 'Database context is null or undefined', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'tokenRegistryHandler.ts', 'handleTokenMappingRemoved');
+			return;
+		}
+		if (!event.transaction?.hash) {
+			log(LogLevel.ERROR, 'Transaction hash is missing', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'tokenRegistryHandler.ts', 'handleTokenMappingRemoved');
+			return;
+		}
 
 		// Exclude cross-chain mappings - only process local chain mappings
 		const sourceChainIdNum = Number(sourceChainId);
@@ -292,11 +315,12 @@ export async function handleTokenMappingRemoved({ event, context }: any) {
 			}
 		} catch (error) {
 			logger.error('Token mapping removal failed', LogLabel.DATABASE, 'handleTokenMappingRemoved', { error: error instanceof Error ? error.message : String(error) });
-			throw new Error(`Failed to remove token mapping: ${(error as Error).message}`);
+			log(LogLevel.ERROR, 'Failed to remove token mapping', LogLabel.DATABASE, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'tokenRegistryHandler.ts', 'handleTokenMappingRemoved');
+			return;
 		}
 	} catch (error) {
-		logger.error('TokenMappingRemoved handler error', LogLabel.EVENT_HANDLER, 'handleTokenMappingRemoved', { error: error instanceof Error ? error.message : String(error) });
-		throw error;
+		log(LogLevel.ERROR, 'TokenMappingRemoved handler error', LogLabel.EVENT_HANDLER, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'tokenRegistryHandler.ts', 'handleTokenMappingRemoved');
+		return;
 	}
 }
 
@@ -306,8 +330,14 @@ export async function handleTokenStatusChanged({ event, context }: any) {
 		const db = context.db;
 		const timestamp = Number(event.block.timestamp);
 
-		if (!db) throw new Error('Database context is null or undefined');
-		if (!event.transaction?.hash) throw new Error('Transaction hash is missing');
+		if (!db) {
+			log(LogLevel.ERROR, 'Database context is null or undefined', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'tokenRegistryHandler.ts', 'handleTokenStatusChanged');
+			return;
+		}
+		if (!event.transaction?.hash) {
+			log(LogLevel.ERROR, 'Transaction hash is missing', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'tokenRegistryHandler.ts', 'handleTokenStatusChanged');
+			return;
+		}
 
 		const id = `${sourceChainId}-${sourceToken}-${targetChainId}`;
 
@@ -330,11 +360,12 @@ export async function handleTokenStatusChanged({ event, context }: any) {
 			}
 		} catch (error) {
 			logger.error('Token mapping status update failed', LogLabel.DATABASE, 'handleTokenStatusChanged', { error: error instanceof Error ? error.message : String(error) });
-			throw new Error(`Failed to update token mapping status: ${(error as Error).message}`);
+			log(LogLevel.ERROR, 'Failed to update token mapping status', LogLabel.DATABASE, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'tokenRegistryHandler.ts', 'handleTokenStatusChanged');
+			return;
 		}
 	} catch (error) {
-		logger.error('TokenStatusChanged handler error', LogLabel.EVENT_HANDLER, 'handleTokenStatusChanged', { error: error instanceof Error ? error.message : String(error) });
-		throw error;
+		log(LogLevel.ERROR, 'TokenStatusChanged handler error', LogLabel.EVENT_HANDLER, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'tokenRegistryHandler.ts', 'handleTokenStatusChanged');
+		return;
 	}
 }
 
@@ -345,8 +376,8 @@ export async function handleOwnershipTransferred({ event, context }: any) {
 
 		logger.info(`TokenRegistry ownership transferred on chain ${chainId}: ${previousOwner} -> ${newOwner} at block ${event.block.number}`, LogLabel.SYSTEM, 'handleOwnershipTransferred', { chainId, previousOwner, newOwner, blockNumber: event.block.number });
 	} catch (error) {
-		logger.error('OwnershipTransferred handler error', LogLabel.EVENT_HANDLER, 'handleOwnershipTransferred', { error: error instanceof Error ? error.message : String(error) });
-		throw error;
+		log(LogLevel.ERROR, 'OwnershipTransferred handler error', LogLabel.EVENT_HANDLER, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'tokenRegistryHandler.ts', 'handleOwnershipTransferred');
+		return;
 	}
 }
 
@@ -357,7 +388,7 @@ export async function handleInitialized({ event, context }: any) {
 
 		logger.info(`TokenRegistry initialized on chain ${chainId} with version ${version} at block ${event.block.number}`, LogLabel.SYSTEM, 'handleInitialized', { chainId, version, blockNumber: event.block.number });
 	} catch (error) {
-		logger.error('Initialized handler error', LogLabel.EVENT_HANDLER, 'handleInitialized', { error: error instanceof Error ? error.message : String(error) });
-		throw error;
+		log(LogLevel.ERROR, 'Initialized handler error', LogLabel.EVENT_HANDLER, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'tokenRegistryHandler.ts', 'handleInitialized');
+		return;
 	}
 }

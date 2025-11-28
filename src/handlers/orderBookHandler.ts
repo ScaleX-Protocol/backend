@@ -1,6 +1,6 @@
 import { getEventPublisher } from "@/events/index";
 import { OrderMatchedEventArgs, OrderPlacedEventArgs } from "@/types";
-import { createLogger, LogLabel } from "../utils/logger";
+import { createLogger, LogLabel, log, LogLevel, ServiceName } from "../utils/logger";
 import {
   createDepthData,
   createOrderData,
@@ -189,9 +189,18 @@ export async function handleOrderPlaced({ event, context }: any) {
     const txHash = event.transaction.hash;
 
 
-    if (!db) throw new Error('Database context is null or undefined');
-    if (!chainId) throw new Error('Chain ID is missing from context');
-    if (!txHash) throw new Error('Transaction hash is missing');
+    if (!db) {
+      log(LogLevel.ERROR, 'Database context is null or undefined', LogLabel.DATABASE, ServiceName.CORE_CHAIN, {}, 'orderBookHandler.ts', 'handleOrderPlaced');
+      return;
+    }
+    if (!chainId) {
+      log(LogLevel.ERROR, 'Chain ID is missing from context', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'orderBookHandler.ts', 'handleOrderPlaced');
+      return;
+    }
+    if (!txHash) {
+      log(LogLevel.ERROR, 'Transaction hash is missing', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'orderBookHandler.ts', 'handleOrderPlaced');
+      return;
+    }
 
     const filled = BigInt(0);
     const orderId = BigInt(args.orderId!);
@@ -204,13 +213,15 @@ export async function handleOrderPlaced({ event, context }: any) {
     try {
       side = getSide(args.side);
     } catch (error) {
-      throw new Error(`Failed to convert side: ${(error as Error).message}`);
+      log(LogLevel.ERROR, 'Failed to convert side', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, { error: (error as Error).message }, 'orderBookHandler.ts', 'handleOrderPlaced');
+      return;
     }
 
     try {
       status = ORDER_STATUS[Number(args.status)];
     } catch (error) {
-      throw new Error(`Failed to convert status: ${(error as Error).message}`);
+      log(LogLevel.ERROR, 'Failed to convert status', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, { error: (error as Error).message }, 'orderBookHandler.ts', 'handleOrderPlaced');
+      return;
     }
 
     const timestamp = Number(event.block.timestamp);
@@ -219,14 +230,15 @@ export async function handleOrderPlaced({ event, context }: any) {
     try {
       orderData = createOrderData(chainId, args, poolAddress, side, timestamp);
     } catch (error) {
-      throw new Error(`Failed to create order data: ${(error as Error).message}`);
+      log(LogLevel.ERROR, 'Failed to create order data', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, { error: (error as Error).message }, 'orderBookHandler.ts', 'handleOrderPlaced');
+      return;
     }
 
     try {
       await insertOrder(db, orderData);
     } catch (error) {
-      logger.error('Order insertion failed', LogLabel.DATABASE, 'handleOrderPlaced', { error: error instanceof Error ? error.message : String(error) });
-      throw new Error(`Failed to insert order: ${(error as Error).message}`);
+      log(LogLevel.ERROR, 'Order insertion failed', LogLabel.DATABASE, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'orderBookHandler.ts', 'handleOrderPlaced');
+      return;
     }
 
     // Track user for order
@@ -239,8 +251,8 @@ export async function handleOrderPlaced({ event, context }: any) {
     try {
       await upsertOrderHistory(db, historyData);
     } catch (error) {
-      logger.error('Order history upsert failed', LogLabel.DATABASE, 'handleOrderPlaced', { error: error instanceof Error ? error.message : String(error) });
-      throw new Error(`Failed to upsert order history: ${(error as Error).message}`);
+      log(LogLevel.ERROR, 'Order history upsert failed', LogLabel.DATABASE, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'orderBookHandler.ts', 'handleOrderPlaced');
+      return;
     }
 
     const depthId = `${poolAddress}-${side.toLowerCase()}-${price.toString()}`;
@@ -248,15 +260,15 @@ export async function handleOrderPlaced({ event, context }: any) {
     try {
       depthData = createDepthData(chainId, depthId, poolAddress, side, price, quantity, timestamp);
     } catch (error) {
-      logger.error('Depth data creation failed', LogLabel.VALIDATION, 'handleOrderPlaced', { error: error instanceof Error ? error.message : String(error) });
-      throw new Error(`Failed to create depth data: ${(error as Error).message}`);
+      log(LogLevel.ERROR, 'Depth data creation failed', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'orderBookHandler.ts', 'handleOrderPlaced');
+      return;
     }
 
     try {
       await insertOrderBookDepth(db, depthData);
     } catch (error) {
-      logger.error('Order book depth insertion failed', LogLabel.DATABASE, 'handleOrderPlaced', { error: error instanceof Error ? error.message : String(error) });
-      throw new Error(`Failed to insert order book depth: ${(error as Error).message}`);
+      log(LogLevel.ERROR, 'Order book depth insertion failed', LogLabel.DATABASE, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'orderBookHandler.ts', 'handleOrderPlaced');
+      return;
     }
 
     try {
@@ -264,14 +276,15 @@ export async function handleOrderPlaced({ event, context }: any) {
         let symbol;
         try {
           if (!event.log.address) {
-            throw new Error(`Event log address is ${event.log.address} (${typeof event.log.address})`);
+            log(LogLevel.ERROR, 'Event log address is invalid', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, { address: event.log.address, type: typeof event.log.address }, 'orderBookHandler.ts', 'handleOrderPlaced');
+            return;
           }
 
 
           symbol = (await getPoolTradingPair(context, event.log.address, chainId, 'handleOrderPlaced', Number(event.block.number))).toUpperCase();
         } catch (error) {
-          logger.error('Failed to get trading pair', LogLabel.API, 'handleOrderPlaced', { error: error instanceof Error ? error.message : String(error) });
-          throw new Error(`Failed to get trading pair: ${(error as Error).message}`);
+          log(LogLevel.ERROR, 'Failed to get trading pair', LogLabel.API, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'orderBookHandler.ts', 'handleOrderPlaced');
+          return;
         }
 
         const id = createOrderId(chainId, args.orderId, poolAddress);
@@ -279,43 +292,54 @@ export async function handleOrderPlaced({ event, context }: any) {
         try {
           order = await context.db.find(orders, { id: id });
           if (!order) {
-            throw new Error(`Order not found in database with id: ${id}`);
+            log(LogLevel.WARN, 'Order not found in executeIfInSync block - skipping event publishing', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {
+              orderId: id,
+              chainId,
+              rawOrderId: args.orderId,
+              message: 'Order not found, possibly due to transaction timing or database sync issues'
+            }, 'orderBookHandler.ts', 'handleOrderPlaced');
+            return; // Return gracefully instead of throwing
           }
         } catch (error) {
-          logger.error('Failed to find order', LogLabel.DATABASE, 'handleOrderPlaced', { error: error instanceof Error ? error.message : String(error) });
-          throw new Error(`Failed to find order: ${(error as Error).message}`);
+          log(LogLevel.ERROR, 'Failed to find order', LogLabel.DATABASE, ServiceName.CORE_CHAIN, { 
+            error: error instanceof Error ? error.message : String(error) 
+          }, 'orderBookHandler.ts', 'handleOrderPlaced');
+          return; // Return gracefully instead of throwing
         }
 
         try {
           // Publish events
           await publishOrderEvent(order, symbol, timestamp, "new", BigInt(0), BigInt(0));
         } catch (error) {
-          logger.error('Failed to publish order event', LogLabel.EVENT_HANDLER, 'handleOrderPlaced', { error: error instanceof Error ? error.message : String(error) });
-          throw new Error(`Failed to publish order event: ${(error as Error).message}`);
+          log(LogLevel.ERROR, 'Failed to publish order event', LogLabel.EVENT_HANDLER, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'orderBookHandler.ts', 'handleOrderPlaced');
+          return;
         }
 
         let latestDepth;
         try {
           latestDepth = await getDepth(event.log.address!, context.db, chainId);
         } catch (error) {
-          throw new Error(`Failed to get depth: ${(error as Error).message}`);
+          log(LogLevel.ERROR, 'Failed to get depth', LogLabel.DATABASE, ServiceName.CORE_CHAIN, { error: (error as Error).message }, 'orderBookHandler.ts', 'handleOrderPlaced');
+          return;
         }
 
         try {
           await publishDepthEvent(symbol, latestDepth.bids as any, latestDepth.asks as any, timestamp);
         } catch (error) {
-          logger.error('Failed to publish depth event', LogLabel.EVENT_HANDLER, 'handleOrderPlaced', { error: error instanceof Error ? error.message : String(error) });
-          throw new Error(`Failed to publish depth event: ${(error as Error).message}`);
+          log(LogLevel.ERROR, 'Failed to publish depth event', LogLabel.EVENT_HANDLER, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'orderBookHandler.ts', 'handleOrderPlaced');
+          return;
         }
 
       }, 'handleOrderPlaced');
     } catch (error) {
-      throw new Error(`executeIfInSync failed: ${(error as Error).message}`);
+      log(LogLevel.ERROR, 'executeIfInSync failed', LogLabel.EVENT_HANDLER, ServiceName.CORE_CHAIN, { error: (error as Error).message }, 'orderBookHandler.ts', 'handleOrderPlaced');
+      return;
     }
 
 
   } catch (error) {
-    throw error;
+    log(LogLevel.ERROR, 'Unhandled error in handleOrderPlaced', LogLabel.EVENT_HANDLER, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'orderBookHandler.ts', 'handleOrderPlaced');
+    return;
   }
 }
 
@@ -465,8 +489,8 @@ export async function handleOrderCancelled({ event, context }: any) {
       await publishDepthEvent(symbol, latestDepth.bids as any, latestDepth.asks as any, timestamp);
     }, 'handleOrderCancelled');
   } catch (e) {
-    logger.error('OrderCancelled error', LogLabel.EVENT_HANDLER, 'handleOrderCancelled', { error: e instanceof Error ? e.message : String(e) });
-    throw e;
+    log(LogLevel.ERROR, 'OrderCancelled error', LogLabel.EVENT_HANDLER, ServiceName.CORE_CHAIN, { error: e instanceof Error ? e.message : String(e) }, 'orderBookHandler.ts', 'handleOrderCancelled');
+    return;
   }
 }
 
@@ -561,8 +585,8 @@ export async function handleUpdateOrder({ event, context }: any) {
       await publishDepthEvent(symbol, latestDepth.bids as any, latestDepth.asks as any, timestamp);
     }, 'handleUpdateOrder');
   } catch (e) {
-    logger.error('UpdateOrder error', LogLabel.EVENT_HANDLER, 'handleUpdateOrder', { error: e instanceof Error ? e.message : String(e) });
-    throw e;
+    log(LogLevel.ERROR, 'UpdateOrder error', LogLabel.EVENT_HANDLER, ServiceName.CORE_CHAIN, { error: e instanceof Error ? e.message : String(e) }, 'orderBookHandler.ts', 'handleUpdateOrder');
+    return;
   }
 
   await executeIfInSync(Number(event.block.number), async () => {
