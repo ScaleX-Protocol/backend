@@ -32,7 +32,7 @@ print_error() {
 echo "🚀 Starting ScaleX CLOB Indexer Deployment..."
 
 # Check if we're in the right directory
-if [[ ! -f "package.json" ]] && [[ ! -d "src" ]]; then
+if [[ ! -f "ponder/package.json" ]] && [[ ! -d "src" ]]; then
     print_error "Please run this script from the clob-indexer project root directory"
     exit 1
 fi

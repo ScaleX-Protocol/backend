@@ -30,7 +30,7 @@ log_error() {
 }
 
 # Check if we're in the right directory
-if [ ! -f "package.json" ] || [ ! -d "websocket-service" ] || [ ! -d "analytics-service" ]; then
+if [ ! -f "ponder/package.json" ] || [ ! -d "websocket-service" ] || [ ! -d "analytics-service" ]; then
     log_error "Please run this script from the clob-indexer root directory"
     exit 1
 fi
@@ -61,7 +61,7 @@ log_success "Prerequisites check passed"
 log_info "Step 2: Installing dependencies for all services..."
 
 log_info "Installing main indexer dependencies..."
-npm install
+cd ponder && npm install && cd ..
 
 log_info "Installing WebSocket service dependencies..."
 cd websocket-service
@@ -79,8 +79,8 @@ log_success "All dependencies installed"
 log_info "Step 3: Setting up environment files..."
 
 # Main indexer .env
-if [ ! -f ".env" ]; then
-    cat > .env << EOF
+if [ ! -f "ponder/.env" ]; then
+    cat > ponder/.env << EOF
 # ScaleX CLOB Indexer Configuration
 PONDER_DATABASE_URL=postgresql://postgres:password@localhost:5433/ponder
 REDIS_URL=redis://localhost:6380

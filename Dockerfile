@@ -8,11 +8,14 @@ WORKDIR /app
 RUN npm install -g pnpm && apk update && apk add --no-cache postgresql-client
 
 # Copy package files and install dependencies
-COPY package.json pnpm-lock.yaml* ./
+COPY ponder/package.json ponder/pnpm-lock.yaml* ./
 RUN pnpm install --no-frozen-lockfile
 
 # Copy the rest of the app
 COPY . .
+
+# Copy ponder config files and tsconfig to app root for compatibility
+COPY ponder/ponder.config.ts ponder/ponder.config.core-chain.ts ponder/ponder.config.side-chain.ts ponder/core-chain-ponder.config.ts ponder/side-chain-ponder.config.ts ponder/pg-ponder.config.ts ponder/ponder.schema.ts ponder/tsconfig.json ./
 
 # Expose ponder port
 EXPOSE 42070
