@@ -1,0 +1,49 @@
+# Dependencies
+/node_modules
+/websocket-client/node_modules
+/websocket-service/node_modules
+/analytics-service/node_modules
+
+# Service build outputs
+/websocket-service/dist
+/analytics-service/dist
+/websocket-service/.env
+/analytics-service/.env
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Logs
+/logs
+websocket-connection-logs.txt
+
+# Misc
+.DS_Store
+
+# Env files
+.env*.local
+.env
+
+# Ponder
+/generated/
+/.ponder/
+
+# Goldsky
+/goldsky/node_modules
+/goldsky/build
+/goldsky/dist
+/goldsky/coverage
+/goldsky/logs
+/goldsky/cache
+/goldsky/config
+
+# Scripts
+/scripts/development
+
+
+
+# Claude
+.claude/

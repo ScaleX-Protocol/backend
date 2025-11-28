@@ -29,7 +29,7 @@ let STATIC_POOL_DATA: any = null;
 const loadStaticPoolData = () => {
   if (STATIC_POOL_DATA === null) {
     try {
-      const poolDataPath = path.join(process.cwd(), 'pool-data.json');
+      const poolDataPath = path.join(process.cwd(), 'ponder/pool-data.json');
       if (fs.existsSync(poolDataPath)) {
         const fileContent = fs.readFileSync(poolDataPath, 'utf8');
         STATIC_POOL_DATA = JSON.parse(fileContent);

@@ -10,7 +10,7 @@ services:
     ports:
       - "8000:3000"  # Host port 8000 for local development
     env_file:
-      - ./.env.core-chain
+      - ./ponder/.env.core-chain
     environment:
       - DATABASE_URL=postgresql://postgres:password@scalex-postgres:5432/scalex_api
       - NODE_ENV=development
@@ -48,7 +48,7 @@ services:
     # Use host networking to connect to localhost:5433
     network_mode: "host"
     env_file:
-      - ./.env.core-chain
+      - ./ponder/.env.core-chain
     environment:
       - PONDER_DATABASE_URL=postgresql://postgres:password@localhost:5433/ponder_core
       - REDIS_URL=redis://localhost:6380
@@ -71,7 +71,7 @@ services:
       - "42080:42080"  # Host ports for local development
       - "42084:8080"  # Health port
     env_file:
-      - ./.env.core-chain
+      - ./ponder/.env.core-chain
     environment:
       - PORT=42080
       - HEALTH_PORT=8080
@@ -100,7 +100,7 @@ services:
     ports:
       - "42090:42090"  # Host port for local development
     env_file:
-      - ./.env.core-chain
+      - ./ponder/.env.core-chain
     environment:
       - PORT=42090
       - REDIS_URL=redis://redis:6379
