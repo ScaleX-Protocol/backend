@@ -1,5 +1,6 @@
 import { createPublicClient, createWalletClient, http, parseUnits, formatUnits, encodeFunctionData } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
+import { createLogger, LogLevel, LogLabel, ServiceName } from '../utils/logger';
 
 export interface FaucetConfig {
   rpcUrl: string;
@@ -36,6 +37,7 @@ export class FaucetService {
   private walletClient: ReturnType<typeof createWalletClient>;
   private account: ReturnType<typeof privateKeyToAccount>;
   private config: FaucetConfig;
+  private logger = createLogger('faucet.service.ts', ServiceName.SCALEX_API);
 
   private constructor(config: FaucetConfig) {
     this.config = config;
@@ -92,8 +94,11 @@ export class FaucetService {
 
       // Check faucet ETH balance
       const ethBalance = await this.publicClient.getBalance({ address: this.account.address });
-      console.log(`💰 Faucet ETH balance: ${formatUnits(ethBalance, 18)} ETH`);
-      console.log(`🎯 Amount to send: ${formatUnits(amountToSend, 18)} ETH (backend-configured)`);
+      this.logger.info(`Faucet ETH balance: ${formatUnits(ethBalance, 18)} ETH`, LogLabel.FAUCET, 'sendNative', {
+        balance: formatUnits(ethBalance, 18),
+        amountToSend: formatUnits(amountToSend, 18),
+        faucetAddress: this.account.address
+      });
       
       // Estimate gas for native transfer
       const gasEstimate = BigInt(21000n); // Standard gas limit for ETH transfer
@@ -122,17 +127,17 @@ export class FaucetService {
         nonce,
       };
 
-      console.log('📝 Native transfer transaction built:', transaction);
+      this.logger.info('Native transfer transaction built', LogLabel.FAUCET, 'sendNative', { transaction });
 
       // Sign transaction locally
       const signedTransaction = await this.walletClient.signTransaction({ ...transaction, account: this.walletClient.account!, chain: null });
-      console.log('✍️ Native transfer transaction signed locally');
+      this.logger.info('Native transfer transaction signed locally', LogLabel.FAUCET, 'sendNative');
 
       // Send raw transaction
       const hash = await this.publicClient.sendRawTransaction({
         serializedTransaction: signedTransaction,
       });
-      console.log('✅ Native transfer transaction sent successfully! Hash:', hash);
+      this.logger.info(`Native transfer transaction sent successfully! Hash: ${hash}`, LogLabel.FAUCET, 'sendNative', { hash });
 
       // Wait for transaction confirmation
       const receipt = await this.publicClient.waitForTransactionReceipt({
@@ -158,7 +163,10 @@ export class FaucetService {
         };
       }
     } catch (error) {
-      console.error('Native transfer error:', error);
+      this.logger.error('Native transfer error', LogLabel.FAUCET, 'sendNative', { 
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined 
+      });
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       return {
         success: false,
@@ -204,8 +212,12 @@ export class FaucetService {
 
       // Check faucet balance
       const faucetBalance = await this.getTokenBalance(request.tokenAddress, this.account.address);
-      console.log(`💰 Faucet balance: ${formatUnits(faucetBalance, tokenInfo.decimals)} ${tokenInfo.symbol}`);
-      console.log(`🎯 Amount requested: ${formatUnits(amountToSend, tokenInfo.decimals)} ${tokenInfo.symbol}`);
+      this.logger.info(`Token faucet balance: ${formatUnits(faucetBalance, tokenInfo.decimals)} ${tokenInfo.symbol}`, LogLabel.FAUCET, 'sendTokens', {
+        balance: formatUnits(faucetBalance, tokenInfo.decimals),
+        amountRequested: formatUnits(amountToSend, tokenInfo.decimals),
+        tokenSymbol: tokenInfo.symbol,
+        tokenAddress: request.tokenAddress
+      });
       
       if (faucetBalance < amountToSend) {
         return {
@@ -249,11 +261,13 @@ export class FaucetService {
       }
 
       // Send the transaction using manual approach to avoid eth_sendTransaction
-      console.log('🚀 Debug: Attempting to send transaction...');
-      console.log('🔑 Faucet address:', this.account.address);
-      console.log('🪙 Token address:', request.tokenAddress);
-      console.log('💰 Amount to send:', formatUnits(amountToSend, tokenInfo.decimals));
-      console.log('👛 Recipient:', request.address);
+      this.logger.info('Attempting to send token transaction', LogLabel.FAUCET, 'sendTokens', {
+        faucetAddress: this.account.address,
+        tokenAddress: request.tokenAddress,
+        amountToSend: formatUnits(amountToSend, tokenInfo.decimals),
+        recipient: request.address,
+        tokenSymbol: tokenInfo.symbol
+      });
       
       let hash: `0x${string}` | undefined;
       
@@ -290,19 +304,22 @@ export class FaucetService {
           nonce,
         };
 
-        console.log('📝 Transaction built:', transaction);
+        this.logger.info('Token transaction built', LogLabel.FAUCET, 'sendTokens', { transaction });
 
         // Sign transaction locally
         const signedTransaction = await this.walletClient.signTransaction({ ...transaction, account: this.walletClient.account!, chain: null });
-        console.log('✍️ Transaction signed locally');
+        this.logger.info('Token transaction signed locally', LogLabel.FAUCET, 'sendTokens');
 
         // Send raw transaction
         hash = await this.publicClient.sendRawTransaction({
           serializedTransaction: signedTransaction,
         });
-        console.log('✅ Transaction sent successfully! Hash:', hash);
+        this.logger.info(`Token transaction sent successfully! Hash: ${hash}`, LogLabel.FAUCET, 'sendTokens', { hash });
       } catch (txError: any) {
-        console.error('❌ Transaction failed:', txError);
+        this.logger.error('Token transaction failed', LogLabel.FAUCET, 'sendTokens', { 
+          error: txError.message,
+          stack: txError.stack 
+        });
         throw txError;
       }
 
@@ -330,7 +347,12 @@ export class FaucetService {
         };
       }
     } catch (error) {
-      console.error('Faucet transfer error:', error);
+      this.logger.error('Token transfer error', LogLabel.FAUCET, 'sendTokens', { 
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        tokenAddress: request.tokenAddress,
+        recipient: request.address
+      });
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       return {
         success: false,

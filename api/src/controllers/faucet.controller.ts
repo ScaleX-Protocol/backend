@@ -1,12 +1,13 @@
+import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../config/database';
-import { faucetRequests } from '../schema/faucet.schema';
-import { FaucetService, FaucetConfig, FaucetRequest, NativeFaucetRequest } from '../services/faucet.service';
+import { faucetRequests, NewFaucetRequest } from '../schema/faucet.schema';
+import { FaucetConfig, FaucetService } from '../services/faucet.service';
 import { RateLimitService } from '../services/ratelimit.service';
-import { NewFaucetRequest } from '../schema/faucet.schema';
-import { eq, and, sql } from 'drizzle-orm';
+import { createLogger, LogLabel, ServiceName } from '../utils/logger';
 
 export class FaucetController {
   private rateLimitService: RateLimitService;
+  private logger = createLogger('faucet.controller.ts', ServiceName.SCALEX_API);
 
   constructor() {
     this.rateLimitService = RateLimitService.getInstance();
@@ -17,9 +18,19 @@ export class FaucetController {
     chainId: number,
     clientIP: string,
   ): Promise<{ success: boolean; transactionHash?: string; error?: string }> {
+    this.logger.info(`Native faucet request from ${address} on chain ${chainId}`, LogLabel.FAUCET, 'requestNativeTokens', {
+      address,
+      chainId,
+      clientIP
+    });
+
     try {
       // Validate inputs
       if (!address || !address.startsWith('0x') || address.length !== 42) {
+        this.logger.warn(`Invalid address format: ${address}`, LogLabel.VALIDATION, 'requestNativeTokens', {
+          address,
+          chainId
+        });
         return {
           success: false,
           error: 'Invalid address format'
@@ -30,6 +41,12 @@ export class FaucetController {
       const rateLimitResult = await this.rateLimitService.checkBothLimits(address, clientIP);
       if (!rateLimitResult.allowed) {
         const reason = rateLimitResult.reason || 'Rate limit exceeded';
+        this.logger.warn(`Rate limit exceeded for ${address}`, LogLabel.RATE_LIMIT, 'requestNativeTokens', {
+          address,
+          clientIP,
+          reason,
+          rateLimitResult
+        });
         return {
           success: false,
           error: `Rate limit exceeded: ${reason}`
@@ -39,6 +56,10 @@ export class FaucetController {
       // Get faucet configuration for this chain (same as existing token faucet)
       let faucetConfig = this.getFaucetConfig(chainId);
       if (!faucetConfig) {
+        this.logger.error(`Faucet not configured for chain ${chainId}`, LogLabel.FAUCET, 'requestNativeTokens', {
+          chainId,
+          address
+        });
         return {
           success: false,
           error: "Faucet not available for this chain"
@@ -48,7 +69,7 @@ export class FaucetController {
       // Add nativeAmount to the config
       faucetConfig = {
         ...faucetConfig,
-        nativeAmount: process.env.FAUCET_NATIVE_AMOUNT
+        nativeAmount: process.env.FAUCET_NATIVE_AMOUNT || '0.01'
       };
 
       // Initialize faucet service
@@ -59,6 +80,21 @@ export class FaucetController {
         address: address as `0x${string}`
       });
 
+      if (result.success) {
+        this.logger.info(`Native faucet transfer successful to ${address}`, LogLabel.FAUCET, 'requestNativeTokens', {
+          address,
+          chainId,
+          transactionHash: result.transactionHash,
+          amountSent: result.amountSent
+        });
+      } else {
+        this.logger.error(`Native faucet transfer failed for ${address}`, LogLabel.FAUCET, 'requestNativeTokens', {
+          address,
+          chainId,
+          error: result.error
+        });
+      }
+
       return {
         success: result.success,
         transactionHash: result.transactionHash,
@@ -66,7 +102,12 @@ export class FaucetController {
       };
 
     } catch (error: any) {
-      console.error('Native faucet request error:', error);
+      this.logger.error(`Native faucet request exception for ${address}`, LogLabel.FAUCET, 'requestNativeTokens', {
+        address,
+        chainId,
+        error: error.message,
+        stack: error.stack
+      });
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Internal server error'
@@ -81,6 +122,13 @@ export class FaucetController {
     clientIP: string,
     userAgent?: string
   ): Promise<{ success: boolean; data?: any; error?: string }> {
+    this.logger.info(`Token faucet request from ${address} for token ${tokenAddress} on chain ${chainId}`, LogLabel.FAUCET, 'requestTokens', {
+      address,
+      tokenAddress,
+      chainId,
+      clientIP
+    });
+
     try {
       // Validate inputs
       if (!address || !tokenAddress) {
@@ -223,7 +271,13 @@ export class FaucetController {
         error: result.error
       };
     } catch (error: any) {
-      console.error("Faucet request error:", error);
+      this.logger.error(`Token faucet request exception for ${address}`, LogLabel.FAUCET, 'requestTokens', {
+        address,
+        tokenAddress,
+        chainId,
+        error: error.message,
+        stack: error.stack
+      });
       return {
         success: false,
         error: error?.message || "Failed to process faucet request"
@@ -353,7 +407,7 @@ export class FaucetController {
     const configs: Record<number, FaucetConfig> = {
       // Base Sepolia Testnet (Chain ID: 84532)
       84532: {
-        rpcUrl: process.env.PONDER_RPC_URL || 'https://base-sepolia.g.alchemy.com/v2/jBG4sMyhez7V13jNTeQKfVfgNa54nCmF',
+        rpcUrl: process.env.FAUCET_RPC_URL_84532 || 'https://base-sepolia.g.alchemy.com/v2/jBG4sMyhez7V13jNTeQKfVfgNa54nCmF',
         privateKey: process.env.FAUCET_PRIVATE_KEY || '',
         chainId: 84532,
         defaultAmount: process.env.FAUCET_DEFAULT_AMOUNT || '1000'
