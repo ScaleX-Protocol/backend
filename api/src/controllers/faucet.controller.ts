@@ -403,25 +403,58 @@ export class FaucetController {
     }
   }
 
+  private getRpcUrls(chainId: number): string[] {
+    // Get RPC URLs from FAUCET_RPC_URL environment variable (comma-separated format)
+    const faucetRpcUrl = process.env[`FAUCET_RPC_URL_${chainId}`];
+    
+    if (faucetRpcUrl) {
+      // Handle comma-separated URLs
+      if (faucetRpcUrl.includes(',')) {
+        return faucetRpcUrl.split(',').map(url => url.trim()).filter(url => url);
+      } else {
+        return [faucetRpcUrl.trim()];
+      }
+    }
+    
+    // Fallback to default URLs if no FAUCET_RPC_URL is configured
+    switch (chainId) {
+      case 84532:
+        return ['https://base-sepolia.g.alchemy.com/v2/jBG4sMyhez7V13jNTeQKfVfgNa54nCmF'];
+      case 31337:
+        return ['http://host.docker.internal:8545'];
+      case 31338:
+        return ['http://host.docker.internal:8546'];
+      default:
+        return [];
+    }
+  }
+
   private getFaucetConfig(chainId: number): FaucetConfig | null {
+    const rpcUrls = this.getRpcUrls(chainId);
+    
+    if (rpcUrls.length === 0) {
+      return null;
+    }
+    
+    
     const configs: Record<number, FaucetConfig> = {
       // Base Sepolia Testnet (Chain ID: 84532)
       84532: {
-        rpcUrl: process.env.FAUCET_RPC_URL_84532 || 'https://base-sepolia.g.alchemy.com/v2/jBG4sMyhez7V13jNTeQKfVfgNa54nCmF',
+        rpcUrl: rpcUrls,
         privateKey: process.env.FAUCET_PRIVATE_KEY || '',
         chainId: 84532,
         defaultAmount: process.env.FAUCET_DEFAULT_AMOUNT || '1000'
       },
       // Local Anvil (Chain ID: 31337) - for development
       31337: {
-        rpcUrl: process.env.FAUCET_RPC_URL_31337 || 'http://host.docker.internal:8545',
+        rpcUrl: rpcUrls,
         privateKey: process.env.FAUCET_PRIVATE_KEY || '',
         chainId: 31337,
         defaultAmount: process.env.FAUCET_DEFAULT_AMOUNT || '1000'
       },
       // Local Anvil (Chain ID: 31338) - for development
       31338: {
-        rpcUrl: process.env.FAUCET_RPC_URL_31338 || 'http://host.docker.internal:8546',
+        rpcUrl: rpcUrls,
         privateKey: process.env.FAUCET_PRIVATE_KEY || '',
         chainId: 31338,
         defaultAmount: process.env.FAUCET_DEFAULT_AMOUNT || '1000'

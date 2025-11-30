@@ -1,9 +1,9 @@
-import { createPublicClient, createWalletClient, http, parseUnits, formatUnits, encodeFunctionData } from 'viem';
+import { createPublicClient, createWalletClient, http, parseUnits, formatUnits, encodeFunctionData, fallback } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { createLogger, LogLevel, LogLabel, ServiceName } from '../utils/logger';
 
 export interface FaucetConfig {
-  rpcUrl: string;
+  rpcUrl: string | string[];
   privateKey: string;
   chainId: number;
   defaultAmount?: string;
@@ -45,6 +45,10 @@ export class FaucetService {
     this.config = config;
     this.account = privateKeyToAccount(config.privateKey as `0x${string}`);
     
+    // Parse RPC URLs and create transport
+    const rpcUrls = this.parseRpcUrls(config.rpcUrl);
+    const transport = this.createRpcTransport(rpcUrls);
+    
     // Define chain configuration
     const chain = {
       id: config.chainId,
@@ -55,20 +59,26 @@ export class FaucetService {
         decimals: 18,
       },
       rpcUrls: {
-        default: { http: [config.rpcUrl] },
-        public: { http: [config.rpcUrl] },
+        default: { http: rpcUrls },
+        public: { http: rpcUrls },
       },
     };
     
     this.publicClient = createPublicClient({
       chain,
-      transport: http(),
+      transport,
     });
 
     this.walletClient = createWalletClient({
       account: this.account,
       chain,
-      transport: http(),
+      transport,
+    });
+    
+    this.logger.info(`Initialized faucet service with ${rpcUrls.length} RPC URLs`, LogLabel.FAUCET, 'constructor', {
+      chainId: config.chainId,
+      rpcCount: rpcUrls.length,
+      faucetAddress: this.account.address
     });
   }
 
@@ -78,6 +88,50 @@ export class FaucetService {
       FaucetService.instances.set(chainId, service);
     }
     return FaucetService.instances.get(chainId)!;
+  }
+
+  private parseRpcUrls(rpcUrl: string | string[]): string[] {
+    if (Array.isArray(rpcUrl)) {
+      return rpcUrl.filter(url => url && url.trim());
+    }
+    
+    // Single URL string
+    if (typeof rpcUrl === 'string') {
+      return [rpcUrl];
+    }
+    
+    return [];
+  }
+
+  private createRpcTransport(rpcUrls: string[]) {
+    if (rpcUrls.length === 0) {
+      throw new Error('No RPC URLs provided');
+    }
+    
+    if (rpcUrls.length === 1) {
+      this.logger.info(`Using single RPC URL: ${rpcUrls[0]}`, LogLabel.FAUCET, 'createRpcTransport');
+      return http(rpcUrls[0], {
+        timeout: 30000,
+        retryCount: 3,
+        retryDelay: 1000,
+      });
+    }
+    
+    // Multiple URLs - create fallback transport
+    const transports = rpcUrls.map((url, index) => {
+      this.logger.info(`Configuring RPC URL ${index + 1}: ${url}`, LogLabel.FAUCET, 'createRpcTransport');
+      return http(url, {
+        timeout: 30000,
+        retryCount: 2, // Lower retry count per URL since we have fallback
+        retryDelay: 1000,
+      });
+    });
+    
+    this.logger.info(`Created fallback transport with ${transports.length} RPC endpoints`, LogLabel.FAUCET, 'createRpcTransport');
+    
+    return fallback(transports, {
+      rank: false, // Don't rank by speed, use order as priority
+    });
   }
 
   private async getNextNonce(): Promise<number> {
@@ -323,8 +377,9 @@ export class FaucetService {
         const isGasTooLowError = allErrorText.includes('gas too low') || allErrorText.includes('intrinsic gas too low');
         const isInsufficientFundsError = allErrorText.includes('insufficient funds');
         const isAlreadyKnownError = allErrorText.includes('already known');
+        const isRateLimitError = allErrorText.includes('429') || allErrorText.includes('rate limit') || allErrorText.includes('compute units');
         
-        const shouldRetry = isNonceError || isReplacementUnderpricedError || isAlreadyKnownError;
+        const shouldRetry = isNonceError || isReplacementUnderpricedError || isAlreadyKnownError || isRateLimitError;
         
         this.logger.error(`${operation} failed on attempt ${attempt}/${maxRetries}`, LogLabel.FAUCET, 'sendTransactionWithRetry', {
           error: error.message,
@@ -338,6 +393,7 @@ export class FaucetService {
           isGasTooLowError,
           isInsufficientFundsError,
           isAlreadyKnownError,
+          isRateLimitError,
           shouldRetry,
           attempt,
           willRetry: attempt < maxRetries && shouldRetry,
@@ -352,13 +408,22 @@ export class FaucetService {
           // For nonce errors, try a more systematic approach
           if (isNonceError) {
             await this.recoverFromNonceError(attempt);
+          } else if (isRateLimitError) {
+            // For rate limit errors, don't reset cache - just wait longer
+            this.logger.warn(`Rate limit detected, will wait longer before retry`, LogLabel.FAUCET, 'sendTransactionWithRetry');
           } else {
             // For other retryable errors, just reset cache
             this.resetNonceCache();
           }
           
-          // Progressive delay: 1s, 2s, 3s, then cap at 5s
-          const delay = Math.min(1000 * attempt, 5000);
+          // Progressive delay with special handling for rate limits
+          let delay = Math.min(1000 * attempt, 5000);
+          if (isRateLimitError) {
+            // Wait longer for rate limits - exponential backoff starting at 2s
+            delay = Math.min(2000 * Math.pow(2, attempt - 1), 30000); // Cap at 30s
+            this.logger.info(`Rate limit backoff: waiting ${delay}ms`, LogLabel.FAUCET, 'sendTransactionWithRetry');
+          }
+          
           await new Promise(resolve => setTimeout(resolve, delay));
           continue;
         }
