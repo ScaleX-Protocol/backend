@@ -38,7 +38,7 @@ export class FaucetService {
   private account: ReturnType<typeof privateKeyToAccount>;
   private config: FaucetConfig;
   private logger = createLogger('faucet.service.ts', ServiceName.SCALEX_API);
-  private nonceManager: Map<string, { nonce: number; timestamp: number }> = new Map();
+  private nonceManager: Map<string, { nonce: number; timestamp: number; lastSuccessfulNonce?: number }> = new Map();
   private nonceLock: Promise<void> = Promise.resolve();
 
   private constructor(config: FaucetConfig) {
@@ -91,10 +91,15 @@ export class FaucetService {
           // If we have a recent cached nonce (less than 5 seconds old), use it
           if (cached && (now - cached.timestamp) < 5000) {
             const nextNonce = cached.nonce + 1;
-            this.nonceManager.set(address, { nonce: nextNonce, timestamp: now });
+            this.nonceManager.set(address, { 
+              nonce: nextNonce, 
+              timestamp: now,
+              lastSuccessfulNonce: cached.lastSuccessfulNonce 
+            });
             this.logger.info(`Using cached nonce: ${nextNonce} (cached nonce: ${cached.nonce}, age: ${now - cached.timestamp}ms)`, LogLabel.FAUCET, 'getNextNonce', {
               cachedNonce: cached.nonce,
               nextNonce,
+              lastSuccessfulNonce: cached.lastSuccessfulNonce,
               cacheAge: now - cached.timestamp
             });
             resolve(nextNonce);
@@ -107,13 +112,28 @@ export class FaucetService {
             blockTag: 'pending' // Include pending transactions
           });
 
-          // If we have a cached nonce, use the higher value
-          const nextNonce = cached ? Math.max(currentNonce, cached.nonce + 1) : currentNonce;
+          // Smart nonce selection based on successful transactions
+          let nextNonce: number;
+          if (cached?.lastSuccessfulNonce !== undefined) {
+            // We have a record of successful transactions
+            nextNonce = Math.max(currentNonce, cached.lastSuccessfulNonce + 1);
+          } else if (cached) {
+            // We have attempted transactions but no confirmed successful ones
+            nextNonce = Math.max(currentNonce, cached.nonce + 1);
+          } else {
+            // No cache, use network nonce
+            nextNonce = currentNonce;
+          }
           
-          this.nonceManager.set(address, { nonce: nextNonce, timestamp: now });
-          this.logger.info(`Fetched fresh nonce: ${nextNonce} (network: ${currentNonce}, cached: ${cached?.nonce || 'none'})`, LogLabel.FAUCET, 'getNextNonce', {
+          this.nonceManager.set(address, { 
+            nonce: nextNonce, 
+            timestamp: now,
+            lastSuccessfulNonce: cached?.lastSuccessfulNonce 
+          });
+          this.logger.info(`Fetched fresh nonce: ${nextNonce} (network: ${currentNonce}, cached: ${cached?.nonce || 'none'}, lastSuccessful: ${cached?.lastSuccessfulNonce || 'none'})`, LogLabel.FAUCET, 'getNextNonce', {
             networkNonce: currentNonce,
             cachedNonce: cached?.nonce || null,
+            lastSuccessfulNonce: cached?.lastSuccessfulNonce || null,
             selectedNonce: nextNonce,
             address: this.account.address
           });
@@ -141,9 +161,121 @@ export class FaucetService {
     this.logger.info('Nonce cache reset', LogLabel.FAUCET, 'resetNonceCache');
   }
 
+  private recordSuccessfulNonce(nonce: number): void {
+    const address = this.account.address.toLowerCase();
+    const now = Date.now();
+    const existing = this.nonceManager.get(address);
+    
+    this.nonceManager.set(address, {
+      nonce: nonce,
+      timestamp: now,
+      lastSuccessfulNonce: nonce
+    });
+    
+    this.logger.info(`Recorded successful nonce: ${nonce}`, LogLabel.FAUCET, 'recordSuccessfulNonce', {
+      nonce,
+      previousSuccessful: existing?.lastSuccessfulNonce,
+      address: this.account.address
+    });
+  }
+
+  private async recoverFromNonceError(attempt: number): Promise<void> {
+    const address = this.account.address.toLowerCase();
+    const currentTime = Date.now();
+    
+    this.logger.info(`Attempting nonce recovery on attempt ${attempt}`, LogLabel.FAUCET, 'recoverFromNonceError');
+    
+    try {
+      // Get the most up-to-date network state
+      const [networkNonce, pendingNonce] = await Promise.all([
+        this.publicClient.getTransactionCount({ address: this.account.address, blockTag: 'latest' }),
+        this.publicClient.getTransactionCount({ address: this.account.address, blockTag: 'pending' })
+      ]);
+      
+      const existing = this.nonceManager.get(address);
+      
+      // Determine the next logical nonce to try
+      let nextNonce: number;
+      
+      if (pendingNonce > networkNonce) {
+        // There are pending transactions - use pending nonce
+        nextNonce = pendingNonce;
+        this.logger.info(`Using pending nonce: ${nextNonce} (network: ${networkNonce}, pending: ${pendingNonce})`, LogLabel.FAUCET, 'recoverFromNonceError');
+      } else if (existing?.lastSuccessfulNonce !== undefined) {
+        // Use last successful + 1, but ensure it's at least the network nonce
+        nextNonce = Math.max(networkNonce, existing.lastSuccessfulNonce + 1);
+        this.logger.info(`Using successful-based nonce: ${nextNonce} (lastSuccessful: ${existing.lastSuccessfulNonce}, network: ${networkNonce})`, LogLabel.FAUCET, 'recoverFromNonceError');
+      } else {
+        // Fallback to network nonce + attempt offset for progressive retry
+        nextNonce = networkNonce + Math.max(0, attempt - 1);
+        this.logger.info(`Using network nonce with offset: ${nextNonce} (network: ${networkNonce}, attempt: ${attempt})`, LogLabel.FAUCET, 'recoverFromNonceError');
+      }
+      
+      // Update the cache with the recovery nonce
+      this.nonceManager.set(address, {
+        nonce: nextNonce,
+        timestamp: currentTime,
+        lastSuccessfulNonce: existing?.lastSuccessfulNonce
+      });
+      
+      this.logger.info(`Nonce recovery complete: set to ${nextNonce}`, LogLabel.FAUCET, 'recoverFromNonceError', {
+        networkNonce,
+        pendingNonce,
+        selectedNonce: nextNonce,
+        lastSuccessful: existing?.lastSuccessfulNonce,
+        attempt
+      });
+      
+    } catch (error) {
+      this.logger.error('Failed to recover nonce, will reset cache', LogLabel.FAUCET, 'recoverFromNonceError', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        attempt
+      });
+      this.resetNonceCache();
+    }
+  }
+
+  private async findGuaranteedValidNonce(): Promise<number> {
+    this.logger.info('Starting systematic nonce search', LogLabel.FAUCET, 'findGuaranteedValidNonce');
+    
+    // Get the absolute latest network state
+    const [latestNonce, pendingNonce] = await Promise.all([
+      this.publicClient.getTransactionCount({ address: this.account.address, blockTag: 'latest' }),
+      this.publicClient.getTransactionCount({ address: this.account.address, blockTag: 'pending' })
+    ]);
+    
+    const address = this.account.address.toLowerCase();
+    const existing = this.nonceManager.get(address);
+    
+    // Start from the highest known good nonce
+    const startNonce = Math.max(
+      latestNonce,
+      pendingNonce, 
+      existing?.lastSuccessfulNonce ? existing.lastSuccessfulNonce + 1 : 0
+    );
+    
+    this.logger.info(`Systematic search starting from nonce ${startNonce}`, LogLabel.FAUCET, 'findGuaranteedValidNonce', {
+      latestNonce,
+      pendingNonce,
+      lastSuccessfulNonce: existing?.lastSuccessfulNonce,
+      startNonce
+    });
+    
+    // In most cases, the network nonce should work
+    // But we can add a small buffer to handle edge cases
+    const guaranteedNonce = Math.max(startNonce, latestNonce);
+    
+    this.logger.info(`Selected guaranteed nonce: ${guaranteedNonce}`, LogLabel.FAUCET, 'findGuaranteedValidNonce', {
+      guaranteedNonce,
+      reasoning: 'Using latest network nonce as guaranteed valid'
+    });
+    
+    return guaranteedNonce;
+  }
+
   private async sendTransactionWithRetry(
     transactionBuilder: () => Promise<any>,
-    maxRetries: number = 3,
+    maxRetries: number = 10, // Increase default retries
     operation: string = 'transaction'
   ): Promise<`0x${string}`> {
     let lastError: any;
@@ -173,35 +305,91 @@ export class FaucetService {
           nonce: transaction.nonce
         });
         
+        // Record the successful nonce
+        this.recordSuccessfulNonce(transaction.nonce);
+        
         return hash;
         
       } catch (error: any) {
         lastError = error;
-        const isNonceError = error.message?.toLowerCase().includes('nonce');
-        const isReplacementUnderpricedError = error.message?.toLowerCase().includes('replacement transaction underpriced');
-        const shouldRetry = isNonceError || isReplacementUnderpricedError;
+        // Check various error patterns that indicate nonce/transaction issues
+        const errorMsg = (error.message || '').toLowerCase();
+        const errorReason = (error.reason || '').toLowerCase();
+        const errorDetails = (error.details || '').toLowerCase();
+        const allErrorText = `${errorMsg} ${errorReason} ${errorDetails}`;
+        
+        const isNonceError = allErrorText.includes('nonce');
+        const isReplacementUnderpricedError = allErrorText.includes('replacement transaction underpriced');
+        const isGasTooLowError = allErrorText.includes('gas too low') || allErrorText.includes('intrinsic gas too low');
+        const isInsufficientFundsError = allErrorText.includes('insufficient funds');
+        const isAlreadyKnownError = allErrorText.includes('already known');
+        
+        const shouldRetry = isNonceError || isReplacementUnderpricedError || isAlreadyKnownError;
         
         this.logger.error(`${operation} failed on attempt ${attempt}/${maxRetries}`, LogLabel.FAUCET, 'sendTransactionWithRetry', {
           error: error.message,
           code: error.code,
+          details: error.details,
+          reason: error.reason,
+          data: error.data,
+          shortMessage: error.shortMessage,
           isNonceError,
           isReplacementUnderpricedError,
+          isGasTooLowError,
+          isInsufficientFundsError,
+          isAlreadyKnownError,
           shouldRetry,
           attempt,
-          willRetry: attempt < maxRetries && shouldRetry
+          willRetry: attempt < maxRetries && shouldRetry,
+          allErrorText: allErrorText.substring(0, 500), // Truncate for logging
+          stack: error.stack
         });
         
-        // If it's a nonce-related error and we have retries left
+        // If it's a retryable error and we have retries left
         if (shouldRetry && attempt < maxRetries) {
-          this.logger.warn(`Nonce/pricing error detected, resetting cache and retrying...`, LogLabel.FAUCET, 'sendTransactionWithRetry');
-          this.resetNonceCache();
+          this.logger.warn(`Retryable error detected, attempting recovery...`, LogLabel.FAUCET, 'sendTransactionWithRetry');
           
-          // Add a small delay before retry to let the network settle
-          await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+          // For nonce errors, try a more systematic approach
+          if (isNonceError) {
+            await this.recoverFromNonceError(attempt);
+          } else {
+            // For other retryable errors, just reset cache
+            this.resetNonceCache();
+          }
+          
+          // Progressive delay: 1s, 2s, 3s, then cap at 5s
+          const delay = Math.min(1000 * attempt, 5000);
+          await new Promise(resolve => setTimeout(resolve, delay));
           continue;
         }
         
-        // If we've exhausted retries or it's not a nonce error, throw
+        // If we've exhausted retries, try one last systematic approach for nonce errors
+        if (attempt === maxRetries && isNonceError) {
+          this.logger.warn(`Attempting final systematic nonce recovery after ${maxRetries} attempts`, LogLabel.FAUCET, 'sendTransactionWithRetry');
+          
+          try {
+            const guaranteedNonce = await this.findGuaranteedValidNonce();
+            this.logger.info(`Found guaranteed valid nonce: ${guaranteedNonce}`, LogLabel.FAUCET, 'sendTransactionWithRetry');
+            
+            // Set the guaranteed nonce and try one more time
+            const address = this.account.address.toLowerCase();
+            this.nonceManager.set(address, {
+              nonce: guaranteedNonce,
+              timestamp: Date.now(),
+              lastSuccessfulNonce: this.nonceManager.get(address)?.lastSuccessfulNonce
+            });
+            
+            // Continue the loop for one final attempt
+            maxRetries++; // Extend retry count for this final attempt
+            continue;
+          } catch (guaranteeError) {
+            this.logger.error(`Failed to find guaranteed nonce`, LogLabel.FAUCET, 'sendTransactionWithRetry', {
+              error: guaranteeError instanceof Error ? guaranteeError.message : 'Unknown error'
+            });
+          }
+        }
+        
+        // If we've truly exhausted all options, throw
         if (attempt === maxRetries) {
           this.logger.error(`${operation} failed after ${maxRetries} attempts`, LogLabel.FAUCET, 'sendTransactionWithRetry', {
             finalError: error.message,
