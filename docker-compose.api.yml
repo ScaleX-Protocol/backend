@@ -1,0 +1,58 @@
+# SCALEX API Docker Compose Configuration
+# For standalone deployment of the API services
+
+services:
+  # SCALEX API BASED ON ENVIO INDEXER
+  scalex-envio-api: 
+    build: 
+      context: ./envio-api
+      dockerfile: Dockerfile
+    ports:
+      - 3333:3000
+
+  # SCALEX API service
+  scalex-api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    env_file:
+      - ./ponder/.env.core-chain
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@scalex-postgres:5432/scalex_api
+      - PONDER_DATABASE_URL=postgresql://postgres:password@postgres:5432/ponder_core
+      - NODE_ENV=production
+      - PORT=3000
+    depends_on:
+      - scalex-postgres
+    networks:
+      - scalex-network
+    restart: unless-stopped
+    volumes:
+      - ./api/logs:/app/logs
+
+  # SCALEX API database
+  scalex-postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=scalex_api
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+    volumes:
+      - scalex_postgres_data:/var/lib/postgresql/data
+    networks:
+      scalex-network:
+        aliases:
+          - scalex-postgres
+    restart: unless-stopped
+
+  # External PostgreSQL connection for indexer data
+  # Note: API connects to the existing indexer database running in clob-indexer stack
+  # PONDER_DATABASE_URL is configured to connect to postgres:5432/ponder_core
+
+volumes:
+  scalex_postgres_data:
+
+networks:
+  scalex-network:
+    external: true
+    name: clob-indexer_scalex-network

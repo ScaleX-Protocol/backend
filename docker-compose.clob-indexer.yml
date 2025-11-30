@@ -1,0 +1,146 @@
+# CLOB Indexer Docker Compose Configuration
+# For standalone deployment of the indexer and related services
+
+services:
+  # Core indexer service
+  clob-indexer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - ./ponder/.env.core-chain
+    environment:
+      # Override .env.core-chain with container networking
+      - PONDER_DATABASE_URL=postgresql://postgres:password@postgres:5432/ponder_core
+      - REDIS_URL=redis://redis:6379
+      - PONDER_PORT=42070
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - scalex-network
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+
+  # WebSocket service
+  websocket-service:
+    build:
+      context: ./websocket-service
+      dockerfile: Dockerfile
+    env_file:
+      - ./ponder/.env.core-chain
+    environment:
+      - PORT=42080
+      - HEALTH_PORT=8080
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=postgresql://postgres:password@postgres:5432/ponder_core
+      - CONSUMER_GROUP=websocket-consumers
+      - CONSUMER_ID=ws-consumer-1
+      - BATCH_SIZE=10
+      - POLL_INTERVAL=1000
+      - WS_PING_INTERVAL=30000
+      - MAX_CONNECTIONS=1000
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - scalex-network
+    restart: unless-stopped
+
+  # Analytics service
+  analytics-service:
+    build:
+      context: ./analytics-service
+      dockerfile: Dockerfile
+    env_file:
+      - ./ponder/.env.core-chain
+    environment:
+      - PORT=42090
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=postgresql://postgres:password@postgres:5432/ponder_core
+      - TIMESCALE_DATABASE_URL=postgresql://postgres:password@timescaledb:5432/analytics
+      - CONSUMER_GROUP=analytics-consumers
+      - CONSUMER_ID=analytics-consumer-1
+      - ANALYTICS_BATCH_SIZE=5
+      - ANALYTICS_POLL_INTERVAL=5000
+      - CACHE_TTL=300
+      - ENABLE_DAILY_SNAPSHOTS=true
+      - ENABLE_HOURLY_AGGREGATION=true
+      - ENABLE_CACHE_REFRESH=true
+    depends_on:
+      - postgres
+      - timescaledb
+      - redis
+    networks:
+      - scalex-network
+    restart: unless-stopped
+
+  # PostgreSQL database (Main indexer DB)
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=ponder_core
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      scalex-network:
+        aliases:
+          - postgres
+          - db
+    restart: unless-stopped
+
+  # TimescaleDB for Analytics
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15
+    environment:
+      - POSTGRES_DB=analytics
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+      - ./analytics-service/init:/docker-entrypoint-initdb.d
+    command: ["postgres", "-c", "shared_preload_libraries=timescaledb"]
+    networks:
+      scalex-network:
+        aliases:
+          - timescaledb
+    restart: unless-stopped
+
+  # Redis for caching and message queuing
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    networks:
+      scalex-network:
+        aliases:
+          - redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+  # Redis Commander for Redis management (dev only)
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    ports:
+      - "8081:8081"
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    depends_on:
+      - redis
+    networks:
+      - scalex-network
+    profiles:
+      - dev
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  timescale_data:
+  redis_data:
+
+networks:
+  scalex-network:
+    driver: bridge
