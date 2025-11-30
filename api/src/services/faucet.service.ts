@@ -38,6 +38,8 @@ export class FaucetService {
   private account: ReturnType<typeof privateKeyToAccount>;
   private config: FaucetConfig;
   private logger = createLogger('faucet.service.ts', ServiceName.SCALEX_API);
+  private nonceManager: Map<string, { nonce: number; timestamp: number }> = new Map();
+  private nonceLock: Promise<void> = Promise.resolve();
 
   private constructor(config: FaucetConfig) {
     this.config = config;
@@ -78,6 +80,146 @@ export class FaucetService {
     return FaucetService.instances.get(chainId)!;
   }
 
+  private async getNextNonce(): Promise<number> {
+    return new Promise((resolve) => {
+      this.nonceLock = this.nonceLock.then(async () => {
+        try {
+          const address = this.account.address.toLowerCase();
+          const now = Date.now();
+          const cached = this.nonceManager.get(address);
+
+          // If we have a recent cached nonce (less than 5 seconds old), use it
+          if (cached && (now - cached.timestamp) < 5000) {
+            const nextNonce = cached.nonce + 1;
+            this.nonceManager.set(address, { nonce: nextNonce, timestamp: now });
+            this.logger.info(`Using cached nonce: ${nextNonce} (cached nonce: ${cached.nonce}, age: ${now - cached.timestamp}ms)`, LogLabel.FAUCET, 'getNextNonce', {
+              cachedNonce: cached.nonce,
+              nextNonce,
+              cacheAge: now - cached.timestamp
+            });
+            resolve(nextNonce);
+            return;
+          }
+
+          // Fetch the current nonce from the network
+          const currentNonce = await this.publicClient.getTransactionCount({
+            address: this.account.address,
+            blockTag: 'pending' // Include pending transactions
+          });
+
+          // If we have a cached nonce, use the higher value
+          const nextNonce = cached ? Math.max(currentNonce, cached.nonce + 1) : currentNonce;
+          
+          this.nonceManager.set(address, { nonce: nextNonce, timestamp: now });
+          this.logger.info(`Fetched fresh nonce: ${nextNonce} (network: ${currentNonce}, cached: ${cached?.nonce || 'none'})`, LogLabel.FAUCET, 'getNextNonce', {
+            networkNonce: currentNonce,
+            cachedNonce: cached?.nonce || null,
+            selectedNonce: nextNonce,
+            address: this.account.address
+          });
+          resolve(nextNonce);
+        } catch (error) {
+          this.logger.error('Error getting nonce, falling back to network fetch', LogLabel.FAUCET, 'getNextNonce', { 
+            error: error instanceof Error ? error.message : 'Unknown error',
+            stack: error instanceof Error ? error.stack : undefined,
+            address: this.account.address
+          });
+          // Fallback to network nonce
+          const fallbackNonce = await this.publicClient.getTransactionCount({
+            address: this.account.address,
+          });
+          this.logger.info(`Using fallback nonce: ${fallbackNonce}`, LogLabel.FAUCET, 'getNextNonce');
+          resolve(fallbackNonce);
+        }
+      });
+    });
+  }
+
+  private resetNonceCache(): void {
+    const address = this.account.address.toLowerCase();
+    this.nonceManager.delete(address);
+    this.logger.info('Nonce cache reset', LogLabel.FAUCET, 'resetNonceCache');
+  }
+
+  private async sendTransactionWithRetry(
+    transactionBuilder: () => Promise<any>,
+    maxRetries: number = 3,
+    operation: string = 'transaction'
+  ): Promise<`0x${string}`> {
+    let lastError: any;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        this.logger.info(`${operation} attempt ${attempt}/${maxRetries}`, LogLabel.FAUCET, 'sendTransactionWithRetry');
+        
+        // Build transaction with fresh nonce
+        const transaction = await transactionBuilder();
+        
+        // Sign the transaction
+        const signedTransaction = await this.walletClient.signTransaction({ 
+          ...transaction, 
+          account: this.walletClient.account!, 
+          chain: null 
+        });
+        
+        // Send the transaction
+        const hash = await this.publicClient.sendRawTransaction({
+          serializedTransaction: signedTransaction,
+        });
+        
+        this.logger.info(`${operation} successful on attempt ${attempt}`, LogLabel.FAUCET, 'sendTransactionWithRetry', {
+          hash,
+          attempt,
+          nonce: transaction.nonce
+        });
+        
+        return hash;
+        
+      } catch (error: any) {
+        lastError = error;
+        const isNonceError = error.message?.toLowerCase().includes('nonce');
+        const isReplacementUnderpricedError = error.message?.toLowerCase().includes('replacement transaction underpriced');
+        const shouldRetry = isNonceError || isReplacementUnderpricedError;
+        
+        this.logger.error(`${operation} failed on attempt ${attempt}/${maxRetries}`, LogLabel.FAUCET, 'sendTransactionWithRetry', {
+          error: error.message,
+          code: error.code,
+          isNonceError,
+          isReplacementUnderpricedError,
+          shouldRetry,
+          attempt,
+          willRetry: attempt < maxRetries && shouldRetry
+        });
+        
+        // If it's a nonce-related error and we have retries left
+        if (shouldRetry && attempt < maxRetries) {
+          this.logger.warn(`Nonce/pricing error detected, resetting cache and retrying...`, LogLabel.FAUCET, 'sendTransactionWithRetry');
+          this.resetNonceCache();
+          
+          // Add a small delay before retry to let the network settle
+          await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+          continue;
+        }
+        
+        // If we've exhausted retries or it's not a nonce error, throw
+        if (attempt === maxRetries) {
+          this.logger.error(`${operation} failed after ${maxRetries} attempts`, LogLabel.FAUCET, 'sendTransactionWithRetry', {
+            finalError: error.message,
+            totalAttempts: maxRetries
+          });
+          throw error;
+        }
+        
+        // For non-nonce errors, throw immediately
+        if (!shouldRetry) {
+          throw error;
+        }
+      }
+    }
+    
+    throw lastError;
+  }
+
   public async sendNative(request: NativeFaucetRequest): Promise<FaucetResult> {
     try {
       // Validate address format
@@ -114,30 +256,31 @@ export class FaucetService {
         };
       }
 
-      // Build and send transaction
-      const nonce = await this.publicClient.getTransactionCount({
-        address: this.account.address,
-      });
+      // Build and send transaction with retry mechanism
+      const hash = await this.sendTransactionWithRetry(async () => {
+        const nonce = await this.getNextNonce();
+        
+        const transaction = {
+          to: request.address,
+          value: amountToSend,
+          gas: gasEstimate,
+          gasPrice: gasPrice,
+          nonce,
+        };
 
-      const transaction = {
-        to: request.address,
-        value: amountToSend,
-        gas: gasEstimate,
-        gasPrice: gasPrice,
-        nonce,
-      };
+        this.logger.info('Native transfer transaction built', LogLabel.FAUCET, 'sendNative', { 
+          to: request.address,
+          value: amountToSend.toString(),
+          valueFormatted: formatUnits(amountToSend, 18),
+          gas: gasEstimate.toString(),
+          gasPrice: gasPrice.toString(),
+          gasPriceGwei: formatUnits(gasPrice, 9),
+          nonce,
+          from: this.account.address
+        });
 
-      this.logger.info('Native transfer transaction built', LogLabel.FAUCET, 'sendNative', { transaction });
-
-      // Sign transaction locally
-      const signedTransaction = await this.walletClient.signTransaction({ ...transaction, account: this.walletClient.account!, chain: null });
-      this.logger.info('Native transfer transaction signed locally', LogLabel.FAUCET, 'sendNative');
-
-      // Send raw transaction
-      const hash = await this.publicClient.sendRawTransaction({
-        serializedTransaction: signedTransaction,
-      });
-      this.logger.info(`Native transfer transaction sent successfully! Hash: ${hash}`, LogLabel.FAUCET, 'sendNative', { hash });
+        return transaction;
+      }, 3, 'Native transfer');
 
       // Wait for transaction confirmation
       const receipt = await this.publicClient.waitForTransactionReceipt({
@@ -165,6 +308,12 @@ export class FaucetService {
     } catch (error) {
       this.logger.error('Native transfer error', LogLabel.FAUCET, 'sendNative', { 
         error: error instanceof Error ? error.message : 'Unknown error',
+        code: (error as any)?.code,
+        details: (error as any)?.details,
+        reason: (error as any)?.reason,
+        to: request.address,
+        amount: this.config.nativeAmount || "0.01",
+        faucetAddress: this.account.address,
         stack: error instanceof Error ? error.stack : undefined 
       });
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
@@ -260,7 +409,7 @@ export class FaucetService {
         };
       }
 
-      // Send the transaction using manual approach to avoid eth_sendTransaction
+      // Send the transaction with retry mechanism
       this.logger.info('Attempting to send token transaction', LogLabel.FAUCET, 'sendTokens', {
         faucetAddress: this.account.address,
         tokenAddress: request.tokenAddress,
@@ -269,9 +418,7 @@ export class FaucetService {
         tokenSymbol: tokenInfo.symbol
       });
       
-      let hash: `0x${string}` | undefined;
-      
-      try {
+      const hash = await this.sendTransactionWithRetry(async () => {
         // Build the transaction data
         const transferData = encodeFunctionData({
           abi: [
@@ -291,9 +438,7 @@ export class FaucetService {
         });
 
         // Get nonce
-        const nonce = await this.publicClient.getTransactionCount({
-          address: this.account.address,
-        });
+        const nonce = await this.getNextNonce();
 
         // Build transaction
         const transaction = {
@@ -304,24 +449,20 @@ export class FaucetService {
           nonce,
         };
 
-        this.logger.info('Token transaction built', LogLabel.FAUCET, 'sendTokens', { transaction });
-
-        // Sign transaction locally
-        const signedTransaction = await this.walletClient.signTransaction({ ...transaction, account: this.walletClient.account!, chain: null });
-        this.logger.info('Token transaction signed locally', LogLabel.FAUCET, 'sendTokens');
-
-        // Send raw transaction
-        hash = await this.publicClient.sendRawTransaction({
-          serializedTransaction: signedTransaction,
+        this.logger.info('Token transaction built', LogLabel.FAUCET, 'sendTokens', { 
+          to: request.tokenAddress,
+          recipient: request.address,
+          amount: formatUnits(amountToSend, tokenInfo.decimals),
+          tokenSymbol: tokenInfo.symbol,
+          gas: gasEstimate.toString(),
+          gasPrice: gasPrice.toString(),
+          gasPriceGwei: formatUnits(gasPrice, 9),
+          nonce,
+          from: this.account.address
         });
-        this.logger.info(`Token transaction sent successfully! Hash: ${hash}`, LogLabel.FAUCET, 'sendTokens', { hash });
-      } catch (txError: any) {
-        this.logger.error('Token transaction failed', LogLabel.FAUCET, 'sendTokens', { 
-          error: txError.message,
-          stack: txError.stack 
-        });
-        throw txError;
-      }
+
+        return transaction;
+      }, 3, 'Token transfer');
 
       // Wait for transaction confirmation (with shorter timeout for testing)
       const receipt = await this.publicClient.waitForTransactionReceipt({
@@ -349,9 +490,14 @@ export class FaucetService {
     } catch (error) {
       this.logger.error('Token transfer error', LogLabel.FAUCET, 'sendTokens', { 
         error: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined,
+        code: (error as any)?.code,
+        details: (error as any)?.details,
+        reason: (error as any)?.reason,
         tokenAddress: request.tokenAddress,
-        recipient: request.address
+        recipient: request.address,
+        amount: request.amount || this.config.defaultAmount,
+        faucetAddress: this.account.address,
+        stack: error instanceof Error ? error.stack : undefined
       });
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       return {

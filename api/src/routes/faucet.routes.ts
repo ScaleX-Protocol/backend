@@ -108,8 +108,7 @@ export const faucetRoutes = new Elysia({ prefix: '/api/faucet' })
     const result = await faucetController.requestNativeTokens(
       address,
       chainId,
-      clientIP,
-      headers['user-agent']
+      clientIP
     );
 
     if (result.success) {
