@@ -143,4 +143,5 @@ volumes:
 
 networks:
   scalex-network:
+    name: indexer_scalex-network
     driver: bridge
