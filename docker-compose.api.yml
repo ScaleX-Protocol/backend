@@ -24,6 +24,8 @@ services:
       - PORT=3000
     depends_on:
       - scalex-postgres
+    external_links:
+      - indexer_postgres:postgres
     networks:
       - scalex-network
     restart: unless-stopped
@@ -55,4 +57,4 @@ volumes:
 networks:
   scalex-network:
     external: true
-    name: clob-indexer_scalex-network
+    name: indexer_scalex-network
