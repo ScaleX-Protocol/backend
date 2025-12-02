@@ -14,6 +14,8 @@ services:
       - PONDER_DATABASE_URL=postgresql://postgres:password@postgres:5432/ponder_core
       - REDIS_URL=redis://redis:6379
       - PONDER_PORT=42070
+    ports:
+      - "42070"  # Expose port for Traefik auto-detection
     depends_on:
       - postgres
       - redis
@@ -22,6 +24,9 @@ services:
     restart: unless-stopped
     volumes:
       - ./logs:/app/logs
+    labels:
+      # Traefik configuration for Coolify
+      - traefik.enable=true
 
   # WebSocket service
   websocket-service:
@@ -41,12 +46,17 @@ services:
       - POLL_INTERVAL=1000
       - WS_PING_INTERVAL=30000
       - MAX_CONNECTIONS=1000
+    ports:
+      - "42080"  # Expose port for Traefik auto-detection
     depends_on:
       - postgres
       - redis
     networks:
       - scalex-network
     restart: unless-stopped
+    labels:
+      # Traefik configuration for Coolify
+      - traefik.enable=true
 
   # Analytics service
   analytics-service:
@@ -68,6 +78,8 @@ services:
       - ENABLE_DAILY_SNAPSHOTS=true
       - ENABLE_HOURLY_AGGREGATION=true
       - ENABLE_CACHE_REFRESH=true
+    ports:
+      - "42090"  # Expose port for Traefik auto-detection
     depends_on:
       - postgres
       - timescaledb
@@ -75,6 +87,9 @@ services:
     networks:
       - scalex-network
     restart: unless-stopped
+    labels:
+      # Traefik configuration for Coolify
+      - traefik.enable=true
 
   # PostgreSQL database (Main indexer DB)
   postgres:
