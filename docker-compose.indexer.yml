@@ -25,7 +25,7 @@ services:
     volumes:
       - ./logs:/app/logs
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:42070/ || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:42070/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
