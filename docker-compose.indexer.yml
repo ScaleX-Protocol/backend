@@ -2,8 +2,8 @@
 # For standalone deployment of the indexer and related services
 
 services:
-  # Core indexer service
-  clob-indexer:
+  # Core indexer service (Base Sepolia)
+  base-sepolia-clob-indexer:
     build:
       context: .
       dockerfile: Dockerfile
@@ -14,8 +14,7 @@ services:
       - PONDER_DATABASE_URL=postgresql://postgres:password@postgres:5432/ponder_core
       - REDIS_URL=redis://redis:6379
       - PONDER_PORT=42070
-    ports:
-      - "42070"  # Expose port for Traefik auto-detection
+    # No port exposure needed - Traefik handles routing by domain
     depends_on:
       - postgres
       - redis
@@ -31,9 +30,14 @@ services:
       retries: 3
       start_period: 40s
     labels:
-      # Traefik configuration for Coolify
+      # Traefik configuration
       - traefik.enable=true
       - traefik.http.services.clob-indexer.loadbalancer.server.port=42070
+      # Base Sepolia Router
+      - traefik.http.routers.base-sepolia-indexer.rule=Host(`base-sepolia-indexer.scalex.money`)
+      - traefik.http.routers.base-sepolia-indexer.entrypoints=websecure
+      - traefik.http.routers.base-sepolia-indexer.tls.certresolver=letsencrypt
+      - traefik.http.routers.base-sepolia-indexer.service=clob-indexer
 
   # WebSocket service
   websocket-service:
@@ -53,8 +57,7 @@ services:
       - POLL_INTERVAL=1000
       - WS_PING_INTERVAL=30000
       - MAX_CONNECTIONS=1000
-    ports:
-      - "42080"  # Expose port for Traefik auto-detection
+    # No port exposure needed - Traefik handles routing by domain
     depends_on:
       - postgres
       - redis
@@ -62,8 +65,22 @@ services:
       - scalex-network
     restart: unless-stopped
     labels:
-      # Traefik configuration for Coolify
+      # Traefik configuration
       - traefik.enable=true
+      - traefik.http.services.websocket-service.loadbalancer.server.port=42080
+      # Base Sepolia WebSocket Router
+      - traefik.http.routers.base-sepolia-websocket.rule=Host(`base-sepolia-websocket.scalex.money`)
+      - traefik.http.routers.base-sepolia-websocket.entrypoints=websecure
+      - traefik.http.routers.base-sepolia-websocket.tls.certresolver=letsencrypt
+      - traefik.http.routers.base-sepolia-websocket.service=websocket-service
+      # WebSocket specific configuration for WebSocket protocol
+      - traefik.http.routers.base-sepolia-websocket-websocket.rule=Host(`base-sepolia-websocket.scalex.money`)
+      - traefik.http.routers.base-sepolia-websocket-websocket.entrypoints=websecure
+      - traefik.http.routers.base-sepolia-websocket-websocket.tls.certresolver=letsencrypt
+      - traefik.http.routers.base-sepolia-websocket-websocket.service=websocket-service
+      - traefik.http.routers.base-sepolia-websocket-websocket.middlewares=websocket-headers
+      - traefik.http.middlewares.websocket-headers.headers.customRequestHeaders.Connection=Upgrade
+      - traefik.http.middlewares.websocket-headers.headers.customRequestHeaders.Upgrade=websocket
 
   # Analytics service
   analytics-service:
@@ -85,8 +102,7 @@ services:
       - ENABLE_DAILY_SNAPSHOTS=true
       - ENABLE_HOURLY_AGGREGATION=true
       - ENABLE_CACHE_REFRESH=true
-    ports:
-      - "42090"  # Expose port for Traefik auto-detection
+    # No port exposure needed - Traefik handles routing by domain
     depends_on:
       - postgres
       - timescaledb

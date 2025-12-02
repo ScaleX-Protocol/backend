@@ -1,7 +1,9 @@
-name: Deploy Base Sepolia API
+name: 🚀 Base Sepolia - API Deployment
 
 on:
   push:
+    branches: [ base-sepolia-api ]
+  pull_request:
     branches: [ base-sepolia-api ]
   workflow_dispatch:
 
@@ -16,12 +18,16 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
       
-    - name: Login to Docker Hub (if needed)
-      if: ${{ secrets.DOCKER_USERNAME && secrets.DOCKER_PASSWORD }}
-      uses: docker/login-action@v3
-      with:
-        username: ${{ secrets.DOCKER_USERNAME }}
-        password: ${{ secrets.DOCKER_PASSWORD }}
+    - name: Set up Docker Compose
+      run: |
+        if ! command -v docker-compose &> /dev/null; then
+          echo "Installing Docker Compose..."
+          sudo curl -L "https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          sudo chmod +x /usr/local/bin/docker-compose
+        else
+          echo "Docker Compose already installed:"
+          docker-compose --version
+        fi
         
     - name: Verify indexer network exists
       run: |
@@ -37,38 +43,99 @@ jobs:
       run: |
         echo "Deploying Base Sepolia API services..."
         
-        # Pull latest images or build if needed
-        if [ "${{ secrets.DOCKER_USERNAME }}" ]; then
-          API_ENV_FILE=./api/.env.base-sepolia docker-compose -f docker-compose.api.yml pull
-        else
-          API_ENV_FILE=./api/.env.base-sepolia docker-compose -f docker-compose.api.yml build
-        fi
+        # Set project name to avoid conflicts with Mantle API
+        export COMPOSE_PROJECT_NAME=base-sepolia-api
         
-        # Stop existing API services
-        API_ENV_FILE=./api/.env.base-sepolia docker-compose -f docker-compose.api.yml down || true
+        echo "=== Stopping any existing Mantle API services to prevent conflicts ==="
+        docker-compose -f docker-compose.api.yml -p mantle-sepolia-api down --remove-orphans || true
+        
+        echo "=== Building Base Sepolia API services ==="
+        API_ENV_FILE=./api/.env.base-sepolia docker-compose -f docker-compose.api.yml -p base-sepolia-api build --no-cache || {
+          echo "❌ Build failed, checking build logs..."
+          API_ENV_FILE=./api/.env.base-sepolia docker-compose -f docker-compose.api.yml -p base-sepolia-api build --no-cache --progress=plain
+          exit 1
+        }
+        
+        # Stop existing Base Sepolia API services
+        API_ENV_FILE=./api/.env.base-sepolia docker-compose -f docker-compose.api.yml -p base-sepolia-api down --remove-orphans || true
         
         # Start API services
-        API_ENV_FILE=./api/.env.base-sepolia docker-compose -f docker-compose.api.yml up -d
+        API_ENV_FILE=./api/.env.base-sepolia docker-compose -f docker-compose.api.yml -p base-sepolia-api up -d || {
+          echo "❌ API service start failed, checking logs..."
+          API_ENV_FILE=./api/.env.base-sepolia docker-compose -f docker-compose.api.yml -p base-sepolia-api logs
+          exit 1
+        }
         
         # Wait for services to be healthy
         sleep 30
         
         # Check service status
-        docker-compose -f docker-compose.api.yml ps
+        API_ENV_FILE=./api/.env.base-sepolia docker-compose -f docker-compose.api.yml -p base-sepolia-api ps
         
         echo "Base Sepolia API deployment completed"
         
     - name: Verify deployment
       run: |
+        export COMPOSE_PROJECT_NAME=base-sepolia-api
+        
+        echo "==========================================="
+        echo "🔍 DEPLOYMENT VERIFICATION - BASE SEPOLIA API"
+        echo "==========================================="
+        
+        echo ""
+        echo "=== 1. API CONTAINER STATUS CHECK ==="
+        API_ENV_FILE=./api/.env.base-sepolia docker-compose -f docker-compose.api.yml -p base-sepolia-api ps
+        
+        echo ""
+        echo "=== 2. API SERVICE HEALTH CHECKS ==="
         # Check if SCALEX Envio API is responding
-        timeout 60 bash -c 'until curl -f http://localhost:3333/; do sleep 5; done'
-        echo "✅ Base Sepolia SCALEX Envio API is responding on port 3333"
+        for i in {1..12}; do
+          echo "Attempt $i/12: Testing SCALEX Envio API..."
+          if API_ENV_FILE=./api/.env.base-sepolia docker-compose -f docker-compose.api.yml -p base-sepolia-api exec -T scalex-envio-api curl -f http://localhost:3000/ 2>/dev/null; then
+            echo "✅ Base Sepolia SCALEX Envio API is responding"
+            break
+          else
+            echo "SCALEX Envio API not ready, waiting 5 seconds..."
+            sleep 5
+          fi
+        done
         
         # Check if SCALEX API is responding
-        timeout 60 bash -c 'until curl -f http://localhost:3000/; do sleep 5; done'
-        echo "✅ Base Sepolia SCALEX API is responding on port 3000"
+        for i in {1..12}; do
+          echo "Attempt $i/12: Testing SCALEX API..."
+          if API_ENV_FILE=./api/.env.base-sepolia docker-compose -f docker-compose.api.yml -p base-sepolia-api exec -T scalex-api curl -f http://localhost:3000/ 2>/dev/null; then
+            echo "✅ Base Sepolia SCALEX API is responding"
+            break
+          else
+            echo "SCALEX API not ready, waiting 5 seconds..."
+            sleep 5
+          fi
+        done
         
+        echo ""
+        echo "=== 3. DATABASE VERIFICATION ==="
         # Verify database connections
         echo "Verifying database connections..."
-        docker-compose -f docker-compose.api.yml exec -T scalex-postgres pg_isready -U postgres -d scalex_api
-        echo "✅ API database connection verified"
+        if API_ENV_FILE=./api/.env.base-sepolia docker-compose -f docker-compose.api.yml -p base-sepolia-api exec -T scalex-postgres pg_isready -U postgres -d scalex_api; then
+          echo "✅ API database connection verified"
+        else
+          echo "❌ API database connection failed"
+        fi
+        
+        echo ""
+        echo "=== 4. API LOG ANALYSIS ==="
+        echo "--- SCALEX API Logs (last 20 lines) ---"
+        API_ENV_FILE=./api/.env.base-sepolia docker-compose -f docker-compose.api.yml -p base-sepolia-api logs --tail=20 scalex-api
+        
+        echo ""
+        echo "--- SCALEX Envio API Logs (last 15 lines) ---"
+        API_ENV_FILE=./api/.env.base-sepolia docker-compose -f docker-compose.api.yml -p base-sepolia-api logs --tail=15 scalex-envio-api
+        
+        echo ""
+        echo "--- PostgreSQL API Logs (last 10 lines) ---"
+        API_ENV_FILE=./api/.env.base-sepolia docker-compose -f docker-compose.api.yml -p base-sepolia-api logs --tail=10 scalex-postgres
+        
+        echo ""
+        echo "==========================================="
+        echo "🎯 BASE SEPOLIA API VERIFICATION COMPLETE"
+        echo "==========================================="
