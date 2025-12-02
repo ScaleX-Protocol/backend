@@ -2,7 +2,7 @@
 FROM oven/bun:alpine AS base
 
 # Install system dependencies
-RUN apk add --no-cache libc6-compat openssl postgresql-client
+RUN apk add --no-cache libc6-compat openssl postgresql-client curl
 
 WORKDIR /app
 
@@ -29,6 +29,6 @@ USER bunjs
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD bun --version || exit 1
+  CMD curl -f http://localhost:3000/ || exit 1
 
 CMD ["bun", "run", "src/index.ts"]
