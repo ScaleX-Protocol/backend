@@ -71,8 +71,15 @@ services:
     restart: unless-stopped
     volumes:
       - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:42070/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     labels:
       - traefik.enable=true
+      - traefik.http.services.clob-indexer.loadbalancer.server.port=42070
 
   # WebSocket service
   websocket-service:
