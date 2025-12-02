@@ -80,6 +80,9 @@ services:
     labels:
       - traefik.enable=true
       - traefik.http.services.clob-indexer.loadbalancer.server.port=42070
+      - traefik.http.routers.clob-indexer.rule=Host(`base-sepolia-indexer.scalex.money`)
+      - traefik.http.routers.clob-indexer.entrypoints=websecure
+      - traefik.http.routers.clob-indexer.tls=true
 
   # WebSocket service
   websocket-service:
