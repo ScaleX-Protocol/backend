@@ -162,23 +162,23 @@ jobs:
         echo "=== 3. LOG ANALYSIS ==="
         
         echo "--- PostgreSQL Logs (Mantle - last 15 lines) ---"
-        INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.mantle-indexer.yml logs --tail=15 postgres
+        INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.mantle-indexer.yml -p mantle-sepolia-indexer logs --tail=15 postgres
         
         echo ""
         echo "--- Redis Logs (Mantle - last 10 lines) ---"
-        INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.mantle-indexer.yml logs --tail=10 redis
+        INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.mantle-indexer.yml -p mantle-sepolia-indexer logs --tail=10 redis
         
         echo ""
         echo "--- Indexer Logs (Mantle - last 25 lines) ---"
-        INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.mantle-indexer.yml logs --tail=25 clob-indexer
+        INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.mantle-indexer.yml -p mantle-sepolia-indexer logs --tail=25 clob-indexer
         
         echo ""
         echo "--- WebSocket Logs (Mantle - last 15 lines) ---"
-        INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.mantle-indexer.yml logs --tail=15 websocket-service
+        INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.mantle-indexer.yml -p mantle-sepolia-indexer logs --tail=15 websocket-service
         
         echo ""
         echo "--- Analytics Logs (Mantle - last 15 lines) ---"
-        INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.mantle-indexer.yml logs --tail=15 analytics-service
+        INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.mantle-indexer.yml -p mantle-sepolia-indexer logs --tail=15 analytics-service
         
         echo ""
         echo "=== 4. WAITING FOR SERVICES TO FULLY START (90 seconds) ==="
@@ -190,14 +190,14 @@ jobs:
         
         # Test database connections
         echo "--- Database Connection Tests (Mantle) ---"
-        if INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.mantle-indexer.yml exec -T postgres pg_isready -U postgres -d ponder_core; then
+        if INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.mantle-indexer.yml -p mantle-sepolia-indexer exec -T postgres pg_isready -U postgres -d ponder_core; then
           echo "✅ PostgreSQL database connection successful"
         else
           echo "❌ PostgreSQL database connection failed"
         fi
         
         # Test Redis connection
-        if INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.mantle-indexer.yml exec -T redis redis-cli ping; then
+        if INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.mantle-indexer.yml -p mantle-sepolia-indexer exec -T redis redis-cli ping; then
           echo "✅ Redis connection successful"
         else
           echo "❌ Redis connection failed"
@@ -208,7 +208,7 @@ jobs:
         # Test indexer service
         for i in {1..12}; do
           echo "Attempt $i/12: Testing Mantle indexer health..."
-          if INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.mantle-indexer.yml exec -T clob-indexer curl -f http://localhost:42070/ 2>/dev/null; then
+          if INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.mantle-indexer.yml -p mantle-sepolia-indexer exec -T clob-indexer curl -f http://localhost:42070/ 2>/dev/null; then
             echo "✅ Mantle indexer health check passed"
             break
           else
@@ -220,7 +220,7 @@ jobs:
         # Test websocket service
         for i in {1..6}; do
           echo "Attempt $i/6: Testing Mantle websocket health..."
-          if INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.mantle-indexer.yml exec -T websocket-service curl -f http://localhost:42080/ 2>/dev/null; then
+          if INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.mantle-indexer.yml -p mantle-sepolia-indexer exec -T websocket-service curl -f http://localhost:42080/ 2>/dev/null; then
             echo "✅ Mantle websocket health check passed"
             break
           else
@@ -232,7 +232,7 @@ jobs:
         # Test analytics service
         for i in {1..6}; do
           echo "Attempt $i/6: Testing Mantle analytics health..."
-          if INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.mantle-indexer.yml exec -T analytics-service curl -f http://localhost:42090/ 2>/dev/null; then
+          if INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.mantle-indexer.yml -p mantle-sepolia-indexer exec -T analytics-service curl -f http://localhost:42090/ 2>/dev/null; then
             echo "✅ Mantle analytics health check passed"
             break
           else
@@ -244,7 +244,7 @@ jobs:
         echo ""
         echo "=== 6. FINAL STATUS SUMMARY ==="
         echo "All Mantle container statuses:"
-        INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.mantle-indexer.yml ps
+        INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.mantle-indexer.yml -p mantle-sepolia-indexer ps
         
         echo ""
         echo "=============================================="
