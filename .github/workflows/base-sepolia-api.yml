@@ -17,6 +17,17 @@ jobs:
       
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
+      
+    - name: Set up Docker Compose
+      run: |
+        if ! command -v docker-compose &> /dev/null; then
+          echo "Installing Docker Compose..."
+          sudo curl -L "https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          sudo chmod +x /usr/local/bin/docker-compose
+        else
+          echo "Docker Compose already installed:"
+          docker-compose --version
+        fi
         
     - name: Verify indexer network exists
       run: |
