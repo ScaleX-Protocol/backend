@@ -217,11 +217,13 @@ jobs:
           fi
         done
         
-        # Test websocket service
+        # Test websocket service (non-critical)
+        WEBSOCKET_SUCCESS=false
         for i in {1..6}; do
           echo "Attempt $i/6: Testing Mantle websocket health..."
           if INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.mantle-indexer.yml -p mantle-sepolia-indexer exec -T websocket-service curl -f http://localhost:42080/ 2>/dev/null; then
             echo "✅ Mantle websocket health check passed"
+            WEBSOCKET_SUCCESS=true
             break
           else
             echo "Mantle websocket not ready, waiting 10 seconds..."
@@ -229,17 +231,27 @@ jobs:
           fi
         done
         
-        # Test analytics service
+        if [ "$WEBSOCKET_SUCCESS" = false ]; then
+          echo "⚠️ Mantle WebSocket health check failed (non-critical service)"
+        fi
+        
+        # Test analytics service (non-critical)
+        ANALYTICS_SUCCESS=false
         for i in {1..6}; do
           echo "Attempt $i/6: Testing Mantle analytics health..."
           if INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.mantle-indexer.yml -p mantle-sepolia-indexer exec -T analytics-service curl -f http://localhost:42090/ 2>/dev/null; then
             echo "✅ Mantle analytics health check passed"
+            ANALYTICS_SUCCESS=true
             break
           else
             echo "Mantle analytics not ready, waiting 10 seconds..."
             sleep 10
           fi
         done
+        
+        if [ "$ANALYTICS_SUCCESS" = false ]; then
+          echo "⚠️ Mantle Analytics health check failed (non-critical service)"
+        fi
         
         echo ""
         echo "=== 6. FINAL STATUS SUMMARY ==="
