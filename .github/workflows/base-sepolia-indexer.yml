@@ -1,0 +1,63 @@
+name: Deploy Base Sepolia Indexer
+
+on:
+  push:
+    branches: [ base-sepolia-indexer ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Login to Docker Hub (if needed)
+      if: ${{ secrets.DOCKER_USERNAME && secrets.DOCKER_PASSWORD }}
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+        
+    - name: Deploy to production
+      run: |
+        echo "Deploying Base Sepolia indexer services..."
+        
+        # Pull latest images or build if needed
+        if [ "${{ secrets.DOCKER_USERNAME }}" ]; then
+          INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml pull
+        else
+          INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml build
+        fi
+        
+        # Stop existing services
+        INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml down || true
+        
+        # Start services
+        INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml up -d
+        
+        # Wait for services to be healthy
+        sleep 30
+        
+        # Check service health
+        docker-compose -f docker-compose.indexer.yml ps
+        
+        echo "Base Sepolia indexer deployment completed"
+        
+    - name: Verify deployment
+      run: |
+        # Check if main indexer service is responding
+        timeout 60 bash -c 'until curl -f http://localhost:42070/; do sleep 5; done'
+        echo "✅ Base Sepolia indexer is responding on port 42070"
+        
+        # Check WebSocket service
+        timeout 60 bash -c 'until curl -f http://localhost:42080/; do sleep 5; done'
+        echo "✅ WebSocket service is responding on port 42080"
+        
+        # Check Analytics service
+        timeout 60 bash -c 'until curl -f http://localhost:42090/; do sleep 5; done'
+        echo "✅ Analytics service is responding on port 42090"

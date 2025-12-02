@@ -8,7 +8,7 @@ services:
       context: .
       dockerfile: Dockerfile
     env_file:
-      - ./ponder/.env.core-chain
+      - ${INDEXER_ENV_FILE:-./ponder/.env.core-chain}
     environment:
       # Override .env.core-chain with container networking
       - PONDER_DATABASE_URL=postgresql://postgres:password@postgres:5432/ponder_core
@@ -41,7 +41,7 @@ services:
       context: ./websocket-service
       dockerfile: Dockerfile
     env_file:
-      - ./ponder/.env.core-chain
+      - ${INDEXER_ENV_FILE:-./ponder/.env.core-chain}
     environment:
       - PORT=42080
       - HEALTH_PORT=8080
@@ -71,7 +71,7 @@ services:
       context: ./analytics-service
       dockerfile: Dockerfile
     env_file:
-      - ./ponder/.env.core-chain
+      - ${INDEXER_ENV_FILE:-./ponder/.env.core-chain}
     environment:
       - PORT=42090
       - REDIS_URL=redis://redis:6379
