@@ -1,9 +1,9 @@
-# CLOB Indexer Docker Compose Configuration
-# For standalone deployment of the indexer and related services
+# Mantle Sepolia Indexer Docker Compose Configuration
+# For standalone deployment of the indexer and related services on Mantle network
 
 services:
-  # Core indexer service (Base Sepolia)
-  base-sepolia-clob-indexer:
+  # Core indexer service
+  clob-indexer:
     build:
       context: .
       dockerfile: Dockerfile
@@ -14,12 +14,12 @@ services:
       - PONDER_DATABASE_URL=postgresql://postgres:password@postgres:5432/ponder_core
       - REDIS_URL=redis://redis:6379
       - PONDER_PORT=42070
-    # No port exposure needed - Traefik handles routing by domain
+    
     depends_on:
       - postgres
       - redis
     networks:
-      - scalex-network
+      - mantle-scalex-network
     restart: unless-stopped
     volumes:
       - ./logs:/app/logs
@@ -32,12 +32,12 @@ services:
     labels:
       # Traefik configuration
       - traefik.enable=true
-      - traefik.http.services.clob-indexer.loadbalancer.server.port=42070
-      # Base Sepolia Router
-      - traefik.http.routers.base-sepolia-indexer.rule=Host(`base-sepolia-indexer.scalex.money`)
-      - traefik.http.routers.base-sepolia-indexer.entrypoints=websecure
-      - traefik.http.routers.base-sepolia-indexer.tls.certresolver=letsencrypt
-      - traefik.http.routers.base-sepolia-indexer.service=clob-indexer
+      - traefik.http.services.mantle-indexer.loadbalancer.server.port=42070
+      # Mantle Sepolia Router
+      - traefik.http.routers.mantle-sepolia-indexer.rule=Host(`mantle-sepolia-indexer.scalex.money`)
+      - traefik.http.routers.mantle-sepolia-indexer.entrypoints=websecure
+      - traefik.http.routers.mantle-sepolia-indexer.tls.certresolver=letsencrypt
+      - traefik.http.routers.mantle-sepolia-indexer.service=mantle-indexer
 
   # WebSocket service
   websocket-service:
@@ -57,30 +57,30 @@ services:
       - POLL_INTERVAL=1000
       - WS_PING_INTERVAL=30000
       - MAX_CONNECTIONS=1000
-    # No port exposure needed - Traefik handles routing by domain
+    
     depends_on:
       - postgres
       - redis
     networks:
-      - scalex-network
+      - mantle-scalex-network
     restart: unless-stopped
     labels:
       # Traefik configuration
       - traefik.enable=true
-      - traefik.http.services.websocket-service.loadbalancer.server.port=42080
-      # Base Sepolia WebSocket Router
-      - traefik.http.routers.base-sepolia-websocket.rule=Host(`base-sepolia-websocket.scalex.money`)
-      - traefik.http.routers.base-sepolia-websocket.entrypoints=websecure
-      - traefik.http.routers.base-sepolia-websocket.tls.certresolver=letsencrypt
-      - traefik.http.routers.base-sepolia-websocket.service=websocket-service
+      - traefik.http.services.mantle-websocket-service.loadbalancer.server.port=42080
+      # Mantle Sepolia WebSocket Router
+      - traefik.http.routers.mantle-sepolia-websocket.rule=Host(`mantle-sepolia-websocket.scalex.money`)
+      - traefik.http.routers.mantle-sepolia-websocket.entrypoints=websecure
+      - traefik.http.routers.mantle-sepolia-websocket.tls.certresolver=letsencrypt
+      - traefik.http.routers.mantle-sepolia-websocket.service=mantle-websocket-service
       # WebSocket specific configuration for WebSocket protocol
-      - traefik.http.routers.base-sepolia-websocket-websocket.rule=Host(`base-sepolia-websocket.scalex.money`)
-      - traefik.http.routers.base-sepolia-websocket-websocket.entrypoints=websecure
-      - traefik.http.routers.base-sepolia-websocket-websocket.tls.certresolver=letsencrypt
-      - traefik.http.routers.base-sepolia-websocket-websocket.service=websocket-service
-      - traefik.http.routers.base-sepolia-websocket-websocket.middlewares=websocket-headers
-      - traefik.http.middlewares.websocket-headers.headers.customRequestHeaders.Connection=Upgrade
-      - traefik.http.middlewares.websocket-headers.headers.customRequestHeaders.Upgrade=websocket
+      - traefik.http.routers.mantle-sepolia-websocket-websocket.rule=Host(`mantle-sepolia-websocket.scalex.money`)
+      - traefik.http.routers.mantle-sepolia-websocket-websocket.entrypoints=websecure
+      - traefik.http.routers.mantle-sepolia-websocket-websocket.tls.certresolver=letsencrypt
+      - traefik.http.routers.mantle-sepolia-websocket-websocket.service=mantle-websocket-service
+      - traefik.http.routers.mantle-sepolia-websocket-websocket.middlewares=mantle-websocket-headers
+      - traefik.http.middlewares.mantle-websocket-headers.headers.customRequestHeaders.Connection=Upgrade
+      - traefik.http.middlewares.mantle-websocket-headers.headers.customRequestHeaders.Upgrade=websocket
 
   # Analytics service
   analytics-service:
@@ -102,17 +102,18 @@ services:
       - ENABLE_DAILY_SNAPSHOTS=true
       - ENABLE_HOURLY_AGGREGATION=true
       - ENABLE_CACHE_REFRESH=true
-    # No port exposure needed - Traefik handles routing by domain
+    
     depends_on:
       - postgres
       - timescaledb
       - redis
     networks:
-      - scalex-network
+      - mantle-scalex-network
     restart: unless-stopped
     labels:
-      # Traefik configuration for Coolify
+      # Traefik configuration
       - traefik.enable=true
+      - traefik.http.services.mantle-analytics-service.loadbalancer.server.port=42090
 
   # PostgreSQL database (Main indexer DB)
   postgres:
@@ -122,9 +123,9 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=password
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - mantle_postgres_data:/var/lib/postgresql/data
     networks:
-      scalex-network:
+      mantle-scalex-network:
         aliases:
           - postgres
           - db
@@ -138,11 +139,11 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=password
     volumes:
-      - timescale_data:/var/lib/postgresql/data
+      - mantle_timescale_data:/var/lib/postgresql/data
       - ./analytics-service/init:/docker-entrypoint-initdb.d
     command: ["postgres", "-c", "shared_preload_libraries=timescaledb"]
     networks:
-      scalex-network:
+      mantle-scalex-network:
         aliases:
           - timescaledb
     restart: unless-stopped
@@ -151,35 +152,20 @@ services:
   redis:
     image: redis:7-alpine
     volumes:
-      - redis_data:/data
+      - mantle_redis_data:/data
     networks:
-      scalex-network:
+      mantle-scalex-network:
         aliases:
           - redis
     restart: unless-stopped
     command: redis-server --appendonly yes
 
-  # Redis Commander for Redis management (dev only)
-  redis-commander:
-    image: rediscommander/redis-commander:latest
-    ports:
-      - "8081:8081"
-    environment:
-      - REDIS_HOSTS=local:redis:6379
-    depends_on:
-      - redis
-    networks:
-      - scalex-network
-    profiles:
-      - dev
-    restart: unless-stopped
-
 volumes:
-  postgres_data:
-  timescale_data:
-  redis_data:
+  mantle_postgres_data:
+  mantle_timescale_data:
+  mantle_redis_data:
 
 networks:
-  scalex-network:
-    name: indexer_scalex-network
+  mantle-scalex-network:
+    name: mantle_scalex-network
     driver: bridge
