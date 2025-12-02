@@ -2,18 +2,19 @@
 # For standalone deployment of the indexer and related services
 
 services:
-  # Core indexer service
-  clob-indexer:
+  # Core indexer service (Base Sepolia)
+  base-sepolia-clob-indexer:
     build:
       context: .
       dockerfile: Dockerfile
     env_file:
-      - ./ponder/.env.core-chain
+      - ${INDEXER_ENV_FILE:-./ponder/.env.core-chain}
     environment:
       # Override .env.core-chain with container networking
       - PONDER_DATABASE_URL=postgresql://postgres:password@postgres:5432/ponder_core
       - REDIS_URL=redis://redis:6379
       - PONDER_PORT=42070
+    # No port exposure needed - Traefik handles routing by domain
     depends_on:
       - postgres
       - redis
@@ -22,6 +23,21 @@ services:
     restart: unless-stopped
     volumes:
       - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:42070/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      # Traefik configuration
+      - traefik.enable=true
+      - traefik.http.services.clob-indexer.loadbalancer.server.port=42070
+      # Base Sepolia Router
+      - traefik.http.routers.base-sepolia-indexer.rule=Host(`base-sepolia-indexer.scalex.money`)
+      - traefik.http.routers.base-sepolia-indexer.entrypoints=websecure
+      - traefik.http.routers.base-sepolia-indexer.tls.certresolver=letsencrypt
+      - traefik.http.routers.base-sepolia-indexer.service=clob-indexer
 
   # WebSocket service
   websocket-service:
@@ -29,7 +45,7 @@ services:
       context: ./websocket-service
       dockerfile: Dockerfile
     env_file:
-      - ./ponder/.env.core-chain
+      - ${INDEXER_ENV_FILE:-./ponder/.env.core-chain}
     environment:
       - PORT=42080
       - HEALTH_PORT=8080
@@ -41,12 +57,27 @@ services:
       - POLL_INTERVAL=1000
       - WS_PING_INTERVAL=30000
       - MAX_CONNECTIONS=1000
+    # No port exposure needed - Traefik handles routing by domain
     depends_on:
       - postgres
       - redis
     networks:
       - scalex-network
     restart: unless-stopped
+    labels:
+      # Traefik configuration
+      - traefik.enable=true
+      - traefik.http.services.websocket-service.loadbalancer.server.port=42080
+      # WebSocket middleware for connection upgrade
+      - traefik.http.middlewares.websocket-headers.headers.customRequestHeaders.Connection=Upgrade
+      - traefik.http.middlewares.websocket-headers.headers.customRequestHeaders.Upgrade=websocket
+      # Base Sepolia WebSocket Router
+      - traefik.http.routers.base-sepolia-websocket.rule=Host(`base-sepolia-websocket.scalex.money`)
+      - traefik.http.routers.base-sepolia-websocket.entrypoints=websecure
+      - traefik.http.routers.base-sepolia-websocket.tls.certresolver=letsencrypt
+      - traefik.http.routers.base-sepolia-websocket.service=websocket-service
+      - traefik.http.routers.base-sepolia-websocket.middlewares=websocket-headers
+      - traefik.http.routers.base-sepolia-websocket.priority=100
 
   # Analytics service
   analytics-service:
@@ -54,7 +85,7 @@ services:
       context: ./analytics-service
       dockerfile: Dockerfile
     env_file:
-      - ./ponder/.env.core-chain
+      - ${INDEXER_ENV_FILE:-./ponder/.env.core-chain}
     environment:
       - PORT=42090
       - REDIS_URL=redis://redis:6379
@@ -68,6 +99,7 @@ services:
       - ENABLE_DAILY_SNAPSHOTS=true
       - ENABLE_HOURLY_AGGREGATION=true
       - ENABLE_CACHE_REFRESH=true
+    # No port exposure needed - Traefik handles routing by domain
     depends_on:
       - postgres
       - timescaledb
@@ -75,6 +107,9 @@ services:
     networks:
       - scalex-network
     restart: unless-stopped
+    labels:
+      # Traefik configuration for Coolify
+      - traefik.enable=true
 
   # PostgreSQL database (Main indexer DB)
   postgres:

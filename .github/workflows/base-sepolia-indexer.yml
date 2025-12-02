@@ -1,0 +1,254 @@
+name: 🚀 Base Sepolia - Indexer Deployment
+
+on:
+  push:
+    branches: [ base-sepolia-indexer ]
+  pull_request:
+    branches: [ base-sepolia-indexer ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, scalex]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Set up Docker Compose
+      run: |
+        if ! command -v docker-compose &> /dev/null; then
+          echo "Installing Docker Compose..."
+          sudo curl -L "https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          sudo chmod +x /usr/local/bin/docker-compose
+        else
+          echo "Docker Compose already installed:"
+          docker-compose --version
+        fi
+        
+    - name: Deploy to production
+      run: |
+        echo "Deploying Base Sepolia indexer services..."
+        
+        echo "=== Checking environment file ==="
+        if [ -f "./ponder/.env.base-sepolia" ]; then
+          echo "✅ Environment file exists: ./ponder/.env.base-sepolia"
+          echo "=== Environment file content (first 10 lines) ==="
+          head -10 ./ponder/.env.base-sepolia
+        else
+          echo "❌ Environment file not found: ./ponder/.env.base-sepolia"
+          echo "Available environment files:"
+          ls -la ./ponder/.env* || echo "No .env files found"
+          exit 1
+        fi
+        
+        # Set project name to avoid conflicts with Mantle
+        export COMPOSE_PROJECT_NAME=base-sepolia-indexer
+        
+        echo "=== Stopping any existing Mantle services to prevent conflicts ==="
+        docker-compose -f docker-compose.mantle-indexer.yml -p mantle-sepolia-indexer down --remove-orphans || true
+        
+        echo "=== Building Base Sepolia services ==="
+        INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer build --no-cache || {
+          echo "❌ Build failed, checking build logs..."
+          INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer build --no-cache --progress=plain
+          exit 1
+        }
+        
+        echo "=== Stopping existing Base Sepolia services ==="
+        INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer down --remove-orphans || true
+        
+        echo "=== Starting Base Sepolia services ==="
+        INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer up -d || {
+          echo "❌ Service start failed, checking logs..."
+          INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer logs
+          exit 1
+        }
+        
+        echo "=== Checking initial service status ==="
+        sleep 30
+        INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer ps
+        
+        echo "Base Sepolia indexer deployment completed"
+        
+    - name: Verify deployment
+      run: |
+        echo "============================================"
+        echo "🔍 DEPLOYMENT VERIFICATION - BASE SEPOLIA"
+        echo "============================================"
+        
+        echo ""
+        echo "=== 1. CONTAINER STATUS CHECK ==="
+        echo "Checking if Base Sepolia containers are running..."
+        INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer ps
+        
+        echo ""
+        echo "=== 2. DETAILED CONTAINER INSPECTION ==="
+        
+        # Check each container individually
+        echo "--- PostgreSQL Container ---"
+        POSTGRES_STATUS=$(INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer ps -q postgres)
+        if [ -n "$POSTGRES_STATUS" ]; then
+          echo "✅ PostgreSQL container is running: $POSTGRES_STATUS"
+          echo "PostgreSQL health check:"
+          INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer exec -T postgres pg_isready -U postgres -d ponder_core || echo "❌ PostgreSQL not ready"
+        else
+          echo "❌ PostgreSQL container is NOT running"
+        fi
+        
+        echo ""
+        echo "--- Redis Container ---"
+        REDIS_STATUS=$(INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer ps -q redis)
+        if [ -n "$REDIS_STATUS" ]; then
+          echo "✅ Redis container is running: $REDIS_STATUS"
+          echo "Redis health check:"
+          INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer exec -T redis redis-cli ping || echo "❌ Redis not responding"
+        else
+          echo "❌ Redis container is NOT running"
+        fi
+        
+        echo ""
+        echo "--- Indexer Container ---"
+        INDEXER_STATUS=$(INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer ps -q base-sepolia-clob-indexer)
+        if [ -n "$INDEXER_STATUS" ]; then
+          echo "✅ Indexer container is running: $INDEXER_STATUS"
+          echo "Indexer container info:"
+          INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer exec -T base-sepolia-clob-indexer ps aux || echo "Could not get process info"
+        else
+          echo "❌ Indexer container is NOT running"
+        fi
+        
+        echo ""
+        echo "--- WebSocket Container ---"
+        WEBSOCKET_STATUS=$(INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer ps -q websocket-service)
+        if [ -n "$WEBSOCKET_STATUS" ]; then
+          echo "✅ WebSocket container is running: $WEBSOCKET_STATUS"
+          echo "WebSocket container info:"
+          INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer exec -T websocket-service ps aux || echo "Could not get process info"
+        else
+          echo "❌ WebSocket container is NOT running"
+        fi
+        
+        echo ""
+        echo "--- Analytics Container ---"
+        ANALYTICS_STATUS=$(INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer ps -q analytics-service)
+        if [ -n "$ANALYTICS_STATUS" ]; then
+          echo "✅ Analytics container is running: $ANALYTICS_STATUS"
+          echo "Analytics container info:"
+          INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer exec -T analytics-service ps aux || echo "Could not get process info"
+        else
+          echo "❌ Analytics container is NOT running"
+        fi
+        
+        echo ""
+        echo "=== 3. LOG ANALYSIS ==="
+        
+        echo "--- PostgreSQL Logs (last 15 lines) ---"
+        INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer logs --tail=15 postgres
+        
+        echo ""
+        echo "--- Redis Logs (last 10 lines) ---"
+        INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer logs --tail=10 redis
+        
+        echo ""
+        echo "--- Indexer Logs (last 25 lines) ---"
+        INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer logs --tail=25 base-sepolia-clob-indexer
+        
+        echo ""
+        echo "--- WebSocket Logs (last 15 lines) ---"
+        INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer logs --tail=15 websocket-service
+        
+        echo ""
+        echo "--- Analytics Logs (last 15 lines) ---"
+        INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer logs --tail=15 analytics-service
+        
+        echo ""
+        echo "=== 4. WAITING FOR SERVICES TO FULLY START (90 seconds) ==="
+        echo "Giving services more time to initialize..."
+        sleep 90
+        
+        echo ""
+        echo "=== 5. SERVICE CONNECTIVITY TESTS ==="
+        
+        # Test database connections
+        echo "--- Database Connection Tests ---"
+        if INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer exec -T postgres pg_isready -U postgres -d ponder_core; then
+          echo "✅ PostgreSQL database connection successful"
+        else
+          echo "❌ PostgreSQL database connection failed"
+        fi
+        
+        # Test Redis connection
+        if INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer exec -T redis redis-cli ping; then
+          echo "✅ Redis connection successful"
+        else
+          echo "❌ Redis connection failed"
+        fi
+        
+        echo ""
+        echo "--- Application Health Checks ---"
+        # Test indexer service
+        for i in {1..12}; do
+          echo "Attempt $i/12: Testing indexer health..."
+          if INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer exec -T base-sepolia-clob-indexer curl -f http://localhost:42070/ 2>/dev/null; then
+            echo "✅ Indexer health check passed"
+            break
+          else
+            echo "Indexer not ready, waiting 10 seconds..."
+            sleep 10
+          fi
+        done
+        
+        # Test websocket service (non-critical)
+        WEBSOCKET_SUCCESS=false
+        for i in {1..3}; do
+          echo "Attempt $i/3: Testing websocket health..."
+          if INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer exec -T websocket-service curl -f http://localhost:42080/ 2>/dev/null; then
+            echo "✅ WebSocket health check passed"
+            WEBSOCKET_SUCCESS=true
+            break
+          else
+            echo "WebSocket not ready, waiting 5 seconds..."
+            sleep 5
+          fi
+        done
+        
+        if [ "$WEBSOCKET_SUCCESS" = false ]; then
+          echo "⚠️ WebSocket health check failed (non-critical service)"
+        fi
+        
+        # Test analytics service (non-critical)
+        # ANALYTICS_SUCCESS=false
+        # for i in {1..6}; do
+        #   echo "Attempt $i/6: Testing analytics health..."
+        #   if INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer exec -T analytics-service curl -f http://localhost:42090/ 2>/dev/null; then
+        #     echo "✅ Analytics health check passed"
+        #     ANALYTICS_SUCCESS=true
+        #     break
+        #   else
+        #     echo "Analytics not ready, waiting 10 seconds..."
+        #     sleep 10
+        #   fi
+        # done
+        
+        if [ "$ANALYTICS_SUCCESS" = false ]; then
+          echo "⚠️ Analytics health check failed (non-critical service)"
+        fi
+        
+        echo ""
+        echo "=== 6. FINAL STATUS SUMMARY ==="
+        echo "All container statuses:"
+        INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer ps
+        
+        echo ""
+        echo "=== 7. FINAL CONTAINER STATUS BEFORE JOB END ==="
+        echo "Final check - container status at end of verification:"
+        INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer ps
+        
+        echo ""
+        echo "============================================"
+        echo "🎯 BASE SEPOLIA DEPLOYMENT VERIFICATION COMPLETE"
+        echo "============================================"
