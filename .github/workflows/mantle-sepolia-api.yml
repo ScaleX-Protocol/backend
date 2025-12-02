@@ -61,19 +61,19 @@ jobs:
         docker-compose -f docker-compose.api.yml -p base-sepolia-api down --remove-orphans || true
         
         echo "=== Building Mantle Sepolia API services ==="
-        API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api build --no-cache || {
+        API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money ENVIO_HOST_NAME=mantle-sepolia-envio-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api build --no-cache || {
           echo "❌ Build failed, checking build logs..."
-          API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api build --no-cache --progress=plain
+          API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money ENVIO_HOST_NAME=mantle-sepolia-envio-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api build --no-cache --progress=plain
           exit 1
         }
         
         # Stop existing Mantle API services
-        API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api down --remove-orphans || true
+        API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money ENVIO_HOST_NAME=mantle-sepolia-envio-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api down --remove-orphans || true
         
         # Start API services
-        API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api up -d || {
+        API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money ENVIO_HOST_NAME=mantle-sepolia-envio-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api up -d || {
           echo "❌ API service start failed, checking logs..."
-          API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api logs
+          API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money ENVIO_HOST_NAME=mantle-sepolia-envio-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api logs
           exit 1
         }
         
@@ -81,7 +81,7 @@ jobs:
         sleep 30
         
         # Check service status
-        API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api ps
+        API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money ENVIO_HOST_NAME=mantle-sepolia-envio-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api ps
         
         echo "Mantle Sepolia API deployment completed"
         
@@ -95,14 +95,14 @@ jobs:
         
         echo ""
         echo "=== 1. MANTLE API CONTAINER STATUS CHECK ==="
-        API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api ps
+        API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money ENVIO_HOST_NAME=mantle-sepolia-envio-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api ps
         
         echo ""
         echo "=== 2. MANTLE API SERVICE HEALTH CHECKS ==="
         # Check if SCALEX Envio API is responding
         for i in {1..12}; do
           echo "Attempt $i/12: Testing Mantle SCALEX Envio API..."
-          if API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api exec -T scalex-envio-api curl -f http://localhost:3000/ 2>/dev/null; then
+          if API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money ENVIO_HOST_NAME=mantle-sepolia-envio-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api exec -T scalex-envio-api curl -f http://localhost:3000/ 2>/dev/null; then
             echo "✅ Mantle Sepolia SCALEX Envio API is responding"
             break
           else
@@ -114,7 +114,7 @@ jobs:
         # Check if SCALEX API is responding
         for i in {1..12}; do
           echo "Attempt $i/12: Testing Mantle SCALEX API..."
-          if API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api exec -T scalex-api curl -f http://localhost:3000/ 2>/dev/null; then
+          if API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money ENVIO_HOST_NAME=mantle-sepolia-envio-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api exec -T scalex-api curl -f http://localhost:3000/ 2>/dev/null; then
             echo "✅ Mantle Sepolia SCALEX API is responding"
             break
           else
@@ -127,7 +127,7 @@ jobs:
         echo "=== 3. MANTLE DATABASE VERIFICATION ==="
         # Verify database connections
         echo "Verifying database connections..."
-        if API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api exec -T scalex-postgres pg_isready -U postgres -d scalex_api; then
+        if API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money ENVIO_HOST_NAME=mantle-sepolia-envio-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api exec -T scalex-postgres pg_isready -U postgres -d scalex_api; then
           echo "✅ Mantle Sepolia API database connection verified"
         else
           echo "❌ Mantle Sepolia API database connection failed"
@@ -136,15 +136,15 @@ jobs:
         echo ""
         echo "=== 4. MANTLE API LOG ANALYSIS ==="
         echo "--- Mantle SCALEX API Logs (last 20 lines) ---"
-        API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api logs --tail=20 scalex-api
+        API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money ENVIO_HOST_NAME=mantle-sepolia-envio-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api logs --tail=20 scalex-api
         
         echo ""
         echo "--- Mantle SCALEX Envio API Logs (last 15 lines) ---"
-        API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api logs --tail=15 scalex-envio-api
+        API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money ENVIO_HOST_NAME=mantle-sepolia-envio-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api logs --tail=15 scalex-envio-api
         
         echo ""
         echo "--- Mantle PostgreSQL API Logs (last 10 lines) ---"
-        API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api logs --tail=10 scalex-postgres
+        API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money ENVIO_HOST_NAME=mantle-sepolia-envio-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api logs --tail=10 scalex-postgres
         
         echo ""
         echo "==============================================="
