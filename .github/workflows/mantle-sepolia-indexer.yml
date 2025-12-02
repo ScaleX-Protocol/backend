@@ -1,4 +1,4 @@
-name: Deploy Mantle Sepolia Indexer
+name: 🚀 Mantle Sepolia - Indexer Deployment
 
 on:
   push:
@@ -17,13 +17,6 @@ jobs:
       
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
-      
-    - name: Login to Docker Hub (if needed)
-      if: ${{ secrets.DOCKER_USERNAME && secrets.DOCKER_PASSWORD }}
-      uses: docker/login-action@v3
-      with:
-        username: ${{ secrets.DOCKER_USERNAME }}
-        password: ${{ secrets.DOCKER_PASSWORD }}
         
     - name: Create Mantle environment configuration
       run: |
@@ -50,12 +43,8 @@ jobs:
       run: |
         echo "Deploying Mantle Sepolia indexer services..."
         
-        # Build with Mantle configuration
-        if [ "${{ secrets.DOCKER_USERNAME }}" ]; then
-          INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.indexer.yml pull
-        else
-          INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.indexer.yml build
-        fi
+        # Build services with Mantle configuration
+        INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.indexer.yml build
         
         # Stop existing Mantle services
         INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.indexer.yml down || true
