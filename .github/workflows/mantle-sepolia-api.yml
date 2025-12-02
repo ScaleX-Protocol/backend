@@ -3,6 +3,8 @@ name: Deploy Mantle Sepolia API
 on:
   push:
     branches: [ mantle-sepolia-api ]
+  pull_request:
+    branches: [ mantle-sepolia-api ]
   workflow_dispatch:
 
 jobs:

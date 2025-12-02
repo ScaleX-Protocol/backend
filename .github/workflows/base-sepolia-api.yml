@@ -3,6 +3,8 @@ name: Deploy Base Sepolia API
 on:
   push:
     branches: [ base-sepolia-api ]
+  pull_request:
+    branches: [ base-sepolia-api ]
   workflow_dispatch:
 
 jobs:
