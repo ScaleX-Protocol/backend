@@ -1,0 +1,86 @@
+name: Deploy Mantle Sepolia Indexer
+
+on:
+  push:
+    branches: [ mantle-sepolia-indexer ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Login to Docker Hub (if needed)
+      if: ${{ secrets.DOCKER_USERNAME && secrets.DOCKER_PASSWORD }}
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+        
+    - name: Create Mantle environment configuration
+      run: |
+        # Create Mantle Sepolia environment configuration
+        mkdir -p ./env/mantle-sepolia
+        
+        # Copy base configuration and override for Mantle Sepolia
+        if [ -f "./ponder/.env.core-chain" ]; then
+          cp ./ponder/.env.core-chain ./ponder/.env.mantle-sepolia
+          echo "Created Mantle Sepolia environment from core-chain"
+        fi
+        
+    - name: Verify indexer network exists for Mantle
+      run: |
+        # Create Mantle-specific network
+        if ! docker network ls | grep -q "mantle_scalex-network"; then
+          echo "Creating mantle_scalex-network..."
+          docker network create mantle_scalex-network
+        else
+          echo "✅ mantle_scalex-network already exists"
+        fi
+        
+    - name: Deploy Mantle Sepolia Indexer
+      run: |
+        echo "Deploying Mantle Sepolia indexer services..."
+        
+        # Build with Mantle configuration
+        if [ "${{ secrets.DOCKER_USERNAME }}" ]; then
+          INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.indexer.yml pull
+        else
+          INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.indexer.yml build
+        fi
+        
+        # Stop existing Mantle services
+        INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.indexer.yml down || true
+        
+        # Start services with Mantle configuration
+        INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.indexer.yml up -d
+        
+        # Wait for services to be healthy
+        sleep 45
+        
+        # Check service status
+        MANTLE_ENV_FILE=$MANTLE_ENV_FILE docker-compose -f docker-compose.indexer.yml ps
+        
+        echo "Mantle Sepolia indexer deployment completed"
+        
+    - name: Verify Mantle Sepolia Indexer deployment
+      run: |
+        echo "Verifying Mantle Sepolia indexer deployment..."
+        
+        # Check indexer services
+        timeout 60 bash -c 'until curl -f http://localhost:42070/; do sleep 5; done'
+        echo "✅ Mantle Sepolia indexer is responding on port 42070"
+        
+        timeout 60 bash -c 'until curl -f http://localhost:42080/; do sleep 5; done'
+        echo "✅ Mantle Sepolia WebSocket service is responding on port 42080"
+        
+        timeout 60 bash -c 'until curl -f http://localhost:42090/; do sleep 5; done'
+        echo "✅ Mantle Sepolia Analytics service is responding on port 42090"
+        
+        echo "🎉 Mantle Sepolia indexer services deployed successfully!"

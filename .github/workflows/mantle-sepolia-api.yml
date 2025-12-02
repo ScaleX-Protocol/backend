@@ -1,0 +1,87 @@
+name: Deploy Mantle Sepolia API
+
+on:
+  push:
+    branches: [ mantle-sepolia-api ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Login to Docker Hub (if needed)
+      if: ${{ secrets.DOCKER_USERNAME && secrets.DOCKER_PASSWORD }}
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+        
+    - name: Create Mantle environment configuration
+      run: |
+        # Create Mantle Sepolia environment configuration
+        mkdir -p ./env/mantle-sepolia
+        
+        # Copy base configuration and override for Mantle Sepolia
+        if [ -f "./api/.env.example" ]; then
+          cp ./api/.env.example ./api/.env.mantle-sepolia
+          echo "Created Mantle Sepolia API environment"
+        fi
+        
+    - name: Verify indexer network exists for Mantle
+      run: |
+        # Check if the Mantle indexer network exists, create if it doesn't
+        if ! docker network ls | grep -q "mantle_scalex-network"; then
+          echo "Creating mantle_scalex-network..."
+          docker network create mantle_scalex-network
+        else
+          echo "✅ mantle_scalex-network already exists"
+        fi
+        
+    - name: Deploy Mantle Sepolia API
+      run: |
+        echo "Deploying Mantle Sepolia API services..."
+        
+        # Pull latest images or build if needed
+        if [ "${{ secrets.DOCKER_USERNAME }}" ]; then
+          API_ENV_FILE=./api/.env.mantle-sepolia docker-compose -f docker-compose.api.yml pull
+        else
+          API_ENV_FILE=./api/.env.mantle-sepolia docker-compose -f docker-compose.api.yml build
+        fi
+        
+        # Stop existing API services
+        API_ENV_FILE=./api/.env.mantle-sepolia docker-compose -f docker-compose.api.yml down || true
+        
+        # Start API services
+        API_ENV_FILE=./api/.env.mantle-sepolia docker-compose -f docker-compose.api.yml up -d
+        
+        # Wait for services to be healthy
+        sleep 30
+        
+        # Check service status
+        docker-compose -f docker-compose.api.yml ps
+        
+        echo "Mantle Sepolia API deployment completed"
+        
+    - name: Verify Mantle Sepolia API deployment
+      run: |
+        echo "Verifying Mantle Sepolia API deployment..."
+        
+        # Check if SCALEX Envio API is responding
+        timeout 60 bash -c 'until curl -f http://localhost:3333/; do sleep 5; done'
+        echo "✅ Mantle Sepolia SCALEX Envio API is responding on port 3333"
+        
+        # Check if SCALEX API is responding
+        timeout 60 bash -c 'until curl -f http://localhost:3000/; do sleep 5; done'
+        echo "✅ Mantle Sepolia SCALEX API is responding on port 3000"
+        
+        # Verify database connections
+        echo "Verifying database connections..."
+        docker-compose -f docker-compose.api.yml exec -T scalex-postgres pg_isready -U postgres -d scalex_api
+        echo "✅ Mantle Sepolia API database connection verified"

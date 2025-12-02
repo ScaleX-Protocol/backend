@@ -16,7 +16,7 @@ services:
       context: ./api
       dockerfile: Dockerfile
     env_file:
-      - ./ponder/.env.core-chain
+      - ${API_ENV_FILE:-./ponder/.env.core-chain}
     environment:
       - DATABASE_URL=postgresql://postgres:password@scalex-postgres:5432/scalex_api
       - PONDER_DATABASE_URL=postgresql://postgres:password@postgres:5432/ponder_core

@@ -1,0 +1,74 @@
+name: Deploy Base Sepolia API
+
+on:
+  push:
+    branches: [ base-sepolia-api ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Login to Docker Hub (if needed)
+      if: ${{ secrets.DOCKER_USERNAME && secrets.DOCKER_PASSWORD }}
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+        
+    - name: Verify indexer network exists
+      run: |
+        # Check if the indexer network exists, create if it doesn't
+        if ! docker network ls | grep -q "indexer_scalex-network"; then
+          echo "Creating indexer_scalex-network..."
+          docker network create indexer_scalex-network
+        else
+          echo "✅ indexer_scalex-network already exists"
+        fi
+        
+    - name: Deploy API services
+      run: |
+        echo "Deploying Base Sepolia API services..."
+        
+        # Pull latest images or build if needed
+        if [ "${{ secrets.DOCKER_USERNAME }}" ]; then
+          API_ENV_FILE=./api/.env.base-sepolia docker-compose -f docker-compose.api.yml pull
+        else
+          API_ENV_FILE=./api/.env.base-sepolia docker-compose -f docker-compose.api.yml build
+        fi
+        
+        # Stop existing API services
+        API_ENV_FILE=./api/.env.base-sepolia docker-compose -f docker-compose.api.yml down || true
+        
+        # Start API services
+        API_ENV_FILE=./api/.env.base-sepolia docker-compose -f docker-compose.api.yml up -d
+        
+        # Wait for services to be healthy
+        sleep 30
+        
+        # Check service status
+        docker-compose -f docker-compose.api.yml ps
+        
+        echo "Base Sepolia API deployment completed"
+        
+    - name: Verify deployment
+      run: |
+        # Check if SCALEX Envio API is responding
+        timeout 60 bash -c 'until curl -f http://localhost:3333/; do sleep 5; done'
+        echo "✅ Base Sepolia SCALEX Envio API is responding on port 3333"
+        
+        # Check if SCALEX API is responding
+        timeout 60 bash -c 'until curl -f http://localhost:3000/; do sleep 5; done'
+        echo "✅ Base Sepolia SCALEX API is responding on port 3000"
+        
+        # Verify database connections
+        echo "Verifying database connections..."
+        docker-compose -f docker-compose.api.yml exec -T scalex-postgres pg_isready -U postgres -d scalex_api
+        echo "✅ API database connection verified"
