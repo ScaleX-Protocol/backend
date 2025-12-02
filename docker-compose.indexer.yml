@@ -68,19 +68,16 @@ services:
       # Traefik configuration
       - traefik.enable=true
       - traefik.http.services.websocket-service.loadbalancer.server.port=42080
+      # WebSocket middleware for connection upgrade
+      - traefik.http.middlewares.websocket-headers.headers.customRequestHeaders.Connection=Upgrade
+      - traefik.http.middlewares.websocket-headers.headers.customRequestHeaders.Upgrade=websocket
       # Base Sepolia WebSocket Router
       - traefik.http.routers.base-sepolia-websocket.rule=Host(`base-sepolia-websocket.scalex.money`)
       - traefik.http.routers.base-sepolia-websocket.entrypoints=websecure
       - traefik.http.routers.base-sepolia-websocket.tls.certresolver=letsencrypt
       - traefik.http.routers.base-sepolia-websocket.service=websocket-service
-      # WebSocket specific configuration for WebSocket protocol
-      - traefik.http.routers.base-sepolia-websocket-websocket.rule=Host(`base-sepolia-websocket.scalex.money`)
-      - traefik.http.routers.base-sepolia-websocket-websocket.entrypoints=websecure
-      - traefik.http.routers.base-sepolia-websocket-websocket.tls.certresolver=letsencrypt
-      - traefik.http.routers.base-sepolia-websocket-websocket.service=websocket-service
-      - traefik.http.routers.base-sepolia-websocket-websocket.middlewares=websocket-headers
-      - traefik.http.middlewares.websocket-headers.headers.customRequestHeaders.Connection=Upgrade
-      - traefik.http.middlewares.websocket-headers.headers.customRequestHeaders.Upgrade=websocket
+      - traefik.http.routers.base-sepolia-websocket.middlewares=websocket-headers
+      - traefik.http.routers.base-sepolia-websocket.priority=100
 
   # Analytics service
   analytics-service:

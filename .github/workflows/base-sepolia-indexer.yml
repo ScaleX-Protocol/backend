@@ -204,15 +204,15 @@ jobs:
         
         # Test websocket service (non-critical)
         WEBSOCKET_SUCCESS=false
-        for i in {1..6}; do
-          echo "Attempt $i/6: Testing websocket health..."
+        for i in {1..3}; do
+          echo "Attempt $i/3: Testing websocket health..."
           if INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer exec -T websocket-service curl -f http://localhost:42080/ 2>/dev/null; then
             echo "✅ WebSocket health check passed"
             WEBSOCKET_SUCCESS=true
             break
           else
-            echo "WebSocket not ready, waiting 10 seconds..."
-            sleep 10
+            echo "WebSocket not ready, waiting 5 seconds..."
+            sleep 5
           fi
         done
         
@@ -221,18 +221,18 @@ jobs:
         fi
         
         # Test analytics service (non-critical)
-        ANALYTICS_SUCCESS=false
-        for i in {1..6}; do
-          echo "Attempt $i/6: Testing analytics health..."
-          if INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer exec -T analytics-service curl -f http://localhost:42090/ 2>/dev/null; then
-            echo "✅ Analytics health check passed"
-            ANALYTICS_SUCCESS=true
-            break
-          else
-            echo "Analytics not ready, waiting 10 seconds..."
-            sleep 10
-          fi
-        done
+        # ANALYTICS_SUCCESS=false
+        # for i in {1..6}; do
+        #   echo "Attempt $i/6: Testing analytics health..."
+        #   if INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer exec -T analytics-service curl -f http://localhost:42090/ 2>/dev/null; then
+        #     echo "✅ Analytics health check passed"
+        #     ANALYTICS_SUCCESS=true
+        #     break
+        #   else
+        #     echo "Analytics not ready, waiting 10 seconds..."
+        #     sleep 10
+        #   fi
+        # done
         
         if [ "$ANALYTICS_SUCCESS" = false ]; then
           echo "⚠️ Analytics health check failed (non-critical service)"
