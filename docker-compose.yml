@@ -61,6 +61,8 @@ services:
       - PONDER_DATABASE_URL=postgresql://postgres:password@postgres:5432/ponder_core
       - REDIS_URL=redis://redis:6379
       - PONDER_PORT=42070
+    ports:
+      - "42070"  
     depends_on:
       - postgres
       - redis
@@ -69,6 +71,8 @@ services:
     restart: unless-stopped
     volumes:
       - ./logs:/app/logs
+    labels:
+      - traefik.enable=true
 
   # WebSocket service
   websocket-service:
@@ -94,6 +98,8 @@ services:
     networks:
       - scalex-network
     restart: unless-stopped
+    labels:
+      - traefik.enable=true
 
   # Analytics service
   analytics-service:
@@ -122,6 +128,8 @@ services:
     networks:
       - scalex-network
     restart: unless-stopped
+    labels:
+      - traefik.enable=true
 
   # PostgreSQL database (Main indexer DB)
   postgres:
