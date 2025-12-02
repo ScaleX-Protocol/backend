@@ -125,13 +125,13 @@ jobs:
         
         echo ""
         echo "--- Indexer Container (Mantle) ---"
-        INDEXER_STATUS=$(INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.mantle-indexer.yml -p mantle-sepolia-indexer ps -q clob-indexer)
+        INDEXER_STATUS=$(INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.mantle-indexer.yml -p mantle-sepolia-indexer ps -q mantle-sepolia-clob-indexer)
         if [ -n "$INDEXER_STATUS" ]; then
           echo "✅ Indexer container is running: $INDEXER_STATUS"
           echo "Indexer container info:"
-          INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.mantle-indexer.yml -p mantle-sepolia-indexer exec -T clob-indexer ps aux || echo "Could not get process info"
+          INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.mantle-indexer.yml -p mantle-sepolia-indexer exec -T mantle-sepolia-clob-indexer ps aux || echo "Could not get process info"
           echo "Environment variables check:"
-          INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.mantle-indexer.yml -p mantle-sepolia-indexer exec -T clob-indexer env | grep -E "(CHAIN_ID|PONDER_RPC_URL|NETWORK)" || echo "Could not check environment"
+          INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.mantle-indexer.yml -p mantle-sepolia-indexer exec -T mantle-sepolia-clob-indexer env | grep -E "(CHAIN_ID|PONDER_RPC_URL|NETWORK)" || echo "Could not check environment"
         else
           echo "❌ Indexer container is NOT running"
         fi
@@ -170,7 +170,7 @@ jobs:
         
         echo ""
         echo "--- Indexer Logs (Mantle - last 25 lines) ---"
-        INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.mantle-indexer.yml -p mantle-sepolia-indexer logs --tail=25 clob-indexer
+        INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.mantle-indexer.yml -p mantle-sepolia-indexer logs --tail=25 mantle-sepolia-clob-indexer
         
         echo ""
         echo "--- WebSocket Logs (Mantle - last 15 lines) ---"
@@ -208,7 +208,7 @@ jobs:
         # Test indexer service
         for i in {1..12}; do
           echo "Attempt $i/12: Testing Mantle indexer health..."
-          if INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.mantle-indexer.yml -p mantle-sepolia-indexer exec -T clob-indexer curl -f http://localhost:42070/ 2>/dev/null; then
+          if INDEXER_ENV_FILE=./ponder/.env.mantle-sepolia docker-compose -f docker-compose.mantle-indexer.yml -p mantle-sepolia-indexer exec -T mantle-sepolia-clob-indexer curl -f http://localhost:42070/ 2>/dev/null; then
             echo "✅ Mantle indexer health check passed"
             break
           else

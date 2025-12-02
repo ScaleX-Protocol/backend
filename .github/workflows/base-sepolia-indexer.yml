@@ -112,11 +112,11 @@ jobs:
         
         echo ""
         echo "--- Indexer Container ---"
-        INDEXER_STATUS=$(INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer ps -q clob-indexer)
+        INDEXER_STATUS=$(INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer ps -q base-sepolia-clob-indexer)
         if [ -n "$INDEXER_STATUS" ]; then
           echo "✅ Indexer container is running: $INDEXER_STATUS"
           echo "Indexer container info:"
-          INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer exec -T clob-indexer ps aux || echo "Could not get process info"
+          INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer exec -T base-sepolia-clob-indexer ps aux || echo "Could not get process info"
         else
           echo "❌ Indexer container is NOT running"
         fi
@@ -155,7 +155,7 @@ jobs:
         
         echo ""
         echo "--- Indexer Logs (last 25 lines) ---"
-        INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer logs --tail=25 clob-indexer
+        INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer logs --tail=25 base-sepolia-clob-indexer
         
         echo ""
         echo "--- WebSocket Logs (last 15 lines) ---"
@@ -193,7 +193,7 @@ jobs:
         # Test indexer service
         for i in {1..12}; do
           echo "Attempt $i/12: Testing indexer health..."
-          if INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer exec -T clob-indexer curl -f http://localhost:42070/ 2>/dev/null; then
+          if INDEXER_ENV_FILE=./ponder/.env.base-sepolia docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer exec -T base-sepolia-clob-indexer curl -f http://localhost:42070/ 2>/dev/null; then
             echo "✅ Indexer health check passed"
             break
           else
