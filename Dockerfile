@@ -4,8 +4,8 @@ FROM node:18-alpine
 # Set workdir
 WORKDIR /app
 
-# Install pnpm and postgres client
-RUN npm install -g pnpm && apk update && apk add --no-cache postgresql-client
+# Install pnpm, postgres client, and curl
+RUN npm install -g pnpm && apk update && apk add --no-cache postgresql-client curl
 
 # Copy package files and install dependencies
 COPY ponder/package.json ponder/pnpm-lock.yaml* ./
