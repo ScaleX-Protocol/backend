@@ -188,7 +188,6 @@ export async function handleOrderPlaced({ event, context }: any) {
     const chainId = context.network.chainId;
     const txHash = event.transaction.hash;
 
-
     if (!db) {
       log(LogLevel.ERROR, 'Database context is null or undefined', LogLabel.DATABASE, ServiceName.CORE_CHAIN, {}, 'orderBookHandler.ts', 'handleOrderPlaced');
       return;
@@ -228,7 +227,7 @@ export async function handleOrderPlaced({ event, context }: any) {
 
     let orderData;
     try {
-      orderData = createOrderData(chainId, args, poolAddress, side, timestamp);
+      orderData = createOrderData(chainId, args, poolAddress, side, timestamp, txHash);
     } catch (error) {
       log(LogLevel.ERROR, 'Failed to create order data', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, { error: (error as Error).message }, 'orderBookHandler.ts', 'handleOrderPlaced');
       return;
@@ -301,8 +300,8 @@ export async function handleOrderPlaced({ event, context }: any) {
             return; // Return gracefully instead of throwing
           }
         } catch (error) {
-          log(LogLevel.ERROR, 'Failed to find order', LogLabel.DATABASE, ServiceName.CORE_CHAIN, { 
-            error: error instanceof Error ? error.message : String(error) 
+          log(LogLevel.ERROR, 'Failed to find order', LogLabel.DATABASE, ServiceName.CORE_CHAIN, {
+            error: error instanceof Error ? error.message : String(error)
           }, 'orderBookHandler.ts', 'handleOrderPlaced');
           return; // Return gracefully instead of throwing
         }

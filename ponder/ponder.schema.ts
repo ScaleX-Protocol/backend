@@ -40,6 +40,8 @@ export const orders = onchainTable(
 		type: t.varchar(),
 		status: t.varchar(),
 		expiry: t.integer(),
+		autoRepay: t.boolean(),
+		autoBorrow: t.boolean(),
 	}),
 	(table: any) => ({
 		orderIdChainIdx: index().on(table.orderId, table.chainId),

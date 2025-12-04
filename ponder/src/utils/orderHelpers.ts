@@ -244,7 +244,8 @@ export function createOrderData(
 	args: OrderPlacedEventArgs,
 	poolId: string,
 	side: string,
-	timestamp: number
+	timestamp: number,
+	txHash: string,
 ) {
 	const orderData = {
 		id: createOrderId(chainId, args.orderId, poolId),
@@ -261,6 +262,9 @@ export function createOrderData(
 		type: getType(args.isMarketOrder),
 		status: ORDER_STATUS[Number(args.status)],
 		expiry: Number(args.expiry),
+		autoRepay: args.autoRepay ?? false,
+		autoBorrow: args.autoBorrow ?? false,
+		transactionId: txHash,
 	};
 	return orderData;
 }
