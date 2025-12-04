@@ -629,6 +629,18 @@ export const OrderBookABI: any[] = [
 				"type": "uint8",
 				"indexed": false,
 				"internalType": "enum IOrderBook.Status"
+			},
+			{
+				"name": "autoRepay",
+				"type": "bool",
+				"indexed": false,
+				"internalType": "bool"
+			},
+			{
+				"name": "autoBorrow",
+				"type": "bool",
+				"indexed": false,
+				"internalType": "bool"
 			}
 		],
 		"anonymous": false
