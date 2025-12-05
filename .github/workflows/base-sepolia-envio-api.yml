@@ -1,0 +1,116 @@
+name: Base Sepolia - Envio API Deployment
+
+on:
+  push:
+    branches: [ base-sepolia-envio-api ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, scalex]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Set up Docker Compose
+      run: |
+        if ! command -v docker-compose &> /dev/null; then
+          echo "Installing Docker Compose..."
+          sudo curl -L "https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          sudo chmod +x /usr/local/bin/docker-compose
+        else
+          echo "Docker Compose already installed:"
+          docker-compose --version
+        fi
+
+    - name: Verify indexer network exists
+      run: |
+        # Check if the indexer network exists, create if it doesn't
+        if ! docker network ls | grep -q "indexer_scalex-network"; then
+          echo "Creating indexer_scalex-network..."
+          docker network create indexer_scalex-network
+        else
+          echo "indexer_scalex-network already exists"
+        fi
+
+    - name: Deploy Envio API service
+      env:
+        ENVIO_API_DATABASE_URL: ${{ secrets.ENVIO_API_DATABASE_URL }}
+        ENVIO_API_CORS_ORIGIN: ${{ secrets.ENVIO_API_CORS_ORIGIN }}
+        CHAIN_NAME: base-sepolia
+        ENVIO_HOST_NAME: base-sepolia-envio-api.scalex.money
+      run: |
+        echo "Deploying Base Sepolia Envio API service..."
+
+        # Set project name to avoid conflicts
+        export COMPOSE_PROJECT_NAME=base-sepolia-envio-api
+
+        echo "=== Building Base Sepolia Envio API service ==="
+        docker-compose -f docker-compose.envio-api.yml -p base-sepolia-envio-api build --no-cache || {
+          echo "Build failed, checking build logs..."
+          docker-compose -f docker-compose.envio-api.yml -p base-sepolia-envio-api build --no-cache --progress=plain
+          exit 1
+        }
+
+        # Stop existing Envio API service
+        docker-compose -f docker-compose.envio-api.yml -p base-sepolia-envio-api down --remove-orphans || true
+
+        # Start Envio API service
+        docker-compose -f docker-compose.envio-api.yml -p base-sepolia-envio-api up -d || {
+          echo "Envio API service start failed, checking logs..."
+          docker-compose -f docker-compose.envio-api.yml -p base-sepolia-envio-api logs
+          exit 1
+        }
+
+        # Wait for service to be healthy
+        sleep 30
+
+        # Check service status
+        docker-compose -f docker-compose.envio-api.yml -p base-sepolia-envio-api ps
+
+        echo "Base Sepolia Envio API deployment completed"
+
+    - name: Verify deployment
+      env:
+        ENVIO_API_DATABASE_URL: ${{ secrets.ENVIO_API_DATABASE_URL }}
+        ENVIO_API_CORS_ORIGIN: ${{ secrets.ENVIO_API_CORS_ORIGIN }}
+        CHAIN_NAME: base-sepolia
+        ENVIO_HOST_NAME: base-sepolia-envio-api.scalex.money
+      run: |
+        export COMPOSE_PROJECT_NAME=base-sepolia-envio-api
+
+        echo "==========================================="
+        echo "DEPLOYMENT VERIFICATION - BASE SEPOLIA ENVIO API"
+        echo "==========================================="
+
+        echo ""
+        echo "=== 1. ENVIO API CONTAINER STATUS CHECK ==="
+        docker-compose -f docker-compose.envio-api.yml -p base-sepolia-envio-api ps
+
+        echo ""
+        echo "=== 2. ENVIO API SERVICE HEALTH CHECK ==="
+        # Check if SCALEX Envio API is responding
+        for i in {1..12}; do
+          echo "Attempt $i/12: Testing SCALEX Envio API..."
+          if docker-compose -f docker-compose.envio-api.yml -p base-sepolia-envio-api exec -T scalex-envio-api curl -f http://localhost:3000/ 2>/dev/null; then
+            echo "Base Sepolia SCALEX Envio API is responding"
+            break
+          else
+            echo "SCALEX Envio API not ready, waiting 5 seconds..."
+            sleep 5
+          fi
+        done
+
+        echo ""
+        echo "=== 3. ENVIO API LOG ANALYSIS ==="
+        echo "--- SCALEX Envio API Logs (last 20 lines) ---"
+        docker-compose -f docker-compose.envio-api.yml -p base-sepolia-envio-api logs --tail=20 scalex-envio-api
+
+        echo ""
+        echo "==========================================="
+        echo "BASE SEPOLIA ENVIO API VERIFICATION COMPLETE"
+        echo "==========================================="
