@@ -29,8 +29,6 @@ services:
     env_file:
       - ${API_ENV_FILE:-./ponder/.env.core-chain}
     environment:
-      - DATABASE_URL=postgresql://postgres:password@scalex-postgres:5432/scalex_api
-      - PONDER_DATABASE_URL=postgresql://postgres:password@postgres:5432/ponder_core
       - NODE_ENV=production
       - PORT=3000
       # Dynamic host configuration
@@ -38,8 +36,6 @@ services:
       - HOST_NAME=${HOST_NAME:-base-sepolia-api.scalex.money}
     depends_on:
       - scalex-postgres
-    external_links:
-      - indexer_postgres:postgres
     networks:
       - scalex-network
     restart: unless-stopped
