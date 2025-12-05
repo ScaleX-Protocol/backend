@@ -3,8 +3,6 @@ name: 🚀 Mantle Sepolia - Indexer Deployment
 on:
   push:
     branches: [ mantle-sepolia-indexer ]
-  pull_request:
-    branches: [ mantle-sepolia-indexer ]
   workflow_dispatch:
 
 jobs:

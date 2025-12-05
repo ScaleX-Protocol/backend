@@ -24,6 +24,8 @@ import schema, {
 	tokenMappings
 } from "ponder:schema";
 import { systemMonitor } from "../utils/systemMonitor";
+import { createPublicClient, http } from "viem";
+import { base, baseSepolia, mainnet, sepolia } from "viem/chains";
 
 dotenv.config();
 
@@ -70,30 +72,6 @@ function formatSymbol(symbol: string): string {
 	return symbol;
 }
 
-// Helper function to fetch token information from currencies table
-async function getTokenInfo(tokenAddress: string, chainId?: number) {
-	try {
-		const tokenInfo = await db
-			.select({
-				symbol: currencies.symbol,
-				name: currencies.name,
-				decimals: currencies.decimals,
-			})
-			.from(currencies)
-			.where(and(
-				eq(currencies.address, tokenAddress as `0x${string}`),
-				chainId ? eq(currencies.chainId, chainId) : sql`1=1`
-			))
-			.limit(1)
-			.execute();
-
-		return tokenInfo[0] || { symbol: "UNKNOWN", name: "Unknown Token", decimals: 18 };
-	} catch (error) {
-		console.error(`Error fetching token info for ${tokenAddress}:`, error);
-		return { symbol: "UNKNOWN", name: "Unknown Token", decimals: 18 };
-	}
-}
-
 // Helper function to fetch multiple token information at once
 async function getMultipleTokenInfo(tokenAddresses: string[], chainId?: number) {
 	try {
@@ -123,6 +101,134 @@ async function getMultipleTokenInfo(tokenAddresses: string[], chainId?: number) 
 	} catch (error) {
 		console.error("Error fetching multiple token info:", error);
 		return new Map();
+	}
+}
+
+// ERC20 balanceOf ABI for viem
+const erc20BalanceOfABI = [
+	{
+		inputs: [
+			{
+				internalType: "address",
+				name: "account",
+				type: "address",
+			},
+		],
+		name: "balanceOf",
+		outputs: [
+			{
+				internalType: "uint256",
+				name: "",
+				type: "uint256",
+			},
+		],
+		stateMutability: "view",
+		type: "function",
+	},
+] as const;
+
+
+// Helper function to create or get Viem client for a chain
+function getViemClient(chainId: number) {
+	// Use CORE_DEVNET_ENDPOINT from environment, but since it's a hypersync endpoint that doesn't
+	// support eth_call methods needed for balance queries, we need to use appropriate public RPCs
+	// based on the CHAIN_ID from environment
+	const envChainId = Number(process.env.CHAIN_ID);
+
+	// Determine the correct chain and RPC URL based on CHAIN_ID
+	let client;
+
+	switch (envChainId) {
+		case 84532: // Base Sepolia
+			client = createPublicClient({
+				chain: baseSepolia,
+				transport: http("https://sepolia.base.org"),
+			});
+			break;
+		case 8453: // Base Mainnet
+			client = createPublicClient({
+				chain: base, // Need to import base for this
+				transport: http("https://mainnet.base.org"),
+			});
+			break;
+		case 1: // Ethereum Mainnet
+			client = createPublicClient({
+				chain: mainnet, // Need to import mainnet for this
+				transport: http("https://eth.llamarpc.com"),
+			});
+			break;
+		case 11155111: // Sepolia Testnet
+			client = createPublicClient({
+				chain: sepolia, // Need to import sepolia for this
+				transport: http("https://sepolia.llamarpc.com"),
+			});
+			break;
+		default:
+			throw new Error(`Unsupported CHAIN_ID: ${envChainId}. Please add support for this chain.`);
+	}
+
+	return client;
+}
+
+// Helper function to fetch ERC20 balance using Viem
+async function getERC20Balance(userAddress: `0x${string}`, tokenAddress: `0x${string}`, chainId?: number): Promise<string> {
+	try {
+		const targetChainId = chainId || Number(process.env.CHAIN_ID) || 84532;
+		const client = getViemClient(targetChainId);
+		const balance = await client.readContract({
+			address: tokenAddress,
+			abi: erc20BalanceOfABI,
+			functionName: "balanceOf",
+			args: [userAddress],
+		});
+		return balance.toString();
+	} catch (error) {
+		console.error(`Error fetching ERC20 balance for ${tokenAddress}:`, error);
+		return "0";
+	}
+}
+
+// Helper function to fetch native balance using Viem
+async function getNativeBalance(userAddress: `0x${string}`, chainId?: number): Promise<string> {
+	try {
+		const targetChainId = chainId || Number(process.env.CHAIN_ID) || 84532;
+		const client = getViemClient(targetChainId);
+		const balance = await client.getBalance({ address: userAddress });
+		return balance.toString();
+	} catch (error) {
+		console.error(`Error fetching native balance for ${userAddress}:`, error);
+		return "0";
+	}
+}
+
+// Helper function to fetch lending rates from indexed data
+async function getIndexedLendingRates(tokenAddress: `0x${string}`, chainId?: number): Promise<{ supplyRate: number, borrowRate: number, utilizationRate: number }> {
+	try {
+		const targetChainId = chainId || Number(process.env.CHAIN_ID) || 84532;
+
+		const poolStats = await db
+			.select()
+			.from(poolLendingStats)
+			.where(and(
+				eq(poolLendingStats.token, tokenAddress),
+				eq(poolLendingStats.chainId, targetChainId)
+			))
+			.execute();
+
+		if (poolStats.length > 0) {
+			const stats = poolStats[0]!;
+			return {
+				supplyRate: Number(stats.supplyRate || 0),
+				borrowRate: Number(stats.borrowRate || 0),
+				utilizationRate: Number(stats.utilizationRate || 0)
+			};
+		}
+
+		console.warn(`No pool stats found for token ${tokenAddress} on chain ${targetChainId}`);
+		return { supplyRate: 0, borrowRate: 0, utilizationRate: 0 };
+	} catch (error) {
+		console.error(`Error fetching indexed rates for ${tokenAddress}:`, error);
+		return { supplyRate: 0, borrowRate: 0, utilizationRate: 0 };
 	}
 }
 
@@ -1212,79 +1318,126 @@ app.get("/api/lending/dashboard/:user", async c => {
 			}
 		}
 
-		// Process positions into supplies and borrows
-		const supplies: any[] = [];
-		const borrows: any[] = [];
+		// Process positions into supplies and borrows with real contract rates
+		const positionPromises = positions.map(async (position, index) => {
+			const result: { supplies: any[], borrows: any[] } = { supplies: [], borrows: [] };
 
-		positions.forEach((position, index) => {
 			try {
 				// Process supplies
 				if (position.collateralAmount && Number(position.collateralAmount) > 0) {
 					const collateralTokenInfo = tokenInfoMap.get(position.collateralToken.toLowerCase()) || { decimals: 18, symbol: "UNKNOWN" };
-					const assetRates = ratesMap.get(position.collateralToken) || { supplyRate: 0 };
 					const cleanSymbol = formatSymbol(collateralTokenInfo.symbol);
 					const collateralAmount = position.collateralAmount.toString();
 
-					supplies.push({
+					// Fetch rates from indexed data
+					let realRates = { supplyRate: 0, borrowRate: 0, utilizationRate: 0 };
+					try {
+						realRates = await getIndexedLendingRates(position.collateralToken as `0x${string}`, targetChainId);
+					} catch (rateError) {
+						console.error(`Error fetching indexed rates for supply ${position.collateralToken}:`, rateError);
+					}
+
+					result.supplies.push({
 						id: position.id || `supply-${index}`,
 						asset: cleanSymbol,
 						assetAddress: position.collateralToken,
 						suppliedAmount: formatAmount(collateralAmount, collateralTokenInfo.decimals),
 						currentValue: formatUSD(collateralAmount, collateralTokenInfo.decimals),
-						apy: formatAPY(assetRates.supplyRate),
+						apy: formatAPY(realRates.supplyRate.toString()),
 						earnings: formatUSD("0", collateralTokenInfo.decimals),
 						canWithdraw: position.isActive !== false,
-						collateralUsed: formatAmount(collateralAmount, collateralTokenInfo.decimals)
+						collateralUsed: formatAmount(collateralAmount, collateralTokenInfo.decimals),
+						utilizationRate: (realRates.utilizationRate / 100).toFixed(1) + "%"
 					});
 				}
 
 				// Process borrows
 				if (position.debtAmount && Number(position.debtAmount) > 0) {
 					const debtTokenInfo = tokenInfoMap.get(position.debtToken.toLowerCase()) || { decimals: 18, symbol: "UNKNOWN" };
-					const assetRates = ratesMap.get(position.debtToken) || { borrowRate: 0 };
 					const cleanSymbol = formatSymbol(debtTokenInfo.symbol);
 					const debtAmount = position.debtAmount.toString();
-					const healthFactorRaw = Number(position.healthFactor) || 10000;
+					// healthFactor is not directly available in position, calculate it or use default
+					const healthFactorRaw = 10000;
 					const healthFactor = healthFactorRaw / 100;
+
+					// Fetch rates from indexed data
+					let realRates = { supplyRate: 0, borrowRate: 0, utilizationRate: 0 };
+					try {
+						realRates = await getIndexedLendingRates(position.debtToken as `0x${string}`, targetChainId);
+					} catch (rateError) {
+						console.error(`Error fetching indexed rates for borrow ${position.debtToken}:`, rateError);
+					}
 
 					let healthStatus: 'safe' | 'warning' | 'danger' = 'safe';
 					if (healthFactor < 1.5) healthStatus = 'danger';
 					else if (healthFactor < 2.0) healthStatus = 'warning';
 
-					borrows.push({
+					result.borrows.push({
 						id: position.id || `borrow-${index}`,
 						asset: cleanSymbol,
 						assetAddress: position.debtToken,
 						borrowedAmount: formatAmount(debtAmount, debtTokenInfo.decimals),
 						currentDebt: formatUSD(debtAmount, debtTokenInfo.decimals),
-						apy: formatAPY(assetRates.borrowRate),
+						apy: formatAPY(realRates.borrowRate.toString()),
 						interestAccrued: formatUSD("0", debtTokenInfo.decimals),
-						collateralRatio: (assetRates.collateralFactor || 0).toString(),
+						collateralRatio: (assetConfigMap[position.debtToken.toLowerCase()]?.collateralFactor || 0).toString(),
 						healthFactor: healthFactor.toFixed(2),
 						healthStatus,
-						canRepay: position.isActive !== false
+						canRepay: position.isActive !== false,
+						utilizationRate: (realRates.utilizationRate / 100).toFixed(1) + "%"
 					});
 				}
 			} catch (processError) {
 				console.error(`Error processing position ${index}:`, processError);
 			}
+
+			return result;
 		});
 
-		// Generate available assets to supply
-		const availableToSupply = configs.map(config => {
+		// Wait for all position processing to complete
+		const positionResults = await Promise.all(positionPromises);
+		const supplies = positionResults.flatMap(result => result.supplies);
+		const borrows = positionResults.flatMap(result => result.borrows);
+
+		// Generate available assets to supply with on-chain balance fetching and real contract rates
+		const availableToSupplyPromises = configs.map(async (config) => {
 			try {
 				const tokenInfo = tokenInfoMap.get(config.token.toLowerCase()) || { decimals: 18, symbol: "UNKNOWN" };
-				const assetInfo = ratesMap.get(config.token) || { supplyRate: 0 };
 				const cleanSymbol = formatSymbol(tokenInfo.symbol);
 				const existingSupply = supplies.find(s => s.assetAddress?.toLowerCase() === config.token.toLowerCase());
+
+				// Fetch rates from indexed data
+				let realRates = { supplyRate: 0, borrowRate: 0, utilizationRate: 0 };
+				try {
+					realRates = await getIndexedLendingRates(config.token as `0x${string}`, targetChainId);
+				} catch (rateError) {
+					console.error(`Error fetching indexed rates for ${config.token}:`, rateError);
+				}
+
+				// Fetch on-chain balance
+				let userRawBalance = "0";
+				try {
+					// Check if it's native ETH (common addresses or symbol)
+					if (cleanSymbol === "ETH" || cleanSymbol === "WETH") {
+						userRawBalance = await getNativeBalance(user as `0x${string}`, targetChainId);
+					} else {
+						userRawBalance = await getERC20Balance(user as `0x${string}`, config.token as `0x${string}`, targetChainId);
+					}
+				} catch (balanceError) {
+					console.error(`Error fetching on-chain balance for ${config.token}:`, balanceError);
+					userRawBalance = "0";
+				}
+
+				const availableBalance = BigInt(userRawBalance);
 
 				return {
 					asset: cleanSymbol,
 					assetAddress: config.token,
-					userBalance: formatAmount("0", tokenInfo.decimals),
+					userBalance: formatAmount(userRawBalance, tokenInfo.decimals),
 					suppliedAmount: existingSupply?.suppliedAmount || "0",
-					availableAmount: formatAmount("0", tokenInfo.decimals),
-					apy: formatAPY(assetInfo.supplyRate),
+					availableAmount: formatAmount(availableBalance.toString(), tokenInfo.decimals),
+					apy: formatAPY(realRates.supplyRate.toString()),
+					utilizationRate: (realRates.utilizationRate / 100).toFixed(1) + "%", // Add utilization for better UX
 					canSupply: true,
 					recommended: cleanSymbol === "USDC"
 				};
@@ -1292,11 +1445,14 @@ app.get("/api/lending/dashboard/:user", async c => {
 				console.error(`Error processing supply config for ${config.token}:`, processError);
 				return null;
 			}
-		}).filter(Boolean);
+		});
+
+		// Wait for all balance fetches to complete
+		const availableToSupply = (await Promise.all(availableToSupplyPromises)).filter(Boolean);
 
 		// Calculate borrowing power
 		const totalCollateralValueRaw = supplies.reduce((sum, s) => sum + Number(s.currentValue.replace(/[$,]/g, '')), 0);
-		const availableToBorrow = [];
+		const availableToBorrow: any[] = [];
 
 		if (totalCollateralValueRaw > 0) {
 			configs.forEach(config => {

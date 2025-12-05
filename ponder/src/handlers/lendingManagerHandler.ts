@@ -167,6 +167,9 @@ export async function handleSupply({ event, context }: any) {
   // Update user stats
   await upsertUserLendingStats(db, chainId, user, "SUPPLY", amount, timestamp);
 
+  // Update pool lending stats
+  await updatePoolLendingStats(db, chainId, token, amount, BigInt(0), timestamp);
+
   // Update user balance to reflect real lending supply
   const balanceId = createBalanceId(chainId, token, user);
   await db
@@ -269,6 +272,9 @@ export async function handleBorrow({ event, context }: any) {
 
     // Update user stats
     await upsertUserLendingStats(db, chainId, user, "BORROW", amount, timestamp);
+
+    // Update pool lending stats
+    await updatePoolLendingStats(db, chainId, token, BigInt(0), amount, timestamp);
 
     // Update user balance to reflect debt (negative balance indicates debt)
     const balanceId = createBalanceId(chainId, token, user);
@@ -557,6 +563,45 @@ export async function handleAssetConfigured({ event, context }: any) {
     }));
 
   await initializePoolLendingStats(db, chainId, token, collateralFactor, reserveFactor, timestamp);
+}
+
+// Update pool lending stats with new supply/borrow amounts and recalculate utilization
+async function updatePoolLendingStats(
+  db: any,
+  chainId: number,
+  token: string,
+  supplyAmount: bigint,
+  borrowAmount: bigint,
+  timestamp: number
+) {
+  try {
+    const statsId = `${chainId}-${token}`;
+
+    // Update the pool stats with new amounts
+    await db
+      .update(poolLendingStats, { id: statsId })
+      .set((row: any) => {
+        const newTotalSupply = sql`${row.totalSupply} + ${supplyAmount}`;
+        const newTotalBorrow = sql`${row.totalBorrow} + ${borrowAmount}`;
+
+        // Calculate utilization rate: (totalBorrow / totalSupply) * 10000 (basis points)
+        const newUtilizationRate = sql`CASE
+          WHEN ${newTotalSupply} = 0 THEN 0
+          ELSE (${newTotalBorrow} * 10000) / ${newTotalSupply}
+        END`;
+
+        return {
+          totalSupply: newTotalSupply,
+          totalBorrow: newTotalBorrow,
+          utilizationRate: newUtilizationRate,
+          lastUpdated: timestamp,
+        };
+      });
+
+    logger.info(`Pool stats updated for ${token}: +${supplyAmount} supply, +${borrowAmount} borrow`, LogLabel.SYSTEM, 'updatePoolLendingStats', { token, supplyAmount: supplyAmount.toString(), borrowAmount: borrowAmount.toString() });
+  } catch (error) {
+    logger.error(`Failed to update pool lending stats for ${token}`, LogLabel.DATABASE, 'updatePoolLendingStats', { token, error: error instanceof Error ? error.message : String(error) });
+  }
 }
 
 // Initialize pool lending stats with calculated APY rates

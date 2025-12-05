@@ -3,8 +3,6 @@ name: 🚀 Base Sepolia - Indexer Deployment
 on:
   push:
     branches: [ base-sepolia-indexer ]
-  pull_request:
-    branches: [ base-sepolia-indexer ]
   workflow_dispatch:
 
 jobs:
