@@ -1,5 +1,5 @@
+import { and, asc, eq } from 'drizzle-orm';
 import { ponderDb } from '../config/database';
-import { eq, asc, and, not, ilike } from 'drizzle-orm';
 import { currencies } from '../schema/ponder-currencies';
 
 export const getAllCurrencies = async ({ query }: { query: any }) => {
@@ -14,12 +14,12 @@ export const getAllCurrencies = async ({ query }: { query: any }) => {
     if (chainId) {
       conditions.push(eq(currencies.chainId, chainId));
     }
-    
+
     // Filter by token type
     if (tokenType) {
       conditions.push(eq(currencies.tokenType, tokenType));
     }
-    
+
     // Filter for actual tokens only (exclude synthetic)
     if (onlyActual) {
       conditions.push(eq(currencies.tokenType, 'underlying'));
@@ -50,7 +50,7 @@ export const getAllCurrencies = async ({ query }: { query: any }) => {
       countQuery.where(and(...conditions));
     }
     const countResult = await countQuery.execute();
-    
+
     return {
       success: true,
       message: 'Currencies retrieved successfully',
