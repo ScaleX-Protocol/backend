@@ -3,6 +3,10 @@ name: 🚀 Mantle Sepolia - API Deployment
 on:
   push:
     branches: [ mantle-sepolia-api ]
+    paths:
+      - 'api/**'
+      - 'docker-compose.api.yml'
+      - '.github/workflows/mantle-sepolia-api.yml'
   workflow_dispatch:
 
 jobs:

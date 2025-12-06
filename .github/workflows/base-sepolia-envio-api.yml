@@ -3,6 +3,10 @@ name: Base Sepolia - Envio API Deployment
 on:
   push:
     branches: [ base-sepolia-api ]
+    paths:
+      - 'envio-api/**'
+      - 'docker-compose.envio-api.yml'
+      - '.github/workflows/base-sepolia-envio-api.yml'
   workflow_dispatch:
 
 jobs:
