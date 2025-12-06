@@ -27,7 +27,21 @@ jobs:
           docker-compose --version
         fi
 
-    - name: Verify indexer network exists
+    - name: Create .env file from secrets
+      env:
+        ENVIO_API_DATABASE_URL: ${{ secrets.ENVIO_API_DATABASE_URL }}
+        ENVIO_API_PORT: ${{ secrets.ENVIO_API_PORT }}
+        ENVIO_API_CORS_ORIGIN: ${{ secrets.ENVIO_API_CORS_ORIGIN }}
+        NODE_ENV: production
+      run: |
+        cat > ./envio-api/.env << EOL
+        ENVIO_API_DATABASE_URL=${ENVIO_API_DATABASE_URL}
+        ENVIO_API_PORT=${ENVIO_API_PORT:-3000}
+        ENVIO_API_CORS_ORIGIN=${ENVIO_API_CORS_ORIGIN:-*}
+        NODE_ENV=${NODE_ENV}
+        EOL
+
+    - name: Verify networks exist
       run: |
         # Check if the indexer network exists, create if it doesn't
         if ! docker network ls | grep -q "indexer_scalex-network"; then
@@ -37,10 +51,16 @@ jobs:
           echo "indexer_scalex-network already exists"
         fi
 
+        # Check if infrastructure network exists, create if it doesn't
+        if ! docker network ls | grep -q "infrastructure"; then
+          echo "Creating infrastructure network..."
+          docker network create infrastructure
+        else
+          echo "infrastructure network already exists"
+        fi
+
     - name: Deploy Envio API service
       env:
-        ENVIO_API_DATABASE_URL: ${{ secrets.ENVIO_API_DATABASE_URL }}
-        ENVIO_API_CORS_ORIGIN: ${{ secrets.ENVIO_API_CORS_ORIGIN }}
         CHAIN_NAME: base-sepolia
         ENVIO_HOST_NAME: base-sepolia-envio-api.scalex.money
       run: |
@@ -76,8 +96,6 @@ jobs:
 
     - name: Verify deployment
       env:
-        ENVIO_API_DATABASE_URL: ${{ secrets.ENVIO_API_DATABASE_URL }}
-        ENVIO_API_CORS_ORIGIN: ${{ secrets.ENVIO_API_CORS_ORIGIN }}
         CHAIN_NAME: base-sepolia
         ENVIO_HOST_NAME: base-sepolia-envio-api.scalex.money
       run: |
@@ -114,3 +132,8 @@ jobs:
         echo "==========================================="
         echo "BASE SEPOLIA ENVIO API VERIFICATION COMPLETE"
         echo "==========================================="
+
+    - name: Cleanup .env file
+      if: always()
+      run: |
+        rm -f ./envio-api/.env
