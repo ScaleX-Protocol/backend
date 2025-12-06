@@ -2,7 +2,7 @@ name: Base Sepolia - Envio API Deployment
 
 on:
   push:
-    branches: [ base-sepolia-envio-api ]
+    branches: [ base-sepolia-api ]
   workflow_dispatch:
 
 jobs:
