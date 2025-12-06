@@ -52,9 +52,8 @@ export class DepthManager {
                         eq(orders.poolId, validatedPoolId),
                         eq(orders.chainId, chainId),
                         or(
-                            eq(orders.status, "NEW"),
-                            eq(orders.status, "PARTIALLY_FILLED"),
-                            eq(orders.status, "OPEN")
+                            eq(orders.status, "OPEN"),
+                            eq(orders.status, "PARTIALLY_FILLED")
                         )
                     )
                 )

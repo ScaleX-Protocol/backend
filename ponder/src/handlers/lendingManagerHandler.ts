@@ -580,23 +580,14 @@ async function updatePoolLendingStats(
     // Update the pool stats with new amounts
     await db
       .update(poolLendingStats, { id: statsId })
-      .set((row: any) => {
-        const newTotalSupply = sql`${row.totalSupply} + ${supplyAmount}`;
-        const newTotalBorrow = sql`${row.totalBorrow} + ${borrowAmount}`;
-
-        // Calculate utilization rate: (totalBorrow / totalSupply) * 10000 (basis points)
-        const newUtilizationRate = sql`CASE
-          WHEN ${newTotalSupply} = 0 THEN 0
-          ELSE (${newTotalBorrow} * 10000) / ${newTotalSupply}
-        END`;
-
-        return {
-          totalSupply: newTotalSupply,
-          totalBorrow: newTotalBorrow,
-          utilizationRate: newUtilizationRate,
-          lastUpdated: timestamp,
-        };
-      });
+      .set((row: any) => ({
+        totalSupply: row.totalSupply + supplyAmount,
+        totalBorrow: row.totalBorrow + borrowAmount,
+        utilizationRate: row.totalSupply + supplyAmount === 0n
+          ? 0n
+          : ((row.totalBorrow + borrowAmount) * 10000n) / (row.totalSupply + supplyAmount),
+        lastUpdated: timestamp,
+      }));
 
     logger.info(`Pool stats updated for ${token}: +${supplyAmount} supply, +${borrowAmount} borrow`, LogLabel.SYSTEM, 'updatePoolLendingStats', { token, supplyAmount: supplyAmount.toString(), borrowAmount: borrowAmount.toString() });
   } catch (error) {
