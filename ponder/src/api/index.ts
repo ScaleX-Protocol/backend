@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import { Hono } from "hono";
 import { and, asc, client, desc, eq, graphql, gt, gte, inArray, lte, or, sql } from "ponder";
 import { db } from "ponder:api";
+import { getWalletNameByAddress } from "@/utils/walletMapper";
 import schema, {
 	assetConfigurations,
 	balances,
@@ -129,10 +130,7 @@ const erc20BalanceOfABI = [
 
 
 // Helper function to create or get Viem client for a chain
-function getViemClient(chainId: number) {
-	// Use CORE_DEVNET_ENDPOINT from environment, but since it's a hypersync endpoint that doesn't
-	// support eth_call methods needed for balance queries, we need to use appropriate public RPCs
-	// based on the CHAIN_ID from environment
+function getViemClient() {
 	const envChainId = Number(process.env.CHAIN_ID);
 
 	// Determine the correct chain and RPC URL based on CHAIN_ID
@@ -173,8 +171,7 @@ function getViemClient(chainId: number) {
 // Helper function to fetch ERC20 balance using Viem
 async function getERC20Balance(userAddress: `0x${string}`, tokenAddress: `0x${string}`, chainId?: number): Promise<string> {
 	try {
-		const targetChainId = chainId || Number(process.env.CHAIN_ID) || 84532;
-		const client = getViemClient(targetChainId);
+		const client = getViemClient();
 		const balance = await client.readContract({
 			address: tokenAddress,
 			abi: erc20BalanceOfABI,
@@ -191,8 +188,7 @@ async function getERC20Balance(userAddress: `0x${string}`, tokenAddress: `0x${st
 // Helper function to fetch native balance using Viem
 async function getNativeBalance(userAddress: `0x${string}`, chainId?: number): Promise<string> {
 	try {
-		const targetChainId = chainId || Number(process.env.CHAIN_ID) || 84532;
-		const client = getViemClient(targetChainId);
+		const client = getViemClient();
 		const balance = await client.getBalance({ address: userAddress });
 		return balance.toString();
 	} catch (error) {
@@ -300,7 +296,7 @@ app.get("/api/kline", async c => {
 	const bucketTable = intervalTableMap[interval as IntervalType] || minuteBuckets;
 
 	try {
-		const poolId = queriedPools[0]!.orderBook;
+		const poolId = queriedPools[0]?.orderBook;
 
 		const klineData = await db
 			.select()
@@ -339,7 +335,7 @@ app.get("/api/depth", async c => {
 			return c.json({ error: "Pool not found" }, 404);
 		}
 
-		const poolId = queriedPools[0]!.orderBook;
+		const poolId = queriedPools[0]?.orderBook;
 
 		if (!poolId) {
 			return c.json({ error: "Pool order book address not found" }, 404);
@@ -400,6 +396,195 @@ app.get("/api/depth", async c => {
 	}
 });
 
+app.get("/api/depth-orders", async c => {
+	const symbol = c.req.query("symbol");
+	const limit = parseInt(c.req.query("limit") || "100");
+
+	if (!symbol) {
+		return c.json({ error: "Symbol parameter is required" }, 400);
+	}
+
+	try {
+		const queriedPools = await db.select().from(pools).where(eq(pools.coin, symbol)).orderBy(desc(pools.timestamp));
+
+		if (!queriedPools || queriedPools.length === 0) {
+			return c.json({ error: "Pool not found" }, 404);
+		}
+
+		const poolId = queriedPools[0]?.orderBook;
+
+		if (!poolId) {
+			return c.json({ error: "Pool order book address not found" }, 404);
+		}
+
+		// Get all active orders grouped by price (bids)
+		const bidOrders = await db
+			.select({
+				price: orders.price,
+				quantity: sql`SUM(${orders.quantity})`.as("quantity"),
+				filled: sql`SUM(${orders.filled})`.as("filled")
+			})
+			.from(orders)
+			.where(
+				and(
+					gt(orders.price, 0),
+					eq(orders.poolId, poolId),
+					eq(orders.side, "Buy"),
+					or(eq(orders.status, "OPEN"), eq(orders.status, "PARTIALLY_FILLED"))
+				)
+			)
+			.groupBy(orders.price)
+			.orderBy(desc(orders.price))
+			.limit(limit)
+			.execute();
+
+		// Get all active orders grouped by price (asks)
+		const askOrders = await db
+			.select({
+				price: orders.price,
+				quantity: sql`SUM(${orders.quantity})`.as("quantity"),
+				filled: sql`SUM(${orders.filled})`.as("filled")
+			})
+			.from(orders)
+			.where(
+				and(
+					gt(orders.price, 0),
+					eq(orders.poolId, poolId),
+					eq(orders.side, "Sell"),
+					or(eq(orders.status, "OPEN"), eq(orders.status, "PARTIALLY_FILLED"))
+				)
+			)
+			.groupBy(orders.price)
+			.orderBy(asc(orders.price))
+			.limit(limit)
+			.execute();
+
+		// Get individual orders for each price level
+		const bidPriceLevels = bidOrders.map(bid => bid.price.toString());
+		const askPriceLevels = askOrders.map(ask => ask.price.toString());
+
+		const [individualBids, individualAsks] = await Promise.all([
+			// Get all individual bid orders
+			bidPriceLevels.length > 0 ? db
+				.select()
+				.from(orders)
+				.where(
+					and(
+						gt(orders.price, 0),
+						eq(orders.poolId, poolId),
+						eq(orders.side, "Buy"),
+						or(eq(orders.status, "OPEN"), eq(orders.status, "PARTIALLY_FILLED")),
+						inArray(orders.price, bidPriceLevels)
+					)
+				)
+				.execute() : [],
+
+			// Get all individual ask orders
+			askPriceLevels.length > 0 ? db
+				.select()
+				.from(orders)
+				.where(
+					and(
+						gt(orders.price, 0),
+						eq(orders.poolId, poolId),
+						eq(orders.side, "Sell"),
+						or(eq(orders.status, "OPEN"), eq(orders.status, "PARTIALLY_FILLED")),
+						inArray(orders.price, askPriceLevels)
+					)
+				)
+				.execute() : []
+		]);
+
+		// Group individual orders by price
+		const bidsByPrice = new Map<string, any[]>();
+		individualBids.forEach(order => {
+			const price = order.price.toString();
+			if (!bidsByPrice.has(price)) {
+				bidsByPrice.set(price, []);
+			}
+			bidsByPrice.get(price)!.push({
+				orderId: order.orderId.toString(),
+				user: order.user,
+				price: price,
+				quantity: order.quantity.toString(),
+				filled: order.filled.toString(),
+				remaining: (BigInt(order.quantity) - BigInt(order.filled)).toString(),
+				status: order.status,
+				type: order.type,
+				timestamp: Number(order.timestamp) * 1000,
+				side: order.side.toLowerCase(),
+				tag: getWalletNameByAddress(order.user)
+			});
+		});
+
+		const asksByPrice = new Map<string, any[]>();
+		individualAsks.forEach(order => {
+			const price = order.price.toString();
+			if (!asksByPrice.has(price)) {
+				asksByPrice.set(price, []);
+			}
+			asksByPrice.get(price)!.push({
+				orderId: order.orderId.toString(),
+				user: order.user,
+				price: price,
+				quantity: order.quantity.toString(),
+				filled: order.filled.toString(),
+				remaining: (BigInt(order.quantity) - BigInt(order.filled)).toString(),
+				status: order.status,
+				type: order.type,
+				timestamp: Number(order.timestamp) * 1000,
+				side: order.side.toLowerCase(),
+				tag: getWalletNameByAddress(order.user)
+			});
+		});
+
+		// Format grouped orders to match depth endpoint structure
+		const formatGroupedOrders = (groupedOrders: any[], ordersByPrice: Map<string, any[]>) =>
+			groupedOrders.map(group => ({
+				price: group.price.toString(),
+				quantity: (BigInt(group.quantity) - BigInt(group.filled)).toString(),
+				orders: ordersByPrice.get(group.price.toString()) || []
+			}));
+
+		const formattedBids = formatGroupedOrders(bidOrders, bidsByPrice);
+		const formattedAsks = formatGroupedOrders(askOrders, asksByPrice);
+
+		// Count orders by wallet type
+		const walletSummary: { [key: string]: number } = {};
+		const allOrders = [...individualBids, ...individualAsks];
+
+		for (const order of allOrders) {
+			const walletTag = getWalletNameByAddress(order.user);
+			walletSummary[walletTag] = (walletSummary[walletTag] || 0) + 1;
+		}
+
+		// Count individual orders (not price levels) for accurate totals
+		const totalBidOrders = individualBids.length;
+		const totalAskOrders = individualAsks.length;
+
+		const response = {
+			lastUpdateId: Date.now(),
+			symbol: symbol,
+			poolId: poolId,
+			bids: formattedBids,
+			asks: formattedAsks,
+			summary: {
+				totalBidOrders: totalBidOrders,
+				totalAskOrders: totalAskOrders,
+				totalBidQuantity: formattedBids.reduce((sum: bigint, level: any) => sum + BigInt(level.quantity), 0n).toString(),
+				totalAskQuantity: formattedAsks.reduce((sum: bigint, level: any) => sum + BigInt(level.quantity), 0n).toString(),
+				highestBid: formattedBids.length > 0 ? formattedBids[0]?.price : "0",
+				lowestAsk: formattedAsks.length > 0 ? formattedAsks[0]?.price : "0",
+				walletSummary: walletSummary
+			}
+		};
+
+		return c.json(response);
+	} catch (error) {
+		return c.json({ error: `Failed to fetch depth orders: ${error}` }, 500);
+	}
+});
+
 app.get("/api/trades", async c => {
 	const symbol = c.req.query("symbol");
 	const limit = parseInt(c.req.query("limit") || "500");
@@ -417,7 +602,7 @@ app.get("/api/trades", async c => {
 			return c.json({ error: "Pool not found" }, 404);
 		}
 
-		const poolId = queriedPools[0]!.orderBook;
+		const poolId = queriedPools[0]?.orderBook;
 
 		if (!poolId) {
 			return c.json({ error: "Pool order book address not found" }, 404);
@@ -493,7 +678,7 @@ app.get("/api/ticker/24hr", async c => {
 			return c.json({ error: "Pool not found" }, 404);
 		}
 
-		const poolId = queriedPools[0]!.orderBook;
+		const poolId = queriedPools[0]?.orderBook;
 
 		if (!poolId) {
 			return c.json({ error: "Pool order book address not found" }, 404);
@@ -610,7 +795,7 @@ app.get("/api/ticker/price", async c => {
 			return c.json({ error: "Pool not found" }, 404);
 		}
 
-		const poolId = queriedPools[0]!.orderBook;
+		const poolId = queriedPools[0]?.orderBook;
 
 		if (!poolId) {
 			return c.json({ error: "Pool order book address not found" }, 404);
@@ -661,7 +846,7 @@ app.get("/api/allOrders", async c => {
 				return c.json({ error: "Pool not found" }, 404);
 			}
 
-			const poolId = queriedPools[0]!.orderBook;
+			const poolId = queriedPools[0]?.orderBook;
 			if (poolId) {
 				query = baseQuery.where(and(eq(orders.user, address as `0x${string}`), eq(orders.poolId, poolId)));
 			}
@@ -757,7 +942,7 @@ app.get("/api/openOrders", async c => {
 				return c.json({ error: "Pool not found" }, 404);
 			}
 
-			const poolId = queriedPools[0]!.orderBook;
+			const poolId = queriedPools[0]?.orderBook;
 			if (poolId) {
 				query = baseQuery.where(
 					and(
@@ -1585,6 +1770,24 @@ async function initializeServices() {
 		console.error('Failed to initialize services:', error);
 	}
 }
+
+// Admin endpoint to clear stale orderBookDepth data
+app.post("/api/admin/clear-depth", async c => {
+	try {
+		// Delete all stale orderBookDepth data
+		await db.delete(orderBookDepth).execute();
+
+		return c.json({
+			success: true,
+			message: "orderBookDepth table cleared successfully"
+		});
+	} catch (error) {
+		return c.json({
+			success: false,
+			error: `Failed to clear orderBookDepth: ${error}`
+		}, 500);
+	}
+});
 
 // Initialize services on startup
 initializeServices();
