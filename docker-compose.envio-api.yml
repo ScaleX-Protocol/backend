@@ -3,11 +3,8 @@ services:
     build:
       context: ./envio-api
       dockerfile: Dockerfile
-    environment:
-      - NODE_ENV=production
-      - ENVIO_API_PORT=3000
-      - ENVIO_API_DATABASE_URL=${ENVIO_API_DATABASE_URL}
-      - ENVIO_API_CORS_ORIGIN=${ENVIO_API_CORS_ORIGIN:-*}
+    env_file:
+      - ./envio-api/.env
     networks:
       - scalex-network
       - infrastructure
@@ -28,4 +25,3 @@ networks:
     name: indexer_scalex-network
   infrastructure:
     external: true
-    name: infrastructure
