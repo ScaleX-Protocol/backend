@@ -28,3 +28,32 @@ export interface WalletInfo {
 export interface WalletsResponse {
   wallets: WalletInfo[];
 }
+
+export interface OrderHistoryItem {
+  orderId: string;
+  poolId: string;
+  symbol: string;
+  side: string;
+  type: string;
+  status: string;
+  price: string;
+  quantity: string;
+  filled: string;
+  remaining: string;
+  timestamp: number;
+  createdAt: string;
+}
+
+export interface WalletDetailInfo {
+  address: string;
+  walletIndex: number | null;
+  walletName: string | null;
+  onChainBalances: {
+    ETH: string;
+    WETH: string;
+    USDC: string;
+  };
+  depositedBalances: WalletBalance[];
+  ordersSummary: WalletOrders;
+  ordersHistory: OrderHistoryItem[];
+}

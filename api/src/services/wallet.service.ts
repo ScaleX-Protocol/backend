@@ -1,7 +1,7 @@
 import { createPublicClient, http, formatEther, formatUnits } from 'viem';
 import { mnemonicToAccount } from 'viem/accounts';
 import { baseSepolia } from 'viem/chains';
-import { WalletInfo, WalletBalance } from '../types';
+import { WalletInfo, WalletBalance, WalletDetailInfo, OrderHistoryItem } from '../types';
 import { createLogger, LogLabel, ServiceName } from '../utils/logger';
 
 const logger = createLogger('wallet.service.ts', ServiceName.SCALEX_API);
@@ -210,4 +210,213 @@ export class WalletService {
 
     return results;
   }
+
+  static async getWalletDetail(
+    address: string,
+    limit: number = 100,
+    side?: string,
+    type?: string,
+    status?: string
+  ): Promise<WalletDetailInfo> {
+    const config = getConfig();
+    const addressLower = address.toLowerCase();
+
+    logger.info(`Fetching wallet detail for address: ${address}`, LogLabel.API, 'getWalletDetail');
+
+    // Check if this address matches one of our known wallets
+    let walletIndex: number | null = null;
+    let walletName: string | null = null;
+
+    if (config.seedPhrase) {
+      for (let i = 0; i < 10; i++) {
+        const wallet = getWallet(config.seedPhrase, i);
+        if (wallet.address.toLowerCase() === addressLower) {
+          walletIndex = i;
+          walletName = WALLET_NAMES[i];
+          break;
+        }
+      }
+    }
+
+    // Create public client
+    const client = createPublicClient({
+      chain: baseSepolia,
+      transport: http(config.rpcUrl),
+    });
+
+    // Fetch on-chain balances
+    const [ethBalance, wethBalanceRaw, usdcBalanceRaw] = await Promise.all([
+      client.getBalance({ address: address as `0x${string}` }),
+      client.readContract({
+        address: config.wethAddress as `0x${string}`,
+        abi: [{ name: 'balanceOf', type: 'function', inputs: [{ type: 'address' }], outputs: [{ type: 'uint256' }] }],
+        functionName: 'balanceOf',
+        args: [address as `0x${string}`],
+      }),
+      client.readContract({
+        address: config.usdcAddress as `0x${string}`,
+        abi: [{ name: 'balanceOf', type: 'function', inputs: [{ type: 'address' }], outputs: [{ type: 'uint256' }] }],
+        functionName: 'balanceOf',
+        args: [address as `0x${string}`],
+      }),
+    ]);
+
+    // Fetch deposited balances
+    const depositedBalances = await fetchDepositedBalances(config.indexerUrl, [address]);
+    const userBalances = depositedBalances.get(addressLower) || [];
+    const depositedBalancesList: WalletBalance[] = userBalances
+      .sort((a, b) => a.currency.symbol.localeCompare(b.currency.symbol))
+      .map((item) => {
+        const decimals = item.currency.decimals;
+        const amount = BigInt(item.amount || '0');
+        const locked = BigInt(item.lockedAmount || '0');
+        return {
+          symbol: item.currency.symbol,
+          available: (Number(amount) / 10 ** decimals).toString(),
+          locked: (Number(locked) / 10 ** decimals).toString(),
+          decimals,
+        };
+      });
+
+    // Fetch order counts
+    const [openCount, filledCount, cancelledCount] = await Promise.all([
+      fetchOrderCount(config.indexerUrl, address, 'OPEN'),
+      fetchOrderCount(config.indexerUrl, address, 'FILLED'),
+      fetchOrderCount(config.indexerUrl, address, 'CANCELLED'),
+    ]);
+
+    // Fetch orders history
+    const ordersHistory = await fetchOrdersHistory(config.indexerUrl, address, limit, side, type, status);
+
+    return {
+      address,
+      walletIndex,
+      walletName,
+      onChainBalances: {
+        ETH: formatEther(ethBalance),
+        WETH: formatEther(wethBalanceRaw as bigint),
+        USDC: formatUnits(usdcBalanceRaw as bigint, 6),
+      },
+      depositedBalances: depositedBalancesList,
+      ordersSummary: {
+        open: openCount,
+        filled: filledCount,
+        cancelled: cancelledCount,
+      },
+      ordersHistory,
+    };
+  }
+}
+
+// Fetch orders history for a user
+async function fetchOrdersHistory(
+  indexerUrl: string,
+  address: string,
+  limit: number = 100,
+  side?: string,
+  type?: string,
+  status?: string
+): Promise<OrderHistoryItem[]> {
+  // Build where clause with filters
+  const whereConditions: string[] = [`user: "${address.toLowerCase()}"`];
+
+  if (side) {
+    // Indexer uses "Buy" or "Sell" (capitalized)
+    const normalizedSide = side.charAt(0).toUpperCase() + side.slice(1).toLowerCase();
+    whereConditions.push(`side: "${normalizedSide}"`);
+  }
+  if (type) {
+    whereConditions.push(`type: "${type}"`);
+  }
+  if (status) {
+    whereConditions.push(`status: "${status.toUpperCase()}"`);
+  }
+
+  const whereClause = whereConditions.join(', ');
+
+  // Query filled/partially filled orders first, then others
+  // We'll fetch more than needed and sort locally to prioritize filled orders
+  const fetchLimit = Math.min(limit * 2, 1000); // Fetch extra to allow sorting
+
+  const query = `{
+    orderss(
+      where: { ${whereClause} }
+      orderBy: "timestamp"
+      orderDirection: "desc"
+      limit: ${fetchLimit}
+    ) {
+      items {
+        orderId
+        poolId
+        side
+        type
+        status
+        price
+        quantity
+        filled
+        timestamp
+      }
+    }
+    poolss(limit: 100) {
+      items {
+        orderBook
+        coin
+      }
+    }
+  }`;
+
+  const result = await queryIndexer(indexerUrl, query);
+
+  if (!result?.data?.orderss?.items) {
+    return [];
+  }
+
+  // Create pool symbol map
+  const poolSymbolMap = new Map<string, string>();
+  if (result.data.poolss?.items) {
+    for (const pool of result.data.poolss.items) {
+      poolSymbolMap.set(pool.orderBook.toLowerCase(), pool.coin);
+    }
+  }
+
+  // Map orders
+  const orders = result.data.orderss.items.map((order: any) => {
+    const quantity = BigInt(order.quantity || '0');
+    const filled = BigInt(order.filled || '0');
+    const remaining = quantity - filled;
+    const timestamp = Number(order.timestamp);
+
+    return {
+      orderId: order.orderId,
+      poolId: order.poolId,
+      symbol: poolSymbolMap.get(order.poolId?.toLowerCase()) || 'UNKNOWN',
+      side: order.side?.toUpperCase() || 'UNKNOWN',
+      type: order.type || 'UNKNOWN',
+      status: order.status || 'UNKNOWN',
+      price: order.price || '0',
+      quantity: quantity.toString(),
+      filled: filled.toString(),
+      remaining: remaining.toString(),
+      timestamp,
+      createdAt: new Date(timestamp * 1000).toISOString(),
+    };
+  });
+
+  // Sort: prioritize FILLED and PARTIALLY_FILLED orders, then by timestamp desc
+  orders.sort((a: OrderHistoryItem, b: OrderHistoryItem) => {
+    const statusPriority = (status: string) => {
+      if (status === 'FILLED') return 0;
+      if (status === 'PARTIALLY_FILLED') return 1;
+      return 2;
+    };
+
+    const priorityDiff = statusPriority(a.status) - statusPriority(b.status);
+    if (priorityDiff !== 0) return priorityDiff;
+
+    // Within same priority, sort by timestamp desc
+    return b.timestamp - a.timestamp;
+  });
+
+  // Return only requested limit
+  return orders.slice(0, limit);
 }
