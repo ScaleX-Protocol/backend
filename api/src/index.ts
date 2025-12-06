@@ -1,6 +1,6 @@
 import { Elysia, ValidationError } from "elysia";
 import { cors } from '@elysiajs/cors';
-import { tradeRoutes, marketRoutes, faucetRoutes } from './routes';
+import { tradeRoutes, marketRoutes, faucetRoutes, walletRoutes } from './routes';
 import { currenciesRoutes } from './routes/currencies.routes';
 import { app as appConfig} from './config/app';
 import { swagger } from '@elysiajs/swagger';
@@ -125,6 +125,7 @@ app.use(tradeRoutes);
 app.use(marketRoutes);
 app.use(faucetRoutes);
 app.use(currenciesRoutes);
+app.use(walletRoutes);
 
 app.listen(appConfig.port);
 
