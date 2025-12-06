@@ -2,25 +2,6 @@
 # For standalone deployment of the API services
 
 services:
-  # SCALEX API BASED ON ENVIO INDEXER
-  scalex-envio-api: 
-    build: 
-      context: ./envio-api
-      dockerfile: Dockerfile
-    # No port exposure needed - Traefik handles routing by domain
-    networks:
-      - scalex-network
-    restart: unless-stopped
-    labels:
-      # Traefik configuration
-      - traefik.enable=true
-      - traefik.http.services.scalex-envio-api.loadbalancer.server.port=3000
-      # Dynamic host based on CHAIN_NAME environment variable - use separate ENVIO_HOST_NAME for envio API
-      - traefik.http.routers.${CHAIN_NAME:-base-sepolia}-envio-api.rule=Host(`${ENVIO_HOST_NAME:-base-sepolia-envio-api.scalex.money}`)
-      - traefik.http.routers.${CHAIN_NAME:-base-sepolia}-envio-api.entrypoints=websecure
-      - traefik.http.routers.${CHAIN_NAME:-base-sepolia}-envio-api.tls.certresolver=letsencrypt
-      - traefik.http.routers.${CHAIN_NAME:-base-sepolia}-envio-api.service=scalex-envio-api
-
   # SCALEX API service
   scalex-api:
     build:
