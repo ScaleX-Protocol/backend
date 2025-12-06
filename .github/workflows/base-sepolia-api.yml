@@ -3,6 +3,10 @@ name: 🚀 Base Sepolia - API Deployment
 on:
   push:
     branches: [ base-sepolia-api ]
+    paths:
+      - 'api/**'
+      - 'docker-compose.api.yml'
+      - '.github/workflows/base-sepolia-api.yml'
   workflow_dispatch:
 
 env:
