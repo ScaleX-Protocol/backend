@@ -3,6 +3,10 @@ name: 🚀 Base Sepolia - Indexer Deployment
 on:
   push:
     branches: [ base-sepolia-indexer ]
+    paths:
+      - 'ponder/**'
+      - 'docker-compose.indexer.yml'
+      - '.github/workflows/base-sepolia-indexer.yml'
   workflow_dispatch:
 
 jobs:
