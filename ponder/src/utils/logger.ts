@@ -4,6 +4,83 @@ import path from 'path';
 
 dotenv.config();
 
+// OTEL configuration
+const OTEL_BASE_URL = process.env.OTEL_BASE_URL;
+const OTEL_LOGS_ENDPOINT = OTEL_BASE_URL ? `${OTEL_BASE_URL}/v1/logs` : null;
+
+// Map log levels to OTEL severity numbers
+const severityMap: Record<string, { number: number; text: string }> = {
+  debug: { number: 5, text: 'DEBUG' },
+  info: { number: 9, text: 'INFO' },
+  warn: { number: 13, text: 'WARN' },
+  error: { number: 17, text: 'ERROR' },
+};
+
+// Send log to OTEL collector (non-blocking)
+const sendToOtel = async (logEntry: {
+  timestamp: string;
+  level: string;
+  service: string;
+  label: string;
+  filename: string;
+  function: string;
+  message: string;
+  data: any;
+}) => {
+  if (!OTEL_LOGS_ENDPOINT) return;
+
+  try {
+    const severity = severityMap[logEntry.level.toLowerCase()] || severityMap.info;
+    const timeUnixNano = BigInt(new Date(logEntry.timestamp).getTime()) * BigInt(1_000_000);
+
+    const otelPayload = {
+      resourceLogs: [
+        {
+          resource: {
+            attributes: [
+              { key: 'service.name', value: { stringValue: logEntry.service } },
+              { key: 'service.label', value: { stringValue: logEntry.label } },
+            ],
+          },
+          scopeLogs: [
+            {
+              scope: {
+                name: 'ponder-logger',
+                version: '1.0.0',
+              },
+              logRecords: [
+                {
+                  timeUnixNano: timeUnixNano.toString(),
+                  observedTimeUnixNano: timeUnixNano.toString(),
+                  severityNumber: severity.number,
+                  severityText: severity.text,
+                  body: { stringValue: logEntry.message },
+                  attributes: [
+                    { key: 'filename', value: { stringValue: logEntry.filename } },
+                    { key: 'function', value: { stringValue: logEntry.function } },
+                    { key: 'label', value: { stringValue: logEntry.label } },
+                    { key: 'data', value: { stringValue: JSON.stringify(logEntry.data) } },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    await fetch(OTEL_LOGS_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(otelPayload),
+    });
+  } catch {
+    // OTEL logging failed - ignore silently to not affect main application
+  }
+};
+
 // Enums for consistent logging
 export enum LogLevel {
   DEBUG = 'debug',
@@ -102,6 +179,9 @@ export const log = (
         }
       });
     }
+
+    // Send to OTEL collector (non-blocking)
+    sendToOtel(logEntry);
   } catch {
     try {
       console.log(`[CRITICAL LOG ERROR] ${message}`);

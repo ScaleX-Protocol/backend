@@ -3,6 +3,10 @@ name: 🚀 Mantle Sepolia - Indexer Deployment
 on:
   push:
     branches: [ mantle-sepolia-indexer ]
+    paths:
+      - 'ponder/**'
+      - 'docker-compose.mantle-indexer.yml'
+      - '.github/workflows/mantle-sepolia-indexer.yml'
   workflow_dispatch:
 
 jobs:
