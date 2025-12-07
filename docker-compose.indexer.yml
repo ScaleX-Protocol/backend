@@ -144,18 +144,6 @@ services:
           - timescaledb
     restart: unless-stopped
 
-  # Redis for caching and message queuing
-  redis:
-    image: redis:7-alpine
-    volumes:
-      - redis_data:/data
-    networks:
-      scalex-network:
-        aliases:
-          - redis
-    restart: unless-stopped
-    command: redis-server --appendonly yes
-
   # Redis Commander for Redis management (dev only)
   redis-commander:
     image: rediscommander/redis-commander:latest
@@ -174,9 +162,10 @@ services:
 volumes:
   postgres_data:
   timescale_data:
-  redis_data:
 
 networks:
   scalex-network:
     name: indexer_scalex-network
     driver: bridge
+  infrastructure:
+    external: true
