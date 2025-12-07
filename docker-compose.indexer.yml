@@ -17,7 +17,6 @@ services:
     # No port exposure needed - Traefik handles routing by domain
     depends_on:
       - postgres
-      - redis
     networks:
       - scalex-network
     restart: unless-stopped
@@ -60,7 +59,6 @@ services:
     # No port exposure needed - Traefik handles routing by domain
     depends_on:
       - postgres
-      - redis
     networks:
       - scalex-network
     restart: unless-stopped
@@ -103,7 +101,6 @@ services:
     depends_on:
       - postgres
       - timescaledb
-      - redis
     networks:
       - scalex-network
     restart: unless-stopped
@@ -151,8 +148,6 @@ services:
       - "8081:8081"
     environment:
       - REDIS_HOSTS=local:redis:6379
-    depends_on:
-      - redis
     networks:
       - scalex-network
     profiles:
