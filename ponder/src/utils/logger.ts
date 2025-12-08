@@ -33,6 +33,14 @@ const sendToOtel = async (logEntry: {
     const severity = severityMap[logEntry.level.toLowerCase()] || severityMap.info;
     const timeUnixNano = BigInt(new Date(logEntry.timestamp).getTime()) * BigInt(1_000_000);
 
+    // Safely stringify data
+    let dataString = '{}';
+    try {
+      dataString = JSON.stringify(logEntry.data || {});
+    } catch {
+      dataString = '{"error": "Failed to stringify data"}';
+    }
+
     const otelPayload = {
       resourceLogs: [
         {
@@ -56,10 +64,10 @@ const sendToOtel = async (logEntry: {
                   severityText: severity.text,
                   body: { stringValue: logEntry.message },
                   attributes: [
-                    { key: 'filename', value: { stringValue: logEntry.filename } },
-                    { key: 'function', value: { stringValue: logEntry.function } },
-                    { key: 'label', value: { stringValue: logEntry.label } },
-                    { key: 'data', value: { stringValue: JSON.stringify(logEntry.data) } },
+                    { key: 'filename', value: { stringValue: logEntry.filename || 'unknown' } },
+                    { key: 'function', value: { stringValue: logEntry.function || 'unknown' } },
+                    { key: 'label', value: { stringValue: logEntry.label || 'general' } },
+                    { key: 'data', value: { stringValue: dataString } },
                   ],
                 },
               ],
@@ -69,15 +77,29 @@ const sendToOtel = async (logEntry: {
       ],
     };
 
-    await fetch(OTEL_LOGS_ENDPOINT, {
+    const response = await fetch(OTEL_LOGS_ENDPOINT, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(otelPayload),
     });
-  } catch {
-    // OTEL logging failed - ignore silently to not affect main application
+
+    // Log OTEL errors to console for debugging
+    if (!response.ok) {
+      const responseText = await response.text().catch(() => 'Unable to read response');
+      console.error(`[OTEL] Failed to send log to ${OTEL_LOGS_ENDPOINT}`);
+      console.error(`[OTEL] Status: ${response.status} ${response.statusText}`);
+      console.error(`[OTEL] Response: ${responseText}`);
+      console.error(`[OTEL] Payload: ${JSON.stringify(otelPayload, null, 2)}`);
+    }
+  } catch (error) {
+    // Log OTEL connection errors for debugging
+    console.error(`[OTEL] Connection error to ${OTEL_LOGS_ENDPOINT}`);
+    console.error(`[OTEL] Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    if (error instanceof Error && error.stack) {
+      console.error(`[OTEL] Stack: ${error.stack}`);
+    }
   }
 };
 
@@ -180,8 +202,10 @@ export const log = (
       });
     }
 
-    // Send to OTEL collector (non-blocking)
-    sendToOtel(logEntry);
+    // Send to OTEL collector (non-blocking, fire and forget)
+    sendToOtel(logEntry).catch(() => {
+      // Silently ignore - OTEL failures should never affect the application
+    });
   } catch {
     try {
       console.log(`[CRITICAL LOG ERROR] ${message}`);
