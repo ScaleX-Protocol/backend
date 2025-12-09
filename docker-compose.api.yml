@@ -1,60 +1,60 @@
 # SCALEX API Docker Compose Configuration
 # For standalone deployment of the API services
+# Uses external infrastructure from monitoring-tools (postgres-database, redis, timescaledb)
 
 services:
+  # SCALEX API BASED ON ENVIO INDEXER
+  scalex-envio-api:
+    build:
+      context: ./envio-api
+      dockerfile: Dockerfile
+    container_name: ${CHAIN_NAME:-base-sepolia}-envio-api
+    # No port exposure needed - Traefik handles routing by domain
+    networks:
+      - infrastructure
+    restart: unless-stopped
+    labels:
+      # Traefik configuration
+      - traefik.enable=true
+      - traefik.http.services.${CHAIN_NAME:-base-sepolia}-envio-api.loadbalancer.server.port=3000
+      # Dynamic host based on CHAIN_NAME environment variable - use separate ENVIO_HOST_NAME for envio API
+      - traefik.http.routers.${CHAIN_NAME:-base-sepolia}-envio-api.rule=Host(`${ENVIO_HOST_NAME:-base-sepolia-envio-api.scalex.money}`)
+      - traefik.http.routers.${CHAIN_NAME:-base-sepolia}-envio-api.entrypoints=websecure
+      - traefik.http.routers.${CHAIN_NAME:-base-sepolia}-envio-api.tls.certresolver=letsencrypt
+      - traefik.http.routers.${CHAIN_NAME:-base-sepolia}-envio-api.service=${CHAIN_NAME:-base-sepolia}-envio-api
+
   # SCALEX API service
   scalex-api:
     build:
       context: ./api
       dockerfile: Dockerfile
+    container_name: ${CHAIN_NAME:-base-sepolia}-api
     env_file:
-      - ${API_ENV_FILE:-./ponder/.env.core-chain}
+      - ${API_ENV_FILE:-./api/.env}
     environment:
       - NODE_ENV=production
       - PORT=3000
       # Dynamic host configuration
       - CHAIN_NAME=${CHAIN_NAME:-base-sepolia}
       - HOST_NAME=${HOST_NAME:-base-sepolia-api.scalex.money}
-    depends_on:
-      - scalex-postgres
+      # Database connections to shared infrastructure (chain-specific databases)
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres-database:5432/${API_DATABASE:-scalex_api_base_sepolia}
+      - PONDER_DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres-database:5432/${PONDER_DATABASE:-ponder_base_sepolia}
     networks:
-      - scalex-network
+      - infrastructure
     restart: unless-stopped
     volumes:
       - ./api/logs:/app/logs
     labels:
       # Traefik configuration
       - traefik.enable=true
-      - traefik.http.services.scalex-api.loadbalancer.server.port=3000
+      - traefik.http.services.${CHAIN_NAME:-base-sepolia}-api.loadbalancer.server.port=3000
       # Dynamic host based on CHAIN_NAME environment variable
       - traefik.http.routers.${CHAIN_NAME:-base-sepolia}-api.rule=Host(`${HOST_NAME:-base-sepolia-api.scalex.money}`)
       - traefik.http.routers.${CHAIN_NAME:-base-sepolia}-api.entrypoints=websecure
       - traefik.http.routers.${CHAIN_NAME:-base-sepolia}-api.tls.certresolver=letsencrypt
-      - traefik.http.routers.${CHAIN_NAME:-base-sepolia}-api.service=scalex-api
-
-  # SCALEX API database
-  scalex-postgres:
-    image: postgres:15-alpine
-    environment:
-      - POSTGRES_DB=scalex_api
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=password
-    volumes:
-      - scalex_postgres_data:/var/lib/postgresql/data
-    networks:
-      scalex-network:
-        aliases:
-          - scalex-postgres
-    restart: unless-stopped
-
-  # External PostgreSQL connection for indexer data
-  # Note: API connects to the existing indexer database running in clob-indexer stack
-  # PONDER_DATABASE_URL is configured to connect to postgres:5432/ponder_core
-
-volumes:
-  scalex_postgres_data:
+      - traefik.http.routers.${CHAIN_NAME:-base-sepolia}-api.service=${CHAIN_NAME:-base-sepolia}-api
 
 networks:
-  scalex-network:
+  infrastructure:
     external: true
-    name: indexer_scalex-network
