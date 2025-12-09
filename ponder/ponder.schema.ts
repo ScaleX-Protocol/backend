@@ -42,6 +42,9 @@ export const orders = onchainTable(
 		expiry: t.integer(),
 		autoRepay: t.boolean(),
 		autoBorrow: t.boolean(),
+		timeInForce: t.varchar(),
+		quoteQuantity: t.bigint(),
+		executedQuoteQuantity: t.bigint(),
 	}),
 	(table: any) => ({
 		orderIdChainIdx: index().on(table.orderId, table.chainId),
@@ -224,6 +227,8 @@ export const balances = onchainTable(
 		currency: t.hex(),
 		amount: t.bigint(),
 		lockedAmount: t.bigint(),
+		syntheticBalance: t.bigint(),
+		collateralAmount: t.bigint(),
 		lastUpdated: t.integer(),
 	}),
 	table => ({
@@ -343,84 +348,6 @@ export const balancesCurrenciesRelations = relations(balances, ({ one }) => ({
 	}),
 }));
 
-// Legacy onchain faucet tables (for blockchain event tracking)
-export const faucetRequests = onchainTable(
-	"faucet_requests",
-	t => ({
-		id: t.text().primaryKey(),
-		chainId: t.integer().notNull(),
-		requester: t.hex().notNull(),
-		receiver: t.hex().notNull(),
-		token: t.hex().notNull(),
-		amount: t.bigint(),
-		timestamp: t.integer(),
-		transactionId: t.text(),
-		blockNumber: t.text(),
-	}),
-	table => ({
-		requesterIdx: index().on(table.requester),
-		tokenIdx: index().on(table.token),
-		chainIdIdx: index().on(table.chainId),
-		timestampIdx: index().on(table.timestamp),
-	})
-);
-
-export const faucetDeposits = onchainTable(
-	"faucet_deposits",
-	t => ({
-		id: t.text().primaryKey(),
-		chainId: t.integer().notNull(),
-		depositor: t.hex().notNull(),
-		token: t.hex().notNull(),
-		amount: t.bigint(),
-		timestamp: t.integer(),
-		transactionId: t.text(),
-		blockNumber: t.text(),
-	}),
-	table => ({
-		depositorIdx: index().on(table.depositor),
-		tokenIdx: index().on(table.token),
-		chainIdIdx: index().on(table.chainId),
-		timestampIdx: index().on(table.timestamp),
-	})
-);
-
-// API-based faucet request tracking (new improved schema)
-export const faucetApiRequests = onchainTable(
-	"faucet_api_requests",
-	t => ({
-		id: t.text().primaryKey(), // Format: {chainId}-{transactionHash}-{timestamp}
-		chainId: t.integer().notNull(),
-		requesterAddress: t.hex().notNull(), // Address requesting tokens
-		receiverAddress: t.hex().notNull(), // Address receiving tokens (usually same as requester)
-		tokenAddress: t.hex().notNull(), // Token contract address
-		tokenSymbol: t.varchar().notNull(), // Token symbol from blockchain
-		tokenDecimals: t.integer().notNull(), // Token decimals from blockchain
-		amount: t.bigint().notNull(), // Amount requested (in smallest unit)
-		amountFormatted: t.varchar().notNull(), // Human-readable amount
-		status: t.varchar().notNull(), // "pending", "completed", "failed"
-		transactionHash: t.text(), // Transaction hash if completed
-		gasUsed: t.bigint(), // Gas used for the transaction
-		gasPrice: t.bigint(), // Gas price used
-		errorMessage: t.text(), // Error message if failed
-		requestTimestamp: t.integer().notNull(), // When the API request was made (as Unix timestamp)
-		completedTimestamp: t.integer(), // When the transaction was confirmed (as Unix timestamp)
-		ipAddress: t.text(), // Client IP address for rate limiting
-		userAgent: t.text(), // User agent string
-	}),
-	(table: any) => ({
-		requesterAddressIdx: index().on(table.requesterAddress),
-		tokenAddressIdx: index().on(table.tokenAddress),
-		chainIdIdx: index().on(table.chainId),
-		statusIdx: index().on(table.status),
-		requestTimestampIdx: index().on(table.requestTimestamp),
-		ipAddressIdx: index().on(table.ipAddress),
-		transactionHashIdx: index().on(table.transactionHash),
-		requesterChainIdx: index().on(table.requesterAddress, table.chainId),
-		requesterStatusIdx: index().on(table.requesterAddress, table.status),
-		chainStatusIdx: index().on(table.chainId, table.status),
-	})
-);
 
 export const crossChainTransfers = onchainTable(
 	"cross_chain_transfers",
@@ -949,6 +876,31 @@ export const assetConfigurations = onchainTable(
 		liquidationThreshold: t.integer().notNull(), // in basis points
 		liquidationBonus: t.integer().notNull(), // in basis points
 		reserveFactor: t.integer().notNull(), // in basis points
+		timestamp: t.integer().notNull(),
+		blockNumber: t.bigint().notNull(),
+		isActive: t.boolean().default(true),
+	}),
+	table => ({
+		tokenIdx: index().on(table.token),
+		chainIdIdx: index().on(table.chainId),
+		isActiveIdx: index().on(table.isActive),
+		tokenChainIdx: index().on(table.token, table.chainId),
+		tokenActiveIdx: index().on(table.token, table.isActive),
+		timestampIdx: index().on(table.timestamp),
+	})
+);
+
+// Interest rate parameters for lending (per token, matching smart contract)
+export const interestRateParameters = onchainTable(
+	"interest_rate_parameters",
+	t => ({
+		id: t.text().primaryKey(),
+		chainId: t.integer().notNull(),
+		token: t.hex().notNull(),
+		baseRate: t.integer().notNull(), // in basis points (e.g., 200 = 2%)
+		optimalUtilization: t.integer().notNull(), // in basis points (e.g., 8000 = 80%)
+		rateSlope1: t.integer().notNull(), // in basis points (e.g., 1000 = 10%)
+		rateSlope2: t.integer().notNull(), // in basis points (e.g., 5000 = 50%)
 		timestamp: t.integer().notNull(),
 		blockNumber: t.bigint().notNull(),
 		isActive: t.boolean().default(true),

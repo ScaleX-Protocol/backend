@@ -164,6 +164,16 @@ export const OrderBookABI: any[] = [
 						"name": "side",
 						"type": "uint8",
 						"internalType": "enum IOrderBook.Side"
+					},
+					{
+						"name": "autoRepay",
+						"type": "bool",
+						"internalType": "bool"
+					},
+					{
+						"name": "autoBorrow",
+						"type": "bool",
+						"internalType": "bool"
 					}
 				]
 			}
@@ -327,6 +337,16 @@ export const OrderBookABI: any[] = [
 				"name": "user",
 				"type": "address",
 				"internalType": "address"
+			},
+			{
+				"name": "autoRepay",
+				"type": "bool",
+				"internalType": "bool"
+			},
+			{
+				"name": "autoBorrow",
+				"type": "bool",
+				"internalType": "bool"
 			}
 		],
 		"outputs": [
@@ -371,6 +391,16 @@ export const OrderBookABI: any[] = [
 				"name": "timeInForce",
 				"type": "uint8",
 				"internalType": "enum IOrderBook.TimeInForce"
+			},
+			{
+				"name": "autoRepay",
+				"type": "bool",
+				"internalType": "bool"
+			},
+			{
+				"name": "autoBorrow",
+				"type": "bool",
+				"internalType": "bool"
 			}
 		],
 		"outputs": [
@@ -386,6 +416,19 @@ export const OrderBookABI: any[] = [
 		"type": "function",
 		"name": "renounceOwnership",
 		"inputs": [],
+		"outputs": [],
+		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "function",
+		"name": "setOracle",
+		"inputs": [
+			{
+				"name": "_oracle",
+				"type": "address",
+				"internalType": "address"
+			}
+		],
 		"outputs": [],
 		"stateMutability": "nonpayable"
 	},
@@ -484,6 +527,160 @@ export const OrderBookABI: any[] = [
 		],
 		"outputs": [],
 		"stateMutability": "nonpayable"
+	},
+	{
+		"type": "event",
+		"name": "AutoBorrowExecuted",
+		"inputs": [
+			{
+				"name": "user",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "borrowedToken",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "borrowAmount",
+				"type": "uint256",
+				"indexed": false,
+				"internalType": "uint256"
+			},
+			{
+				"name": "timestamp",
+				"type": "uint256",
+				"indexed": false,
+				"internalType": "uint256"
+			},
+			{
+				"name": "orderId",
+				"type": "uint48",
+				"indexed": false,
+				"internalType": "uint48"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "AutoBorrowFailed",
+		"inputs": [
+			{
+				"name": "user",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "attemptedToken",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "attemptedAmount",
+				"type": "uint256",
+				"indexed": false,
+				"internalType": "uint256"
+			},
+			{
+				"name": "timestamp",
+				"type": "uint256",
+				"indexed": false,
+				"internalType": "uint256"
+			},
+			{
+				"name": "orderId",
+				"type": "uint48",
+				"indexed": false,
+				"internalType": "uint48"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "AutoRepaymentExecuted",
+		"inputs": [
+			{
+				"name": "user",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "debtToken",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "repayAmount",
+				"type": "uint256",
+				"indexed": false,
+				"internalType": "uint256"
+			},
+			{
+				"name": "savings",
+				"type": "uint256",
+				"indexed": false,
+				"internalType": "uint256"
+			},
+			{
+				"name": "timestamp",
+				"type": "uint256",
+				"indexed": false,
+				"internalType": "uint256"
+			},
+			{
+				"name": "orderId",
+				"type": "uint48",
+				"indexed": false,
+				"internalType": "uint48"
+			}
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "AutoRepaymentFailed",
+		"inputs": [
+			{
+				"name": "user",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "debtToken",
+				"type": "address",
+				"indexed": true,
+				"internalType": "address"
+			},
+			{
+				"name": "attemptedAmount",
+				"type": "uint256",
+				"indexed": false,
+				"internalType": "uint256"
+			},
+			{
+				"name": "timestamp",
+				"type": "uint256",
+				"indexed": false,
+				"internalType": "uint256"
+			},
+			{
+				"name": "orderId",
+				"type": "uint48",
+				"indexed": false,
+				"internalType": "uint48"
+			}
+		],
+		"anonymous": false
 	},
 	{
 		"type": "event",
@@ -629,6 +826,24 @@ export const OrderBookABI: any[] = [
 				"type": "uint8",
 				"indexed": false,
 				"internalType": "enum IOrderBook.Status"
+			},
+			{
+				"name": "autoRepay",
+				"type": "bool",
+				"indexed": false,
+				"internalType": "bool"
+			},
+			{
+				"name": "autoBorrow",
+				"type": "bool",
+				"indexed": false,
+				"internalType": "bool"
+			},
+			{
+				"name": "timeInForce",
+				"type": "uint8",
+				"indexed": false,
+				"internalType": "enum IOrderBook.TimeInForce"
 			}
 		],
 		"anonymous": false
@@ -723,6 +938,16 @@ export const OrderBookABI: any[] = [
 			}
 		],
 		"anonymous": false
+	},
+	{
+		"type": "error",
+		"name": "AutoBorrowOnlyForSellOrders",
+		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "AutoRepayOnlyForBuyOrders",
+		"inputs": []
 	},
 	{
 		"type": "error",
@@ -837,6 +1062,16 @@ export const OrderBookABI: any[] = [
 	},
 	{
 		"type": "error",
+		"name": "NoCollateralToBorrow",
+		"inputs": []
+	},
+	{
+		"type": "error",
+		"name": "NoDebtToRepay",
+		"inputs": []
+	},
+	{
+		"type": "error",
 		"name": "NoValidSwapPath",
 		"inputs": [
 			{
@@ -873,7 +1108,7 @@ export const OrderBookABI: any[] = [
 			{
 				"name": "status",
 				"type": "uint8",
-				"internalType": "enum IOrderBook.Status"
+				"internalType": "uint8"
 			}
 		]
 	},

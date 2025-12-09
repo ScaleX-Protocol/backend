@@ -86,7 +86,7 @@ export class TradeService {
               ? ((BigInt(order.filled) * BigInt(order.price)) / BigInt(10 ** decimals)).toString()
               : "0",
           status: order.status || "UNKNOWN",
-          timeInForce: "GTC",
+          timeInForce: order.timeInForce || "GTC",
           type: order.type || "UNKNOWN",
           side: order.side?.toUpperCase() || "UNKNOWN",
           stopPrice: "0",
@@ -172,7 +172,7 @@ export class TradeService {
               ? ((BigInt(order.filled) * BigInt(order.price)) / BigInt(10 ** decimals)).toString()
               : "0",
           status: order.status || "UNKNOWN",
-          timeInForce: "GTC",
+          timeInForce: order.timeInForce || "GTC",
           type: order.type || "UNKNOWN",
           side: order.side?.toUpperCase() || "UNKNOWN",
           stopPrice: "0",

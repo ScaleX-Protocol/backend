@@ -45,7 +45,7 @@ const contracts: any = {
 		},
 	},
 
-	// OrderBook exists on ScaleX Anvil (using factory pattern from PoolManager)
+	// OrderBook exists on ScaleX Anvil (multiple OrderBooks for different pools)
 	OrderBook: {
 		abi: OrderBookABI,
 		network: {
@@ -68,7 +68,7 @@ const contracts: any = {
 		abi: SCALEXRouterABI || [],
 		network: {
 			coreDevnet: {
-				address: getAddress((process.env.ScaleXROUTER_CONTRACT_SCALEX_CORE_DEVNET_ADDRESS as `0x${string}`) || default_address),
+				address: getAddress((process.env.SCALEXROUTER_CONTRACT_SCALEX_CORE_DEVNET_ADDRESS as `0x${string}`) || default_address),
 				startBlock: Number(process.env.SCALEX_CORE_DEVNET_START_BLOCK) || 0,
 				endBlock: Number(process.env.SCALEX_CORE_DEVNET_END_BLOCK) || undefined,
 			},
@@ -141,7 +141,7 @@ export function getCoreChainConfig() {
 	if (!process.env.CORE_DEVNET_ENDPOINT) {
 		throw new Error("CORE_DEVNET_ENDPOINT environment variable is required");
 	}
-	
+
 	const coreDevnetEndpoints = process.env.CORE_DEVNET_ENDPOINT
 		.split(",")
 		.map(endpoint => http(endpoint.trim()));
@@ -186,7 +186,7 @@ export function validateCoreChainEnvironment(): boolean {
 		"CORE_DEVNET_ENDPOINT",
 		"BALANCEMANAGER_CONTRACT_SCALEX_CORE_DEVNET_ADDRESS",
 		"POOLMANAGER_CONTRACT_SCALEX_CORE_DEVNET_ADDRESS",
-		"ScaleXROUTER_CONTRACT_SCALEX_CORE_DEVNET_ADDRESS",
+		"SCALEXROUTER_CONTRACT_SCALEX_CORE_DEVNET_ADDRESS",
 		"TOKENREGISTRY_CONTRACT_SCALEX_CORE_DEVNET_ADDRESS",
 		"SYNTHETICTOKENFACTORY_CONTRACT_SCALEX_CORE_DEVNET_ADDRESS",
 		"ORACLE_CONTRACT_SCALEX_CORE_DEVNET_ADDRESS",
