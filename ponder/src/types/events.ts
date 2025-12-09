@@ -19,6 +19,7 @@ export interface OrderPlacedEventArgs {
 	status: number;
 	autoRepay: boolean;
 	autoBorrow: boolean;
+	timeInForce: number;
 }
 
 export interface UpdateOrderEventArgs {

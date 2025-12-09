@@ -71,6 +71,16 @@ export async function handlePoolCreated({ event, context }: any) {
 		const { client, db } = context;
 		const chainId = context.network.chainId;
 
+		// Log event received
+		logger.info('PoolCreated event received', LogLabel.EVENT_HANDLER, 'handlePoolCreated', {
+			poolId: event.args.poolId,
+			orderBook: event.args.orderBook,
+			baseCurrency: event.args.baseCurrency,
+			quoteCurrency: event.args.quoteCurrency,
+			txHash: event.transaction.hash,
+			blockNumber: event.block.number?.toString()
+		});
+
 		if (!client) {
 			log(LogLevel.ERROR, 'Client context is null or undefined', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'poolManagerHandler.ts', 'handlePoolCreated');
 			return;
@@ -150,8 +160,24 @@ export async function handlePoolCreated({ event, context }: any) {
 				.insert(pools)
 				.values(poolData)
 				.onConflictDoNothing();
+
+			// Log successful pool creation
+			logger.info('Pool created successfully', LogLabel.DATABASE, 'handlePoolCreated', {
+				poolId,
+				orderBook,
+				coin,
+				baseCurrency,
+				quoteCurrency,
+				chainId,
+				txHash: event.transaction.hash
+			});
 		} catch (error) {
-			log(LogLevel.ERROR, 'Failed to insert pool', LogLabel.DATABASE, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'poolManagerHandler.ts', 'handlePoolCreated');
+			log(LogLevel.ERROR, 'Failed to insert pool', LogLabel.DATABASE, ServiceName.CORE_CHAIN, {
+				error: error instanceof Error ? error.message : String(error),
+				poolId,
+				orderBook,
+				txHash: event.transaction.hash
+			}, 'poolManagerHandler.ts', 'handlePoolCreated');
 			return;
 		}
 
