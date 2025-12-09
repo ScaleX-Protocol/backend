@@ -5,17 +5,22 @@ on:
     branches: [ mantle-sepolia-api ]
   workflow_dispatch:
 
+env:
+  CHAIN_NAME: mantle-sepolia
+  API_DATABASE: scalex_api_mantle_sepolia
+  PONDER_DATABASE: ponder_mantle_sepolia
+
 jobs:
   deploy:
     runs-on: [self-hosted, scalex]
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
+
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
-      
+
     - name: Set up Docker Compose
       run: |
         if ! command -v docker-compose &> /dev/null; then
@@ -26,81 +31,129 @@ jobs:
           echo "Docker Compose already installed:"
           docker-compose --version
         fi
-        
-    - name: Create Mantle environment configuration
+
+    - name: Verify infrastructure network exists
       run: |
-        # Create Mantle Sepolia environment configuration
-        mkdir -p ./env/mantle-sepolia
-        
-        # Copy base configuration and override for Mantle Sepolia
-        if [ -f "./api/.env.example" ]; then
-          cp ./api/.env.example ./api/.env.mantle-sepolia
-          echo "Created Mantle Sepolia API environment"
-        fi
-        
-    - name: Verify indexer network exists for Mantle
-      run: |
-        # Check if the Mantle indexer network exists, create if it doesn't
-        if ! docker network ls | grep -q "mantle_scalex-network"; then
-          echo "Creating mantle_scalex-network..."
-          docker network create mantle_scalex-network
+        # Check if the infrastructure network exists (created by monitoring-tools)
+        if ! docker network ls | grep -q "infrastructure"; then
+          echo "❌ Infrastructure network not found!"
+          echo "Please ensure monitoring-tools databases are deployed first."
+          exit 1
         else
-          echo "✅ mantle_scalex-network already exists"
+          echo "✅ Infrastructure network exists"
         fi
-        
+
+    - name: Verify shared infrastructure services
+      run: |
+        echo "=== Verifying shared infrastructure services ==="
+
+        # Check PostgreSQL
+        if docker exec postgres-database pg_isready -U postgres 2>/dev/null; then
+          echo "✅ PostgreSQL is ready"
+        else
+          echo "❌ PostgreSQL is not running. Please deploy monitoring-tools first."
+          exit 1
+        fi
+
     - name: Deploy Mantle Sepolia API
+      env:
+        POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+        POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
       run: |
         echo "Deploying Mantle Sepolia API services..."
-        
-        # Set project name to avoid conflicts with Base Sepolia API
+
+        # Set project name to avoid conflicts with other chains
         export COMPOSE_PROJECT_NAME=mantle-sepolia-api
-        
-        echo "=== Stopping any existing Base Sepolia API services to prevent conflicts ==="
-        docker-compose -f docker-compose.api.yml -p base-sepolia-api down --remove-orphans || true
-        
+
         echo "=== Building Mantle Sepolia API services ==="
-        API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money ENVIO_HOST_NAME=mantle-sepolia-envio-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api build --no-cache || {
-          echo "❌ Build failed, checking build logs..."
-          API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money ENVIO_HOST_NAME=mantle-sepolia-envio-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api build --no-cache --progress=plain
+        CHAIN_NAME=mantle-sepolia \
+        API_DATABASE=scalex_api_mantle_sepolia \
+        PONDER_DATABASE=ponder_mantle_sepolia \
+        POSTGRES_USER=${POSTGRES_USER:-postgres} \
+        POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password} \
+        HOST_NAME=mantle-sepolia-api.scalex.money \
+        ENVIO_HOST_NAME=mantle-sepolia-envio-api.scalex.money \
+        API_ENV_FILE=./api/.env.mantle-sepolia \
+        docker-compose -f docker-compose.api.yml -p mantle-sepolia-api build --no-cache || {
+          echo "❌ Build failed"
           exit 1
         }
-        
+
         # Stop existing Mantle API services
-        API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money ENVIO_HOST_NAME=mantle-sepolia-envio-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api down --remove-orphans || true
-        
+        echo "=== Stopping existing Mantle Sepolia API services ==="
+        CHAIN_NAME=mantle-sepolia \
+        API_DATABASE=scalex_api_mantle_sepolia \
+        PONDER_DATABASE=ponder_mantle_sepolia \
+        POSTGRES_USER=${POSTGRES_USER:-postgres} \
+        POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password} \
+        HOST_NAME=mantle-sepolia-api.scalex.money \
+        ENVIO_HOST_NAME=mantle-sepolia-envio-api.scalex.money \
+        API_ENV_FILE=./api/.env.mantle-sepolia \
+        docker-compose -f docker-compose.api.yml -p mantle-sepolia-api down --remove-orphans || true
+
         # Start API services
-        API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money ENVIO_HOST_NAME=mantle-sepolia-envio-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api up -d || {
+        echo "=== Starting Mantle Sepolia API services ==="
+        CHAIN_NAME=mantle-sepolia \
+        API_DATABASE=scalex_api_mantle_sepolia \
+        PONDER_DATABASE=ponder_mantle_sepolia \
+        POSTGRES_USER=${POSTGRES_USER:-postgres} \
+        POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password} \
+        HOST_NAME=mantle-sepolia-api.scalex.money \
+        ENVIO_HOST_NAME=mantle-sepolia-envio-api.scalex.money \
+        API_ENV_FILE=./api/.env.mantle-sepolia \
+        docker-compose -f docker-compose.api.yml -p mantle-sepolia-api up -d || {
           echo "❌ API service start failed, checking logs..."
-          API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money ENVIO_HOST_NAME=mantle-sepolia-envio-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api logs
+          docker-compose -f docker-compose.api.yml -p mantle-sepolia-api logs
           exit 1
         }
-        
+
         # Wait for services to be healthy
         sleep 30
-        
+
         # Check service status
-        API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money ENVIO_HOST_NAME=mantle-sepolia-envio-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api ps
-        
+        docker-compose -f docker-compose.api.yml -p mantle-sepolia-api ps
+
         echo "Mantle Sepolia API deployment completed"
-        
+
     - name: Verify Mantle Sepolia API deployment
+      env:
+        POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+        POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
       run: |
-        export COMPOSE_PROJECT_NAME=mantle-sepolia-api
-        
         echo "==============================================="
         echo "🔍 DEPLOYMENT VERIFICATION - MANTLE SEPOLIA API"
         echo "==============================================="
-        
+
         echo ""
         echo "=== 1. MANTLE API CONTAINER STATUS CHECK ==="
-        API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money ENVIO_HOST_NAME=mantle-sepolia-envio-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api ps
-        
+        docker-compose -f docker-compose.api.yml -p mantle-sepolia-api ps
+
         echo ""
-        echo "=== 2. MANTLE API SERVICE HEALTH CHECKS ==="
+        echo "=== 2. SHARED INFRASTRUCTURE CHECK ==="
+
+        # Check shared PostgreSQL for API database
+        echo "--- Shared PostgreSQL (API Database) ---"
+        if docker exec postgres-database pg_isready -U ${POSTGRES_USER:-postgres} -d scalex_api_mantle_sepolia; then
+          echo "✅ Shared PostgreSQL is ready (scalex_api_mantle_sepolia database)"
+        else
+          echo "❌ Shared PostgreSQL not ready for API database"
+        fi
+
+        # Check shared PostgreSQL for Ponder database
+        echo "--- Shared PostgreSQL (Ponder Database) ---"
+        if docker exec postgres-database pg_isready -U ${POSTGRES_USER:-postgres} -d ponder_mantle_sepolia; then
+          echo "✅ Shared PostgreSQL is ready (ponder_mantle_sepolia database)"
+        else
+          echo "❌ Shared PostgreSQL not ready for Ponder database"
+        fi
+
+        echo ""
+        echo "=== 3. MANTLE API SERVICE HEALTH CHECKS ==="
+
         # Check if SCALEX Envio API is responding
         for i in {1..12}; do
           echo "Attempt $i/12: Testing Mantle SCALEX Envio API..."
-          if API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money ENVIO_HOST_NAME=mantle-sepolia-envio-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api exec -T scalex-envio-api curl -f http://localhost:3000/ 2>/dev/null; then
+          if docker exec mantle-sepolia-envio-api curl -f http://localhost:3000/ 2>/dev/null; then
             echo "✅ Mantle Sepolia SCALEX Envio API is responding"
             break
           else
@@ -108,11 +161,11 @@ jobs:
             sleep 5
           fi
         done
-        
+
         # Check if SCALEX API is responding
         for i in {1..12}; do
           echo "Attempt $i/12: Testing Mantle SCALEX API..."
-          if API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money ENVIO_HOST_NAME=mantle-sepolia-envio-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api exec -T scalex-api curl -f http://localhost:3000/ 2>/dev/null; then
+          if docker exec mantle-sepolia-api curl -f http://localhost:3000/ 2>/dev/null; then
             echo "✅ Mantle Sepolia SCALEX API is responding"
             break
           else
@@ -120,30 +173,16 @@ jobs:
             sleep 5
           fi
         done
-        
-        echo ""
-        echo "=== 3. MANTLE DATABASE VERIFICATION ==="
-        # Verify database connections
-        echo "Verifying database connections..."
-        if API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money ENVIO_HOST_NAME=mantle-sepolia-envio-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api exec -T scalex-postgres pg_isready -U postgres -d scalex_api; then
-          echo "✅ Mantle Sepolia API database connection verified"
-        else
-          echo "❌ Mantle Sepolia API database connection failed"
-        fi
-        
+
         echo ""
         echo "=== 4. MANTLE API LOG ANALYSIS ==="
         echo "--- Mantle SCALEX API Logs (last 20 lines) ---"
-        API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money ENVIO_HOST_NAME=mantle-sepolia-envio-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api logs --tail=20 scalex-api
-        
+        docker logs mantle-sepolia-api --tail=20 2>&1 || echo "Could not get API logs"
+
         echo ""
         echo "--- Mantle SCALEX Envio API Logs (last 15 lines) ---"
-        API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money ENVIO_HOST_NAME=mantle-sepolia-envio-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api logs --tail=15 scalex-envio-api
-        
-        echo ""
-        echo "--- Mantle PostgreSQL API Logs (last 10 lines) ---"
-        API_ENV_FILE=./api/.env.mantle-sepolia CHAIN_NAME=mantle-sepolia HOST_NAME=mantle-sepolia-api.scalex.money ENVIO_HOST_NAME=mantle-sepolia-envio-api.scalex.money docker-compose -f docker-compose.api.yml -p mantle-sepolia-api logs --tail=10 scalex-postgres
-        
+        docker logs mantle-sepolia-envio-api --tail=15 2>&1 || echo "Could not get Envio API logs"
+
         echo ""
         echo "==============================================="
         echo "🎯 MANTLE SEPOLIA API VERIFICATION COMPLETE"

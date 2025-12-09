@@ -1,24 +1,26 @@
 # CLOB Indexer Docker Compose Configuration
 # For standalone deployment of the indexer and related services
+# Uses external infrastructure from monitoring-tools (postgres-database, redis, timescaledb)
 
 services:
-  # Core indexer service (Base Sepolia)
-  base-sepolia-clob-indexer:
+  # Core indexer service
+  # Container name is set dynamically via CHAIN_NAME environment variable
+  clob-indexer:
     build:
       context: .
       dockerfile: Dockerfile
+    container_name: ${CHAIN_NAME:-base-sepolia}-clob-indexer
     env_file:
       - ${INDEXER_ENV_FILE:-./ponder/.env.core-chain}
     environment:
-      # Override .env.core-chain with container networking
-      - PONDER_DATABASE_URL=postgresql://postgres:password@postgres:5432/ponder_core
+      # Database connection to shared PostgreSQL (chain-specific database)
+      - PONDER_DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres-database:5432/${PONDER_DATABASE:-ponder_base_sepolia}
       - REDIS_URL=redis://redis:6379
       - PONDER_PORT=42070
+      # Chain identification for Redis key prefixing
+      - CHAIN_NAME=${CHAIN_NAME:-base-sepolia}
     # No port exposure needed - Traefik handles routing by domain
-    depends_on:
-      - postgres
     networks:
-      - scalex-network
       - infrastructure
     restart: unless-stopped
     volumes:
@@ -32,66 +34,66 @@ services:
     labels:
       # Traefik configuration
       - traefik.enable=true
-      - traefik.http.services.clob-indexer.loadbalancer.server.port=42070
-      # Base Sepolia Router
-      - traefik.http.routers.base-sepolia-indexer.rule=Host(`base-sepolia-indexer.scalex.money`)
-      - traefik.http.routers.base-sepolia-indexer.entrypoints=websecure
-      - traefik.http.routers.base-sepolia-indexer.tls.certresolver=letsencrypt
-      - traefik.http.routers.base-sepolia-indexer.service=clob-indexer
+      - traefik.http.services.${CHAIN_NAME:-base-sepolia}-clob-indexer.loadbalancer.server.port=42070
+      # Dynamic Router based on CHAIN_NAME
+      - traefik.http.routers.${CHAIN_NAME:-base-sepolia}-indexer.rule=Host(`${CHAIN_NAME:-base-sepolia}-indexer.scalex.money`)
+      - traefik.http.routers.${CHAIN_NAME:-base-sepolia}-indexer.entrypoints=websecure
+      - traefik.http.routers.${CHAIN_NAME:-base-sepolia}-indexer.tls.certresolver=letsencrypt
+      - traefik.http.routers.${CHAIN_NAME:-base-sepolia}-indexer.service=${CHAIN_NAME:-base-sepolia}-clob-indexer
 
   # WebSocket service
   websocket-service:
     build:
       context: ./websocket-service
       dockerfile: Dockerfile
+    container_name: ${CHAIN_NAME:-base-sepolia}-websocket
     env_file:
       - ${INDEXER_ENV_FILE:-./ponder/.env.core-chain}
     environment:
       - PORT=42080
       - HEALTH_PORT=8080
       - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql://postgres:password@postgres:5432/ponder_core
-      - CONSUMER_GROUP=websocket-consumers
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres-database:5432/${PONDER_DATABASE:-ponder_base_sepolia}
+      - CONSUMER_GROUP=${CHAIN_NAME:-base-sepolia}-websocket-consumers
       - CONSUMER_ID=ws-consumer-1
       - BATCH_SIZE=10
       - POLL_INTERVAL=1000
       - WS_PING_INTERVAL=30000
       - MAX_CONNECTIONS=1000
+      - CHAIN_NAME=${CHAIN_NAME:-base-sepolia}
     # No port exposure needed - Traefik handles routing by domain
-    depends_on:
-      - postgres
     networks:
-      - scalex-network
       - infrastructure
     restart: unless-stopped
     labels:
       # Traefik configuration
       - traefik.enable=true
-      - traefik.http.services.websocket-service.loadbalancer.server.port=42080
+      - traefik.http.services.${CHAIN_NAME:-base-sepolia}-websocket-service.loadbalancer.server.port=42080
       # WebSocket middleware for connection upgrade
       - traefik.http.middlewares.websocket-headers.headers.customRequestHeaders.Connection=Upgrade
       - traefik.http.middlewares.websocket-headers.headers.customRequestHeaders.Upgrade=websocket
-      # Base Sepolia WebSocket Router
-      - traefik.http.routers.base-sepolia-websocket.rule=Host(`base-sepolia-websocket.scalex.money`)
-      - traefik.http.routers.base-sepolia-websocket.entrypoints=websecure
-      - traefik.http.routers.base-sepolia-websocket.tls.certresolver=letsencrypt
-      - traefik.http.routers.base-sepolia-websocket.service=websocket-service
-      - traefik.http.routers.base-sepolia-websocket.middlewares=websocket-headers
-      - traefik.http.routers.base-sepolia-websocket.priority=100
+      # Dynamic WebSocket Router based on CHAIN_NAME
+      - traefik.http.routers.${CHAIN_NAME:-base-sepolia}-websocket.rule=Host(`${CHAIN_NAME:-base-sepolia}-websocket.scalex.money`)
+      - traefik.http.routers.${CHAIN_NAME:-base-sepolia}-websocket.entrypoints=websecure
+      - traefik.http.routers.${CHAIN_NAME:-base-sepolia}-websocket.tls.certresolver=letsencrypt
+      - traefik.http.routers.${CHAIN_NAME:-base-sepolia}-websocket.service=${CHAIN_NAME:-base-sepolia}-websocket-service
+      - traefik.http.routers.${CHAIN_NAME:-base-sepolia}-websocket.middlewares=websocket-headers
+      - traefik.http.routers.${CHAIN_NAME:-base-sepolia}-websocket.priority=100
 
   # Analytics service
   analytics-service:
     build:
       context: ./analytics-service
       dockerfile: Dockerfile
+    container_name: ${CHAIN_NAME:-base-sepolia}-analytics
     env_file:
       - ${INDEXER_ENV_FILE:-./ponder/.env.core-chain}
     environment:
       - PORT=42090
       - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql://postgres:password@postgres:5432/ponder_core
-      - TIMESCALE_DATABASE_URL=postgresql://postgres:password@timescaledb:5432/analytics
-      - CONSUMER_GROUP=analytics-consumers
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres-database:5432/${PONDER_DATABASE:-ponder_base_sepolia}
+      - TIMESCALE_DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@timescaledb:5432/${ANALYTICS_DATABASE:-analytics_base_sepolia}
+      - CONSUMER_GROUP=${CHAIN_NAME:-base-sepolia}-analytics-consumers
       - CONSUMER_ID=analytics-consumer-1
       - ANALYTICS_BATCH_SIZE=5
       - ANALYTICS_POLL_INTERVAL=5000
@@ -99,50 +101,14 @@ services:
       - ENABLE_DAILY_SNAPSHOTS=true
       - ENABLE_HOURLY_AGGREGATION=true
       - ENABLE_CACHE_REFRESH=true
+      - CHAIN_NAME=${CHAIN_NAME:-base-sepolia}
     # No port exposure needed - Traefik handles routing by domain
-    depends_on:
-      - postgres
-      - timescaledb
     networks:
-      - scalex-network
       - infrastructure
     restart: unless-stopped
     labels:
       # Traefik configuration for Coolify
       - traefik.enable=true
-
-  # PostgreSQL database (Main indexer DB)
-  postgres:
-    image: postgres:15-alpine
-    environment:
-      - POSTGRES_DB=ponder_core
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=password
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      scalex-network:
-        aliases:
-          - postgres
-          - db
-    restart: unless-stopped
-
-  # TimescaleDB for Analytics
-  timescaledb:
-    image: timescale/timescaledb:latest-pg15
-    environment:
-      - POSTGRES_DB=analytics
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=password
-    volumes:
-      - timescale_data:/var/lib/postgresql/data
-      - ./analytics-service/init:/docker-entrypoint-initdb.d
-    command: ["postgres", "-c", "shared_preload_libraries=timescaledb"]
-    networks:
-      scalex-network:
-        aliases:
-          - timescaledb
-    restart: unless-stopped
 
   # Redis Commander for Redis management (dev only)
   redis-commander:
@@ -152,19 +118,11 @@ services:
     environment:
       - REDIS_HOSTS=local:redis:6379
     networks:
-      - scalex-network
       - infrastructure
     profiles:
       - dev
     restart: unless-stopped
 
-volumes:
-  postgres_data:
-  timescale_data:
-
 networks:
-  scalex-network:
-    name: indexer_scalex-network
-    driver: bridge
   infrastructure:
     external: true
