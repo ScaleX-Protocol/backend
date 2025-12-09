@@ -23,7 +23,7 @@ ponder.on(PonderEvents.UNLOCK, withEventValidator(balanceManagerHandler.handleUn
 // Order Book Events - With transaction validation
 ponder.on(PonderEvents.ORDER_PLACED, withEventValidator(orderBookHandler.handleOrderPlaced, 'orderPlaced'));
 ponder.on(PonderEvents.ORDER_MATCHED, withEventValidator(orderBookHandler.handleOrderMatched, 'orderMatched'));
-ponder.on(PonderEvents.ORDER_CANCELLED, withEventValidator(orderBookHandler.handleOrderCancelled, 'orderCancelled'));
+// ponder.on(PonderEvents.ORDER_CANCELLED, withEventValidator(orderBookHandler.handleOrderCancelled, 'orderCancelled'));
 ponder.on(PonderEvents.UPDATE_ORDER, withEventValidator(orderBookHandler.handleUpdateOrder, 'updateOrder'));
 
 // Hyperlane Mailbox Events - With transaction validation
@@ -45,6 +45,7 @@ ponder.on(PonderEvents.LENDING_MANAGER_REPAY, withEventValidator(lendingManagerH
 ponder.on(PonderEvents.LENDING_MANAGER_WITHDRAW, withEventValidator(lendingManagerHandler.handleWithdraw, 'withdraw'));
 ponder.on(PonderEvents.LENDING_MANAGER_LIQUIDATION, withEventValidator(lendingManagerHandler.handleLiquidation, 'liquidation'));
 ponder.on(PonderEvents.LENDING_MANAGER_ASSET_CONFIGURED, withEventValidator(lendingManagerHandler.handleAssetConfigured, 'assetConfigured'));
+ponder.on(PonderEvents.LENDING_MANAGER_INTEREST_RATE_PARAMS_SET, withEventValidator(lendingManagerHandler.handleInterestRateParamsSet, 'interestRateParamsSet'));
 
 // Oracle Events - Temporarily disabled due to telemetry issue
 ponder.on(PonderEvents.ORACLE_PRICE_UPDATED, oracleHandler.handleOraclePriceUpdate);
