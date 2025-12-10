@@ -527,10 +527,11 @@ export async function handleAssetConfigured({ event, context }: any) {
   const chainId = context.network.chainId;
   const token = getAddress(event.args.token);
 
-  const collateralFactor = Number(BigInt(event.args.collateralFactor) / BigInt(10 ** 14));
-  const liquidationThreshold = Number(BigInt(event.args.liquidationThreshold) / BigInt(10 ** 14));
-  const liquidationBonus = Number(BigInt(event.args.liquidationBonus) / BigInt(10 ** 14));
-  const reserveFactor = Number(BigInt(event.args.reserveFactor) / BigInt(10 ** 14));
+  // Values are already in basis points (e.g., 7500 = 75%, 8000 = 80%)
+  const collateralFactor = Number(event.args.collateralFactor);
+  const liquidationThreshold = Number(event.args.liquidationThreshold);
+  const liquidationBonus = Number(event.args.liquidationBonus);
+  const reserveFactor = Number(event.args.reserveFactor);
   const timestamp = Number(event.block.timestamp);
 
   // Create unique ID for this asset configuration
