@@ -2111,33 +2111,42 @@ app.get("/api/lending/dashboard/:user", async c => {
 				const borrowRateBP = realTimeRates?.borrowRate || 0;
 				const utilizationRateValue = realTimeRates?.utilizationRate || 0;
 
-				// Calculate borrowing power based on collateral
-				let borrowingPower = "0";
+				// Calculate borrowing power based on collateral (in USD)
+				let borrowingPowerUSD = 0;
 				let canBorrow = false;
 
 				if (ltv > 0 && totalCollateralValueRaw > 0) {
-					borrowingPower = Math.floor(totalCollateralValueRaw * ltv).toString();
+					borrowingPowerUSD = Math.floor(totalCollateralValueRaw * ltv);
 					canBorrow = true;
 				}
+
+				// Calculate available liquidity in the pool (in token units)
+				const availableLiquidity = totalLiquidity > totalBorrowed ? totalLiquidity - totalBorrowed : BigInt(0);
+				const availableLiquidityFormatted = formatAmount(availableLiquidity.toString(), tokenInfo.decimals);
 
 				const recommended = cleanSymbol === "USDC" || cleanSymbol.includes("USD");
 
 				// Calculate projected interest for maximum borrowing power
 				let projectedInterest = null;
-				if (realTimeRates && borrowingPower !== "0") {
-					const borrowingPowerBigInt = BigInt(Math.floor(parseFloat(borrowingPower) * Math.pow(10, tokenInfo.decimals)));
+				if (realTimeRates && borrowingPowerUSD > 0) {
+					// For interest projection, use the USD borrowing power converted to token units
+					const borrowingPowerInTokens = BigInt(Math.floor(borrowingPowerUSD * Math.pow(10, tokenInfo.decimals)));
 					projectedInterest = {
-						hourly: formatUSD(calculateProjectedInterest(borrowingPowerBigInt, realTimeRates.borrowRate, 3600).toString(), tokenInfo.decimals),
-						daily: formatUSD(calculateProjectedInterest(borrowingPowerBigInt, realTimeRates.borrowRate, 86400).toString(), tokenInfo.decimals),
-						weekly: formatUSD(calculateProjectedInterest(borrowingPowerBigInt, realTimeRates.borrowRate, 604800).toString(), tokenInfo.decimals),
-						monthly: formatUSD(calculateProjectedInterest(borrowingPowerBigInt, realTimeRates.borrowRate, 2592000).toString(), tokenInfo.decimals)
+						hourly: formatUSD(calculateProjectedInterest(borrowingPowerInTokens, realTimeRates.borrowRate, 3600).toString(), tokenInfo.decimals),
+						daily: formatUSD(calculateProjectedInterest(borrowingPowerInTokens, realTimeRates.borrowRate, 86400).toString(), tokenInfo.decimals),
+						weekly: formatUSD(calculateProjectedInterest(borrowingPowerInTokens, realTimeRates.borrowRate, 604800).toString(), tokenInfo.decimals),
+						monthly: formatUSD(calculateProjectedInterest(borrowingPowerInTokens, realTimeRates.borrowRate, 2592000).toString(), tokenInfo.decimals)
 					};
 				}
+
+				// Format borrowing power as USD
+				const borrowingPowerFormatted = `$${borrowingPowerUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 				return {
 					asset: cleanSymbol,
 					assetAddress: config.token,
-					availableAmount: formatAmount(borrowingPower, tokenInfo.decimals),
+					availableAmount: borrowingPowerFormatted,
+					availableLiquidity: availableLiquidityFormatted,
 					currentBorrowed: formatAmount("0", tokenInfo.decimals),
 					apy: formatAPY(borrowRateBP.toString()),
 					utilizationRate: (utilizationRateValue / 100).toFixed(1) + "%",
