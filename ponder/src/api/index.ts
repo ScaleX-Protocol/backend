@@ -1054,18 +1054,29 @@ app.get("/api/allOrders", async c => {
 				orderSymbol = symbol;
 			}
 
+			// For market orders, quantity is in quote currency but filled is in base currency
+			// origQty should be base quantity, origQuoteOrderQty should be quote quantity
+			const isMarketOrder = order.type === "Market";
+			const filledBase = order.filled ? BigInt(order.filled) : BigInt(0);
+			const orderPrice = order.price ? BigInt(order.price) : BigInt(0);
+
+			// For market orders: quantity is quote amount, filled is base amount
+			// For limit orders: both quantity and filled are in base currency
+			const origQty = isMarketOrder ? filledBase.toString() : order.quantity.toString();
+			const origQuoteOrderQty = isMarketOrder ? order.quantity.toString() : "0";
+			const cumulativeQuoteQty = filledBase > 0n && orderPrice > 0n
+				? ((filledBase * orderPrice) / BigInt(10 ** decimals)).toString()
+				: "0";
+
 			return {
 				symbol: orderSymbol,
 				orderId: order.orderId.toString(),
 				orderListId: -1,
 				clientOrderId: order.id,
 				price: order.price.toString(),
-				origQty: order.quantity.toString(),
+				origQty,
 				executedQty: order.filled.toString(),
-				cumulativeQuoteQty:
-					order.filled && order.price
-						? ((BigInt(order.filled) * BigInt(order.price)) / BigInt(10 ** decimals)).toString()
-						: "0",
+				cumulativeQuoteQty,
 				status: order.status,
 				timeInForce: order.timeInForce,
 				type: order.type,
@@ -1075,7 +1086,7 @@ app.get("/api/allOrders", async c => {
 				time: Number(order.timestamp) * 1000,
 				updateTime: Number(order.timestamp) * 1000,
 				isWorking: order.status === "NEW" || order.status === "PARTIALLY_FILLED",
-				origQuoteOrderQty: "0",
+				origQuoteOrderQty,
 			};
 		});
 
@@ -1148,18 +1159,29 @@ app.get("/api/openOrders", async c => {
 				}
 			}
 
+			// For market orders, quantity is in quote currency but filled is in base currency
+			// origQty should be base quantity, origQuoteOrderQty should be quote quantity
+			const isMarketOrder = order.type === "Market";
+			const filledBase = order.filled ? BigInt(order.filled) : BigInt(0);
+			const orderPrice = order.price ? BigInt(order.price) : BigInt(0);
+
+			// For market orders: quantity is quote amount, filled is base amount
+			// For limit orders: both quantity and filled are in base currency
+			const origQty = isMarketOrder ? filledBase.toString() : order.quantity.toString();
+			const origQuoteOrderQty = isMarketOrder ? order.quantity.toString() : "0";
+			const cumulativeQuoteQty = filledBase > 0n && orderPrice > 0n
+				? ((filledBase * orderPrice) / BigInt(10 ** decimals)).toString()
+				: "0";
+
 			return {
 				symbol: orderSymbol,
 				orderId: order.orderId.toString(),
 				orderListId: -1,
 				clientOrderId: order.id,
 				price: order.price.toString(),
-				origQty: order.quantity.toString(),
+				origQty,
 				executedQty: order.filled.toString(),
-				cumulativeQuoteQty:
-					order.filled && order.price
-						? ((BigInt(order.filled) * BigInt(order.price)) / BigInt(10 ** decimals)).toString()
-						: "0",
+				cumulativeQuoteQty,
 				status: order.status,
 				timeInForce: order.timeInForce,
 				type: order.type,
@@ -1169,7 +1191,7 @@ app.get("/api/openOrders", async c => {
 				time: Number(order.timestamp) * 1000,
 				updateTime: Number(order.timestamp) * 1000,
 				isWorking: true,
-				origQuoteOrderQty: "0",
+				origQuoteOrderQty,
 			};
 		});
 
