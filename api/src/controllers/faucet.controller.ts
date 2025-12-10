@@ -207,7 +207,7 @@ export class FaucetController {
         tokenAddress,
         tokenSymbol: 'UNKNOWN', // Will be updated after service call
         tokenDecimals: 18, // Will be updated after service call
-        amount: BigInt(0), // Will be updated after service call
+        amount: '0', // Will be updated after service call (stored as numeric/string)
         amountFormatted: defaultAmount || '0',
         status: 'pending',
         requestTimestamp: new Date(),
@@ -229,7 +229,7 @@ export class FaucetController {
           transactionHash: result.transactionHash || '',
           tokenSymbol: result.tokenSymbol || 'UNKNOWN',
           tokenDecimals: result.tokenDecimals || 18,
-          amount: result.amountRaw || BigInt(0), // Use the raw amount from service
+          amount: result.amountRaw?.toString() || '0', // Use the raw amount from service (as string for numeric type)
           amountFormatted: result.amountSent || '0',
           completedTimestamp: new Date()
         });
