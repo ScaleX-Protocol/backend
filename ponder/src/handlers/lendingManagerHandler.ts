@@ -12,7 +12,6 @@ import {
   liquidations,
   oraclePrices,
   poolLendingStats,
-  syntheticTokens,
   userLendingStats
 } from "ponder:schema";
 import { getAddress } from "viem";
@@ -336,6 +335,9 @@ export async function handleRepay({ event, context }: any) {
   // Update user stats
   await upsertUserLendingStats(db, chainId, user, "REPAY", amount, timestamp);
 
+  // Update pool lending stats (decrement borrow on repay)
+  await updatePoolLendingStats(db, chainId, token, BigInt(0), -amount, timestamp);
+
   // Update user balance
   const balanceId = createBalanceId(chainId, token, user);
   await db
@@ -365,12 +367,8 @@ export async function handleWithdraw({ event, context }: any) {
   const timestamp = Number(event.block.timestamp);
   const txHash = event.transaction.hash;
 
-  // Update synthetic token tracking
-  const syntheticTokenId = `${chainId}-${token}`;
-  await db.update(syntheticTokens, { id: syntheticTokenId }).set({
-    totalSupply: sql`${syntheticTokens.totalSupply} - ${amount}`,
-    lastUpdated: timestamp,
-  });
+  // Update pool lending stats (decrement supply on withdraw)
+  await updatePoolLendingStats(db, chainId, token, -amount, BigInt(0), timestamp);
 
   // Record lending event
   const eventId = `${txHash}-withdraw-${timestamp}`;
@@ -760,9 +758,19 @@ async function updatePoolLendingStats(
     // Get current stats to calculate new utilization and rates
     const currentStats = await db.find(poolLendingStats, { id: statsId });
 
-    // Calculate new totals
-    const newTotalSupply = currentStats ? currentStats.totalSupply + supplyAmount : supplyAmount;
-    const newTotalBorrow = currentStats ? currentStats.totalBorrow + borrowAmount : borrowAmount;
+    // For negative amounts (withdrawals/repayments), we need existing stats
+    if (!currentStats && (supplyAmount < 0n || borrowAmount < 0n)) {
+      logger.warn(`Cannot update pool stats for ${token}: No existing stats for withdrawal/repayment`, LogLabel.DATABASE, 'updatePoolLendingStats', { token, supplyAmount: supplyAmount.toString(), borrowAmount: borrowAmount.toString() });
+      return;
+    }
+
+    // Calculate new totals (ensure non-negative)
+    const newTotalSupply = currentStats
+      ? (currentStats.totalSupply + supplyAmount < 0n ? 0n : currentStats.totalSupply + supplyAmount)
+      : (supplyAmount < 0n ? 0n : supplyAmount);
+    const newTotalBorrow = currentStats
+      ? (currentStats.totalBorrow + borrowAmount < 0n ? 0n : currentStats.totalBorrow + borrowAmount)
+      : (borrowAmount < 0n ? 0n : borrowAmount);
 
     // Calculate utilization rate in basis points
     let utilizationRate = 0;

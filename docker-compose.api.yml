@@ -30,7 +30,7 @@ services:
       dockerfile: Dockerfile
     container_name: ${CHAIN_NAME:-base-sepolia}-api
     env_file:
-      - ${API_ENV_FILE:-./api/.env}
+      - ${API_ENV_FILE:-./api/.env.base-sepolia}
     environment:
       - NODE_ENV=production
       - PORT=3000
