@@ -16,6 +16,7 @@ import schema, {
 	hyperlaneMessages,
 	interestRateParameters,
 	lendingEvents,
+	lendingPositions,
 	minuteBuckets,
 	orderBookDepth,
 	orderBookTrades,
@@ -1616,7 +1617,7 @@ app.get("/api/lending/dashboard/:user", async c => {
 		const calculatedPositions = calculatePositionsFromEvents(userLendingEvents);
 
 		// Execute remaining queries in parallel with proper error handling
-		const [poolStats, assetConfigs, interestRateParams, userActivityHistory] = await Promise.allSettled([
+		const [poolStats, assetConfigs, interestRateParams, userActivityHistory, indexedPositions] = await Promise.allSettled([
 			db.select({
 				token: poolLendingStats.token,
 				totalSupply: poolLendingStats.totalSupply,
@@ -1672,6 +1673,23 @@ app.get("/api/lending/dashboard/:user", async c => {
 				))
 				.orderBy(desc(lendingEvents.timestamp))
 				.limit(50)
+				.execute(),
+			// Fetch indexed lending positions with lastUpdated (checkpoint timestamp)
+			db.select({
+				id: lendingPositions.id,
+				collateralToken: lendingPositions.collateralToken,
+				debtToken: lendingPositions.debtToken,
+				collateralAmount: lendingPositions.collateralAmount,
+				debtAmount: lendingPositions.debtAmount,
+				lastUpdated: lendingPositions.lastUpdated,
+				isActive: lendingPositions.isActive,
+			})
+				.from(lendingPositions)
+				.where(and(
+					eq(lendingPositions.user, user as `0x${string}`),
+					eq(lendingPositions.chainId, targetChainId),
+					eq(lendingPositions.isActive, true)
+				))
 				.execute()
 		]);
 
@@ -1681,6 +1699,19 @@ app.get("/api/lending/dashboard/:user", async c => {
 		const configs = assetConfigs.status === 'fulfilled' ? assetConfigs.value : [];
 		const rateParams = interestRateParams.status === 'fulfilled' ? interestRateParams.value : [];
 		const activityHistory = userActivityHistory.status === 'fulfilled' ? userActivityHistory.value : [];
+		// Indexed positions with lastUpdated checkpoint
+		const indexedPositionsList = indexedPositions.status === 'fulfilled' ? indexedPositions.value : [];
+
+		// Create a map of token -> lastUpdated from indexed positions for quick lookup
+		const positionCheckpoints = new Map<string, number>();
+		indexedPositionsList.forEach(pos => {
+			if (pos.collateralToken && pos.lastUpdated) {
+				positionCheckpoints.set(pos.collateralToken.toLowerCase(), pos.lastUpdated);
+			}
+			if (pos.debtToken && pos.lastUpdated) {
+				positionCheckpoints.set(pos.debtToken.toLowerCase(), pos.lastUpdated);
+			}
+		});
 
 		// Log any errors but continue processing
 		if (poolStats.status === 'rejected') {
@@ -1845,6 +1876,28 @@ app.get("/api/lending/dashboard/:user", async c => {
 						monthly: realTimeRates ? formatUSD(realTimeRates.projections.monthly.supplyEarnings.toString(), collateralTokenInfo.decimals) : "$0.00"
 					};
 
+					// Use indexed checkpoint from lendingPositions.lastUpdated
+					// This mirrors the contract's lastYieldUpdate and is updated on every supply/withdraw event
+					const indexedCheckpoint = positionCheckpoints.get(position.collateralToken.toLowerCase());
+					const checkpointTimestamp = indexedCheckpoint || position.firstSupplyTimestamp;
+
+					// Calculate accrued yield since checkpoint
+					// yield = (principal * supplyRate * timeDelta) / (SECONDS_PER_YEAR * BASIS_POINTS)
+					const accruedYield = calculateAccruedSupplyYield(
+						BigInt(collateralAmount),
+						supplyRateBP,
+						checkpointTimestamp
+					);
+
+					const accruedYieldFormatted = formatAmount(accruedYield.toString(), collateralTokenInfo.decimals);
+					const accruedYieldUSD = formatUSD(accruedYield.toString(), collateralTokenInfo.decimals);
+
+					// Calculate time since checkpoint for context
+					const currentTime = Math.floor(Date.now() / 1000);
+					const supplyDurationSeconds = checkpointTimestamp ? currentTime - checkpointTimestamp : 0;
+					const supplyDurationDays = supplyDurationSeconds > 0 ? Math.floor(supplyDurationSeconds / 86400) : 0;
+					const supplyDurationHours = supplyDurationSeconds > 0 ? Math.floor((supplyDurationSeconds % 86400) / 3600) : 0;
+
 					result.supplies.push({
 						id: position.id || `supply-${index}`,
 						asset: cleanSymbol,
@@ -1854,6 +1907,13 @@ app.get("/api/lending/dashboard/:user", async c => {
 						apy: formatAPY(supplyRateBP.toString()),
 						earnings: formatUSD("0", collateralTokenInfo.decimals),
 						projectedEarnings,
+						// Accrued yield calculated from indexed checkpoint (lendingPositions.lastUpdated)
+						accruedYield: {
+							amount: accruedYieldFormatted,
+							value: accruedYieldUSD,
+							sinceTimestamp: checkpointTimestamp,
+							duration: supplyDurationSeconds > 0 ? `${supplyDurationDays}d ${supplyDurationHours}h` : "0h"
+						},
 						canWithdraw: position.isActive !== false,
 						collateralUsed: formatAmount(collateralAmount, collateralTokenInfo.decimals),
 						utilizationRate: (utilizationRateValue / 100).toFixed(1) + "%",
@@ -1925,6 +1985,35 @@ app.get("/api/lending/dashboard/:user", async c => {
 						monthly: realTimeRates ? formatUSD(realTimeRates.projections.monthly.borrowInterest.toString(), debtTokenInfo.decimals) : "$0.00"
 					};
 
+					// Use indexed checkpoint from lendingPositions.lastUpdated
+					// This mirrors the contract's lastYieldUpdate and is updated on every borrow/repay event
+					const indexedCheckpoint = positionCheckpoints.get(position.debtToken.toLowerCase());
+					const checkpointTimestamp = indexedCheckpoint || position.firstBorrowTimestamp;
+
+					// Calculate accrued interest since checkpoint
+					// Uses same formula as _calculateUserDebt in smart contract:
+					// accruedInterest = (borrowed * borrowRate * timeDelta) / (SECONDS_PER_YEAR * BASIS_POINTS)
+					const accruedInterest = calculateAccruedBorrowInterest(
+						BigInt(debtAmount),
+						borrowRateBP,
+						checkpointTimestamp
+					);
+
+					const accruedInterestFormatted = formatAmount(accruedInterest.toString(), debtTokenInfo.decimals);
+					const accruedInterestUSD = formatUSD(accruedInterest.toString(), debtTokenInfo.decimals);
+
+					// Calculate time since checkpoint for context
+					const currentTime = Math.floor(Date.now() / 1000);
+					const borrowDurationSeconds = checkpointTimestamp ? currentTime - checkpointTimestamp : 0;
+					const borrowDurationDays = borrowDurationSeconds > 0 ? Math.floor(borrowDurationSeconds / 86400) : 0;
+					const borrowDurationHours = borrowDurationSeconds > 0 ? Math.floor((borrowDurationSeconds % 86400) / 3600) : 0;
+
+					// Calculate total debt including accrued interest (same as contract's _calculateUserDebt)
+					const principalAmount = BigInt(debtAmount);
+					const totalDebtWithInterest = principalAmount + accruedInterest;
+					const totalDebtFormatted = formatAmount(totalDebtWithInterest.toString(), debtTokenInfo.decimals);
+					const totalDebtUSD = formatUSD(totalDebtWithInterest.toString(), debtTokenInfo.decimals);
+
 					// Placeholder health factor - will be calculated correctly after all positions are processed
 					let healthFactor = 999999;
 
@@ -1941,6 +2030,18 @@ app.get("/api/lending/dashboard/:user", async c => {
 						apy: formatAPY(borrowRateBP.toString()),
 						interestAccrued: formatUSD("0", debtTokenInfo.decimals),
 						projectedInterest,
+						// Accrued interest calculated from indexed checkpoint (lendingPositions.lastUpdated)
+						accruedInterest: {
+							amount: accruedInterestFormatted,
+							value: accruedInterestUSD,
+							sinceTimestamp: checkpointTimestamp,
+							duration: borrowDurationSeconds > 0 ? `${borrowDurationDays}d ${borrowDurationHours}h` : "0h"
+						},
+						// Total debt including accrued interest (matches _calculateUserDebt)
+						totalDebtWithInterest: {
+							amount: totalDebtFormatted,
+							value: totalDebtUSD
+						},
 						collateralRatio: (assetConfigMap[position.debtToken.toLowerCase()]?.collateralFactor || 0).toString(),
 						healthFactor: healthFactor.toFixed(2),
 						healthStatus,
@@ -2342,32 +2443,166 @@ async function initializeServices() {
 }
 
 
-// Function to calculate lending positions from events
-function calculatePositionsFromEvents(events: any[]): any[] {
-	const tokenBalances = new Map<string, { supplied: bigint, borrowed: bigint }>();
+/**
+ * Time-weighted balance segment for accurate yield calculation
+ * Each segment represents a period where the user's balance was constant
+ */
+interface BalanceSegment {
+	amount: bigint;
+	startTimestamp: number;
+	endTimestamp: number | null; // null means ongoing (until now)
+}
 
-	// Process each event to calculate net balances
-	events.forEach(event => {
+/**
+ * Calculate lending positions from events with time-weighted yield tracking
+ *
+ * Yield accrual in lending protocols works as follows:
+ * 1. Interest accrues at the POOL level based on total borrowed amount
+ * 2. Each supplier earns proportional to their share: (userSupply / totalSupply) * poolInterest
+ * 3. When a user deposits/withdraws, their earning rate changes
+ *
+ * To calculate accurate yield, we need to track:
+ * - Each period where user's balance was constant
+ * - The supply rate during each period (approximated by current rate for simplicity)
+ *
+ * Formula for each segment:
+ * segmentYield = (segmentBalance * supplyRate * segmentDuration) / (SECONDS_PER_YEAR * BASIS_POINTS)
+ * totalYield = sum of all segmentYields
+ */
+function calculatePositionsFromEvents(events: any[]): any[] {
+	const tokenBalances = new Map<string, {
+		supplied: bigint,
+		borrowed: bigint,
+		supplySegments: BalanceSegment[],
+		borrowSegments: BalanceSegment[],
+		firstSupplyTimestamp: number | null,
+		firstBorrowTimestamp: number | null,
+		lastSupplyTimestamp: number | null,
+		lastBorrowTimestamp: number | null
+	}>();
+
+	// Sort events by timestamp to process chronologically
+	const sortedEvents = [...events].sort((a, b) => a.timestamp - b.timestamp);
+
+	// Process each event to calculate net balances and track time-weighted segments
+	sortedEvents.forEach(event => {
 		const tokenAddress = event.token;
 		if (!tokenBalances.has(tokenAddress)) {
-			tokenBalances.set(tokenAddress, { supplied: 0n, borrowed: 0n });
+			tokenBalances.set(tokenAddress, {
+				supplied: 0n,
+				borrowed: 0n,
+				supplySegments: [],
+				borrowSegments: [],
+				firstSupplyTimestamp: null,
+				firstBorrowTimestamp: null,
+				lastSupplyTimestamp: null,
+				lastBorrowTimestamp: null
+			});
 		}
 
 		const balance = tokenBalances.get(tokenAddress)!;
 		const amount = BigInt(event.amount || 0);
+		const timestamp = event.timestamp;
 
 		switch (event.action) {
 			case 'SUPPLY':
+				// Close the previous supply segment if exists
+				if (balance.supplySegments.length > 0) {
+					const lastSegment = balance.supplySegments[balance.supplySegments.length - 1];
+					if (lastSegment && lastSegment.endTimestamp === null) {
+						lastSegment.endTimestamp = timestamp;
+					}
+				}
+
 				balance.supplied += amount;
+
+				// Start a new segment with the new balance
+				if (balance.supplied > 0n) {
+					balance.supplySegments.push({
+						amount: balance.supplied,
+						startTimestamp: timestamp,
+						endTimestamp: null
+					});
+				}
+
+				if (balance.firstSupplyTimestamp === null) {
+					balance.firstSupplyTimestamp = timestamp;
+				}
+				balance.lastSupplyTimestamp = timestamp;
 				break;
+
 			case 'BORROW':
+				// Close the previous borrow segment if exists
+				if (balance.borrowSegments.length > 0) {
+					const lastSegment = balance.borrowSegments[balance.borrowSegments.length - 1];
+					if (lastSegment && lastSegment.endTimestamp === null) {
+						lastSegment.endTimestamp = timestamp;
+					}
+				}
+
 				balance.borrowed += amount;
+
+				// Start a new segment with the new balance
+				if (balance.borrowed > 0n) {
+					balance.borrowSegments.push({
+						amount: balance.borrowed,
+						startTimestamp: timestamp,
+						endTimestamp: null
+					});
+				}
+
+				if (balance.firstBorrowTimestamp === null) {
+					balance.firstBorrowTimestamp = timestamp;
+				}
+				balance.lastBorrowTimestamp = timestamp;
 				break;
+
 			case 'REPAY':
+				// Close the previous borrow segment
+				if (balance.borrowSegments.length > 0) {
+					const lastSegment = balance.borrowSegments[balance.borrowSegments.length - 1];
+					if (lastSegment && lastSegment.endTimestamp === null) {
+						lastSegment.endTimestamp = timestamp;
+					}
+				}
+
 				balance.borrowed = balance.borrowed >= amount ? balance.borrowed - amount : 0n;
+
+				// Start a new segment if still has borrowed amount
+				if (balance.borrowed > 0n) {
+					balance.borrowSegments.push({
+						amount: balance.borrowed,
+						startTimestamp: timestamp,
+						endTimestamp: null
+					});
+				}
 				break;
+
 			case 'WITHDRAW':
+				// Close the previous supply segment
+				if (balance.supplySegments.length > 0) {
+					const lastSegment = balance.supplySegments[balance.supplySegments.length - 1];
+					if (lastSegment && lastSegment.endTimestamp === null) {
+						lastSegment.endTimestamp = timestamp;
+					}
+				}
+
 				balance.supplied = balance.supplied >= amount ? balance.supplied - amount : 0n;
+
+				// Start a new segment if still has supply
+				if (balance.supplied > 0n) {
+					balance.supplySegments.push({
+						amount: balance.supplied,
+						startTimestamp: timestamp,
+						endTimestamp: null
+					});
+				}
+
+				// Reset timestamps if all withdrawn
+				if (balance.supplied === 0n) {
+					balance.firstSupplyTimestamp = null;
+					balance.lastSupplyTimestamp = null;
+				}
 				break;
 		}
 	});
@@ -2384,12 +2619,69 @@ function calculatePositionsFromEvents(events: any[]): any[] {
 				collateralAmount: balance.supplied,
 				debtAmount: balance.borrowed,
 				isActive: true,
-				chainId: events[0]?.chainId || 31337
+				chainId: events[0]?.chainId || 31337,
+				// Time-weighted segments for accurate yield calculation
+				supplySegments: balance.supplySegments,
+				borrowSegments: balance.borrowSegments,
+				// Legacy timestamp tracking (for display purposes)
+				firstSupplyTimestamp: balance.firstSupplyTimestamp,
+				firstBorrowTimestamp: balance.firstBorrowTimestamp,
+				lastSupplyTimestamp: balance.lastSupplyTimestamp,
+				lastBorrowTimestamp: balance.lastBorrowTimestamp
 			});
 		}
 	});
 
 	return positions;
+}
+
+// Higher precision multiplier for accurate calculations with fractional basis points
+const PRECISION_MULTIPLIER = 1000000n; // 1e6 for 6 decimal places of precision
+
+/**
+ * Calculate accrued yield for a lender (supplier)
+ * Uses the same formula as the smart contract:
+ * yield = (principal * supplyRate * timeDelta) / (SECONDS_PER_YEAR * BASIS_POINTS)
+ *
+ * Note: We use a precision multiplier to handle fractional basis points accurately.
+ * For example, a supply rate of 0.18 basis points would be lost if rounded to 0.
+ */
+function calculateAccruedSupplyYield(
+	principal: bigint,
+	supplyRateBP: number,
+	firstTimestamp: number | null,
+	currentTimestamp: number = Math.floor(Date.now() / 1000)
+): bigint {
+	if (principal === 0n || supplyRateBP === 0 || firstTimestamp === null) return 0n;
+
+	const timeDelta = currentTimestamp - firstTimestamp;
+	if (timeDelta <= 0) return 0n;
+
+	// Use precision multiplier to preserve fractional basis points
+	// rate * 1e6 preserves 6 decimal places
+	const scaledRate = BigInt(Math.round(supplyRateBP * Number(PRECISION_MULTIPLIER)));
+	return (principal * scaledRate * BigInt(timeDelta)) / (BigInt(SECONDS_PER_YEAR) * BigInt(BASIS_POINTS) * PRECISION_MULTIPLIER);
+}
+
+/**
+ * Calculate accrued interest for a borrower
+ * Uses the same formula as the smart contract:
+ * interest = (borrowed * borrowRate * timeDelta) / (SECONDS_PER_YEAR * BASIS_POINTS)
+ */
+function calculateAccruedBorrowInterest(
+	borrowed: bigint,
+	borrowRateBP: number,
+	firstTimestamp: number | null,
+	currentTimestamp: number = Math.floor(Date.now() / 1000)
+): bigint {
+	if (borrowed === 0n || borrowRateBP === 0 || firstTimestamp === null) return 0n;
+
+	const timeDelta = currentTimestamp - firstTimestamp;
+	if (timeDelta <= 0) return 0n;
+
+	// Use precision multiplier to preserve fractional basis points
+	const scaledRate = BigInt(Math.round(borrowRateBP * Number(PRECISION_MULTIPLIER)));
+	return (borrowed * scaledRate * BigInt(timeDelta)) / (BigInt(SECONDS_PER_YEAR) * BigInt(BASIS_POINTS) * PRECISION_MULTIPLIER);
 }
 
 // Initialize services on startup
