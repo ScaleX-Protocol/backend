@@ -1,7 +1,7 @@
 import { getEventPublisher } from "@/events/index";
 import { createBalanceId, createLendingPositionId } from "@/utils";
 import { executeIfInSync } from "@/utils/syncState";
-import { createLogger, LogLabel, log, LogLevel, ServiceName } from "../utils/logger";
+import { createLogger, LogLabel, log, LogLevel } from "../utils/logger";
 import { sql } from "ponder";
 import {
   assetConfigurations,
@@ -302,7 +302,7 @@ export async function handleBorrow({ event, context }: any) {
       });
     }, 'handleBorrow');
   } catch (error) {
-    log(LogLevel.ERROR, 'handleBorrow ERROR', LogLabel.EVENT_HANDLER, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error), user, token, amount: amount.toString() }, 'lendingManagerHandler.ts', 'handleBorrow');
+    log(LogLevel.ERROR, 'handleBorrow ERROR', LogLabel.EVENT_HANDLER, { error: error instanceof Error ? error.message : String(error), user, token, amount: amount.toString() }, 'lendingManagerHandler.ts', 'handleBorrow');
     return;
   }
 }

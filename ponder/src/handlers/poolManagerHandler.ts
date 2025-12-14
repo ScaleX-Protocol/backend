@@ -3,7 +3,7 @@ import dotenv from "dotenv";
 import { pools } from "ponder:schema";
 import { getAddress } from "viem";
 import { ERC20ABI } from "../../abis/ERC20";
-import { createLogger, log, LogLabel, LogLevel, ServiceName } from "../utils/logger";
+import { createLogger, log, LogLabel, LogLevel } from "../utils/logger";
 import { createPoolCacheKey, setChainCachedData } from "../utils/redis";
 import { executeIfInSync } from "../utils/syncState";
 import { pushMiniTicker } from "../websocket/broadcaster";
@@ -72,28 +72,28 @@ export async function handlePoolCreated({ event, context }: any) {
 		const chainId = context.network.chainId;
 
 		if (!client) {
-			log(LogLevel.ERROR, 'Client context is null or undefined', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'poolManagerHandler.ts', 'handlePoolCreated');
+			log(LogLevel.ERROR, 'Client context is null or undefined', LogLabel.VALIDATION, {}, 'poolManagerHandler.ts', 'handlePoolCreated');
 			return;
 		}
 		if (!db) {
-			log(LogLevel.ERROR, 'Database context is null or undefined', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'poolManagerHandler.ts', 'handlePoolCreated');
+			log(LogLevel.ERROR, 'Database context is null or undefined', LogLabel.VALIDATION, {}, 'poolManagerHandler.ts', 'handlePoolCreated');
 			return;
 		}
 		if (!chainId) {
-			log(LogLevel.ERROR, 'Chain ID is missing from context', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'poolManagerHandler.ts', 'handlePoolCreated');
+			log(LogLevel.ERROR, 'Chain ID is missing from context', LogLabel.VALIDATION, {}, 'poolManagerHandler.ts', 'handlePoolCreated');
 			return;
 		}
 
 		if (!event.args.baseCurrency) {
-			log(LogLevel.ERROR, 'Missing baseCurrency in event args', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'poolManagerHandler.ts', 'handlePoolCreated');
+			log(LogLevel.ERROR, 'Missing baseCurrency in event args', LogLabel.VALIDATION, {}, 'poolManagerHandler.ts', 'handlePoolCreated');
 			return;
 		}
 		if (!event.args.quoteCurrency) {
-			log(LogLevel.ERROR, 'Missing quoteCurrency in event args', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'poolManagerHandler.ts', 'handlePoolCreated');
+			log(LogLevel.ERROR, 'Missing quoteCurrency in event args', LogLabel.VALIDATION, {}, 'poolManagerHandler.ts', 'handlePoolCreated');
 			return;
 		}
 		if (!event.args.orderBook) {
-			log(LogLevel.ERROR, 'Missing orderBook in event args', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'poolManagerHandler.ts', 'handlePoolCreated');
+			log(LogLevel.ERROR, 'Missing orderBook in event args', LogLabel.VALIDATION, {}, 'poolManagerHandler.ts', 'handlePoolCreated');
 			return;
 		}
 
@@ -151,7 +151,7 @@ export async function handlePoolCreated({ event, context }: any) {
 				.values(poolData)
 				.onConflictDoNothing();
 		} catch (error) {
-			log(LogLevel.ERROR, 'Failed to insert pool', LogLabel.DATABASE, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'poolManagerHandler.ts', 'handlePoolCreated');
+			log(LogLevel.ERROR, 'Failed to insert pool', LogLabel.DATABASE, { error: error instanceof Error ? error.message : String(error) }, 'poolManagerHandler.ts', 'handlePoolCreated');
 			return;
 		}
 
@@ -168,17 +168,17 @@ export async function handlePoolCreated({ event, context }: any) {
 				try {
 					pushMiniTicker(symbol, "0", "0", "0", "0");
 				} catch (error) {
-					log(LogLevel.ERROR, 'Failed to push MiniTicker', LogLabel.API, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'poolManagerHandler.ts', 'handlePoolCreated');
+					log(LogLevel.ERROR, 'Failed to push MiniTicker', LogLabel.API, { error: error instanceof Error ? error.message : String(error) }, 'poolManagerHandler.ts', 'handlePoolCreated');
 					return;
 				}
 			}, 'handlePoolCreated');
 		} catch (error) {
-			log(LogLevel.ERROR, 'executeIfInSync failed', LogLabel.SYNC, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'poolManagerHandler.ts', 'handlePoolCreated');
+			log(LogLevel.ERROR, 'executeIfInSync failed', LogLabel.SYNC, { error: error instanceof Error ? error.message : String(error) }, 'poolManagerHandler.ts', 'handlePoolCreated');
 			return;
 		}
 
 	} catch (error) {
-		log(LogLevel.ERROR, 'PoolCreated handler error', LogLabel.EVENT_HANDLER, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'poolManagerHandler.ts', 'handlePoolCreated');
+		log(LogLevel.ERROR, 'PoolCreated handler error', LogLabel.EVENT_HANDLER, { error: error instanceof Error ? error.message : String(error) }, 'poolManagerHandler.ts', 'handlePoolCreated');
 		return;
 	}
 }

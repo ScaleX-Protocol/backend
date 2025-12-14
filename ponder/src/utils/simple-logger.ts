@@ -1,4 +1,4 @@
-import { log, LogLevel, LogLabel, ServiceName } from './logger';
+import { log, LogLevel, LogLabel } from './logger';
 
 // Environment-aware logging levels
 const LOG_LEVELS = {
@@ -19,12 +19,10 @@ const currentLogLevel = process.env.NODE_ENV === 'production'
 export class SimpleLogger {
   private moduleName: string;
   private functionName: string;
-  private serviceName: ServiceName;
 
-  constructor(module: string, functionName?: string, serviceName: ServiceName = ServiceName.CORE_CHAIN) {
+  constructor(module: string, functionName?: string) {
     this.moduleName = module;
     this.functionName = functionName || 'unknown';
-    this.serviceName = serviceName;
   }
 
   private shouldLog(level: keyof typeof LOG_LEVELS): boolean {
@@ -53,28 +51,28 @@ export class SimpleLogger {
           errorStack: error.stack?.substring(0, 500),
         }),
       };
-      log(LogLevel.ERROR, message, this.getLabel(), this.serviceName, data, this.moduleName, this.functionName);
+      log(LogLevel.ERROR, message, this.getLabel(), data, this.moduleName, this.functionName);
     }
   }
 
   // Log warning - sends to console, file, and OTEL
   warn(message: string, meta?: Record<string, any>) {
     if (this.shouldLog('WARN')) {
-      log(LogLevel.WARN, message, this.getLabel(), this.serviceName, meta || {}, this.moduleName, this.functionName);
+      log(LogLevel.WARN, message, this.getLabel(), meta || {}, this.moduleName, this.functionName);
     }
   }
 
   // Log info - sends to console, file, and OTEL
   info(message: string, meta?: Record<string, any>) {
     if (this.shouldLog('INFO')) {
-      log(LogLevel.INFO, message, this.getLabel(), this.serviceName, meta || {}, this.moduleName, this.functionName);
+      log(LogLevel.INFO, message, this.getLabel(), meta || {}, this.moduleName, this.functionName);
     }
   }
 
   // Log debug - sends to console, file, and OTEL
   debug(message: string, meta?: Record<string, any>) {
     if (this.shouldLog('DEBUG')) {
-      log(LogLevel.DEBUG, message, this.getLabel(), this.serviceName, meta || {}, this.moduleName, this.functionName);
+      log(LogLevel.DEBUG, message, this.getLabel(), meta || {}, this.moduleName, this.functionName);
     }
   }
 
@@ -93,6 +91,6 @@ export class SimpleLogger {
 }
 
 // Factory function for consistent logger creation
-export const getLogger = (module: string, functionName?: string, serviceName?: ServiceName) => {
-  return new SimpleLogger(module, functionName, serviceName);
+export const getLogger = (module: string, functionName?: string) => {
+  return new SimpleLogger(module, functionName);
 };
