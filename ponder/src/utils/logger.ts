@@ -139,7 +139,7 @@ export const log = (
   data: any,
   filename: string,
   functionName: string,
-  fileLoggingEnabled: boolean = true
+  fileLoggingEnabled: boolean = false
 ) => {
   try {
     const safeMessage = String(message || '').substring(0, 10000);

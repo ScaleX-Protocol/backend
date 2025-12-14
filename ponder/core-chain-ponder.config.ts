@@ -157,6 +157,7 @@ export function getCoreChainConfig() {
 				// Anvil-specific optimizations
 				retryCount: Number(process.env.MAX_RETRIES) || 3,
 				retryDelay: Number(process.env.RETRY_DELAY) || 1000,
+				finalityBlockCount: Number(process.env.FINALITY_BLOCK_COUNT) || 12,
 			},
 		},
 		contracts: contracts,
