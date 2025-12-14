@@ -8,6 +8,9 @@ dotenv.config();
 const OTEL_BASE_URL = process.env.OTEL_BASE_URL;
 const OTEL_LOGS_ENDPOINT = OTEL_BASE_URL ? `${OTEL_BASE_URL}/v1/logs` : null;
 
+// Service name from environment variable
+const SERVICE_NAME = process.env.OTEL_SERVICE_NAME || 'unknown-service';
+
 // Map log levels to OTEL severity numbers
 const severityMap: Record<string, { number: number; text: string }> = {
   debug: { number: 5, text: 'DEBUG' },
@@ -30,7 +33,7 @@ const sendToOtel = async (logEntry: {
   if (!OTEL_LOGS_ENDPOINT) return;
 
   try {
-    const severity = severityMap[logEntry.level.toLowerCase()] || severityMap.info;
+    const severity = severityMap[logEntry.level.toLowerCase()] ?? { number: 9, text: 'INFO' };
     const timeUnixNano = BigInt(new Date(logEntry.timestamp).getTime()) * BigInt(1_000_000);
 
     // Safely stringify data
@@ -121,12 +124,6 @@ export enum LogLabel {
   SYSTEM = 'system'
 }
 
-export enum ServiceName {
-  CLOB_INDEXER = 'clob-indexer',
-  CORE_CHAIN = 'core-chain',
-  SIDE_CHAIN = 'side-chain'
-}
-
 // Ensure logs directory exists
 const logsDir = path.join(process.cwd(), 'logs');
 if (!fs.existsSync(logsDir)) {
@@ -139,7 +136,6 @@ export const log = (
   level: LogLevel,
   message: string,
   label: LogLabel,
-  serviceName: ServiceName,
   data: any,
   filename: string,
   functionName: string,
@@ -155,7 +151,7 @@ export const log = (
     const logEntry = {
       timestamp: currentTimestamp,
       level: level.toUpperCase(),
-      service: String(serviceName?.valueOf() || 'unknown'),
+      service: SERVICE_NAME,
       label: String(label?.valueOf() || 'general'),
       filename: safeFilename,
       function: safeFunctionName,
@@ -166,7 +162,7 @@ export const log = (
     // Console output with emojis for visibility (matching mm-bot format)
     const emoji = level === LogLevel.ERROR ? '❌' : level === LogLevel.WARN ? '⚠️' : level === LogLevel.INFO ? 'ℹ️' : '🔍';
     const shortTimestamp = currentTimestamp.substring(11, 19); // Extract HH:MM:SS
-    const consoleMessage = `${emoji} [${level.toUpperCase()}] [${shortTimestamp}] [${serviceName}/${label}] ${safeFilename}:${safeFunctionName}() - ${safeMessage}`;
+    const consoleMessage = `${emoji} [${level.toUpperCase()}] [${shortTimestamp}] [${SERVICE_NAME}/${label}] ${safeFilename}:${safeFunctionName}() - ${safeMessage}`;
 
     try {
       switch (level) {
@@ -216,19 +212,19 @@ export const log = (
 };
 
 // Helper function to create logging functions with pre-filled filename
-export const createLogger = (filename: string, serviceName: ServiceName = ServiceName.CORE_CHAIN) => {
+export const createLogger = (filename: string) => {
   return {
     debug: (message: string, label: LogLabel, functionName: string, data?: any) =>
-      log(LogLevel.DEBUG, message, label, serviceName, data || {}, filename, functionName),
+      log(LogLevel.DEBUG, message, label, data || {}, filename, functionName),
 
     info: (message: string, label: LogLabel, functionName: string, data?: any) =>
-      log(LogLevel.INFO, message, label, serviceName, data || {}, filename, functionName),
+      log(LogLevel.INFO, message, label, data || {}, filename, functionName),
 
     warn: (message: string, label: LogLabel, functionName: string, data?: any) =>
-      log(LogLevel.WARN, message, label, serviceName, data || {}, filename, functionName),
+      log(LogLevel.WARN, message, label, data || {}, filename, functionName),
 
     error: (message: string, label: LogLabel, functionName: string, data?: any) =>
-      log(LogLevel.ERROR, message, label, serviceName, data || {}, filename, functionName),
+      log(LogLevel.ERROR, message, label, data || {}, filename, functionName),
   };
 };
 
@@ -236,6 +232,5 @@ export default {
   log,
   createLogger,
   LogLevel,
-  LogLabel,
-  ServiceName
+  LogLabel
 };

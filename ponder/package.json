@@ -36,6 +36,7 @@
     "db:drop-both": "tsx scripts/drop-db.ts both"
   },
   "dependencies": {
+    "@anthropic-ai/claude-code": "^2.0.69",
     "@types/ws": "^8.18.1",
     "dotenv": "^16.5.0",
     "hono": "^4.7.8",
