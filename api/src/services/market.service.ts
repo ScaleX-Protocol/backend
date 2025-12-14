@@ -279,12 +279,11 @@ export class MarketService {
                 price: order.price?.toString() || "0",
                 origQty: order.quantity?.toString() || "0",
                 executedQty: order.filled?.toString() || "0",
-                cumulativeQuoteQty:
-                    order.filled && order.price
-                        ? ((order.filled * order.price) / BigInt(10 ** decimals)).toString()
-                        : "0",
+                cumulativeQuoteQty: order.executedQuoteQuantity
+                    ? (order.executedQuoteQuantity / BigInt(10 ** decimals)).toString()
+                    : "0",
                 status: order.status,
-                timeInForce: "GTC",
+                timeInForce: order.timeInForce || "GTC",
                 type: order.type,
                 side: order.side?.toUpperCase(),
                 stopPrice: "0",
@@ -583,12 +582,11 @@ export class MarketService {
                 price: order.price?.toString() || "0",
                 origQty: order.quantity?.toString() || "0",
                 executedQty: order.filled?.toString() || "0",
-                cumulativeQuoteQty:
-                    order.filled && order.price
-                        ? ((order.filled * order.price) / BigInt(10 ** decimals)).toString()
-                        : "0",
+                cumulativeQuoteQty: order.executedQuoteQuantity
+                    ? (order.executedQuoteQuantity / BigInt(10 ** decimals)).toString()
+                    : "0",
                 status: order.status,
-                timeInForce: "GTC",
+                timeInForce: order.timeInForce || "GTC",
                 type: order.type,
                 side: order.side?.toUpperCase(),
                 stopPrice: "0",

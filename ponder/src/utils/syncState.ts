@@ -38,7 +38,5 @@ export async function executeIfInSync(
         return;
     }
 
-    return;
-
     await websocketOperations();
 }

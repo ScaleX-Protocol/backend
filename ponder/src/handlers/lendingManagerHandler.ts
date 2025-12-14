@@ -6,12 +6,12 @@ import { sql } from "ponder";
 import {
   assetConfigurations,
   balances,
+  interestRateParameters,
   lendingEvents,
   lendingPositions,
   liquidations,
   oraclePrices,
   poolLendingStats,
-  syntheticTokens,
   userLendingStats
 } from "ponder:schema";
 import { getAddress } from "viem";
@@ -335,6 +335,9 @@ export async function handleRepay({ event, context }: any) {
   // Update user stats
   await upsertUserLendingStats(db, chainId, user, "REPAY", amount, timestamp);
 
+  // Update pool lending stats (decrement borrow on repay)
+  await updatePoolLendingStats(db, chainId, token, BigInt(0), -amount, timestamp);
+
   // Update user balance
   const balanceId = createBalanceId(chainId, token, user);
   await db
@@ -364,12 +367,8 @@ export async function handleWithdraw({ event, context }: any) {
   const timestamp = Number(event.block.timestamp);
   const txHash = event.transaction.hash;
 
-  // Update synthetic token tracking
-  const syntheticTokenId = `${chainId}-${token}`;
-  await db.update(syntheticTokens, { id: syntheticTokenId }).set({
-    totalSupply: sql`${syntheticTokens.totalSupply} - ${amount}`,
-    lastUpdated: timestamp,
-  });
+  // Update pool lending stats (decrement supply on withdraw)
+  await updatePoolLendingStats(db, chainId, token, -amount, BigInt(0), timestamp);
 
   // Record lending event
   const eventId = `${txHash}-withdraw-${timestamp}`;
@@ -528,10 +527,11 @@ export async function handleAssetConfigured({ event, context }: any) {
   const chainId = context.network.chainId;
   const token = getAddress(event.args.token);
 
-  const collateralFactor = Number(BigInt(event.args.collateralFactor) / BigInt(10 ** 14));
-  const liquidationThreshold = Number(BigInt(event.args.liquidationThreshold) / BigInt(10 ** 14));
-  const liquidationBonus = Number(BigInt(event.args.liquidationBonus) / BigInt(10 ** 14));
-  const reserveFactor = Number(BigInt(event.args.reserveFactor) / BigInt(10 ** 14));
+  // Values are already in basis points (e.g., 7500 = 75%, 8000 = 80%)
+  const collateralFactor = Number(event.args.collateralFactor);
+  const liquidationThreshold = Number(event.args.liquidationThreshold);
+  const liquidationBonus = Number(event.args.liquidationBonus);
+  const reserveFactor = Number(event.args.reserveFactor);
   const timestamp = Number(event.block.timestamp);
 
   // Create unique ID for this asset configuration
@@ -565,7 +565,186 @@ export async function handleAssetConfigured({ event, context }: any) {
   await initializePoolLendingStats(db, chainId, token, collateralFactor, reserveFactor, timestamp);
 }
 
-// Update pool lending stats with new supply/borrow amounts and recalculate utilization
+// InterestRateParamsSet event handler
+export async function handleInterestRateParamsSet({ event, context }: any) {
+  const { db } = context;
+  const chainId = context.network.chainId;
+  const token = getAddress(event.args.token);
+
+  const baseRate = Number(event.args.baseRate); // Already in basis points
+  const optimalUtilization = Number(event.args.optimalUtilization); // Already in basis points
+  const rateSlope1 = Number(event.args.rateSlope1); // Already in basis points
+  const rateSlope2 = Number(event.args.rateSlope2); // Already in basis points
+  const timestamp = Number(event.block.timestamp);
+  const txHash = event.transaction.hash;
+
+  // Create unique ID for this interest rate configuration
+  const rateId = `${chainId}-${token}`;
+
+  // Insert new interest rate configuration
+  await db
+    .insert(interestRateParameters)
+    .values({
+      id: rateId,
+      chainId,
+      token,
+      baseRate,
+      optimalUtilization,
+      rateSlope1,
+      rateSlope2,
+      timestamp,
+      blockNumber: BigInt(event.block.number),
+      isActive: true,
+    })
+    .onConflictDoUpdate(() => ({
+      baseRate,
+      optimalUtilization,
+      rateSlope1,
+      rateSlope2,
+      timestamp,
+      blockNumber: BigInt(event.block.number),
+      isActive: true,
+    }));
+
+  // Update pool lending stats with new rate parameters
+  await updatePoolLendingRates(db, chainId, token, timestamp);
+
+  logger.info(`Interest rate parameters updated for ${token}: Base=${baseRate/100}%, Optimal=${optimalUtilization/100}%, Slope1=${rateSlope1/100}%, Slope2=${rateSlope2/100}%`, LogLabel.EVENT_HANDLER, 'handleInterestRateParamsSet', {
+    token,
+    baseRate,
+    optimalUtilization,
+    rateSlope1,
+    rateSlope2,
+    timestamp,
+    txHash
+  });
+}
+
+// Calculate borrow rate using kinked curve based on utilization (matches smart contract)
+function calculateBorrowRate(utilizationRate: number, baseRate: number = 200, optimalUtilization: number = 8000, rateSlope1: number = 1000, rateSlope2: number = 2000): number {
+  // Ensure we have valid parameters
+  if (optimalUtilization === 0) optimalUtilization = 8000; // 80% default
+  if (baseRate === 0) baseRate = 200; // 2% default
+  if (rateSlope1 === 0) rateSlope1 = 1000; // 10% default
+  if (rateSlope2 === 0) rateSlope2 = 2000; // 20% default
+
+  if (utilizationRate <= optimalUtilization) {
+    // Below optimal utilization: linear increase
+    return Math.floor(baseRate + (utilizationRate * rateSlope1) / optimalUtilization);
+  } else {
+    // Above optimal utilization: steeper slope
+    const excessUtilization = utilizationRate - optimalUtilization;
+    const denominator = 10000 - optimalUtilization; // BASIS_POINTS - optimalUtilization
+    if (denominator === 0) return baseRate + rateSlope1;
+
+    const excessRate = Math.floor((excessUtilization * rateSlope2) / denominator);
+    return baseRate + rateSlope1 + excessRate;
+  }
+}
+
+// Calculate supply rate based on borrow rate and utilization (matches smart contract)
+function calculateSupplyRate(borrowRate: number, utilizationRate: number, reserveFactor: number = 1000): number {
+  const basisPointsMinusReserve = 10000 - reserveFactor; // BASIS_POINTS - protocolReserve
+  const denominator = 10000 * 10000; // BASIS_POINTS * BASIS_POINTS
+
+  const calculatedRate = (borrowRate * utilizationRate * basisPointsMinusReserve) / denominator;
+
+  // Fix: Ensure minimum precision and round properly to prevent rounding to zero
+  return Math.max(1, Math.round(calculatedRate)); // Minimum 1 basis point (0.01%) for display purposes
+}
+
+// Get interest rate parameters for a token (only from database)
+async function getInterestRateParams(db: any, chainId: number, token: string): Promise<{
+  baseRate: number;
+  optimalUtilization: number;
+  rateSlope1: number;
+  rateSlope2: number;
+  reserveFactor: number;
+}> {
+  try {
+    // Get from interest rate parameters table
+    const rateParams = await db.find(interestRateParameters, { id: `${chainId}-${token}` });
+    const assetConfig = await db.find(assetConfigurations, { id: `${chainId}-${token}` });
+
+    if (rateParams) {
+      return {
+        baseRate: rateParams.baseRate,
+        optimalUtilization: rateParams.optimalUtilization,
+        rateSlope1: rateParams.rateSlope1,
+        rateSlope2: rateParams.rateSlope2,
+        reserveFactor: assetConfig?.reserveFactor || 1000,
+      };
+    }
+
+    // No rate parameters found - throw error instead of fallback
+    throw new Error(`Interest rate parameters not found for token ${token} on chain ${chainId}. Tokens must be configured with setInterestRateParams() before rates can be calculated.`);
+  } catch (error) {
+    logger.error(`Error getting interest rate params for ${token}`, LogLabel.DATABASE, 'getInterestRateParams', { token, error: error instanceof Error ? error.message : String(error) });
+
+    // Re-throw to make the error visible
+    throw error;
+  }
+}
+
+// Update only the rates in pool lending stats (used by InterestRateParamsUpdated)
+async function updatePoolLendingRates(db: any, chainId: number, token: string, timestamp: number) {
+  try {
+    const statsId = `${chainId}-${token}`;
+
+    // Get current pool stats
+    const currentStats = await db.find(poolLendingStats, { id: statsId });
+    if (!currentStats) {
+      logger.warn(`Pool stats not found for ${token}, cannot update rates`, LogLabel.DATABASE, 'updatePoolLendingRates', { token });
+      return;
+    }
+
+    // Get interest rate parameters (will throw if not configured)
+    let rateParams;
+    try {
+      rateParams = await getInterestRateParams(db, chainId, token);
+    } catch (error) {
+      logger.warn(`Cannot update rates for ${token}: ${error instanceof Error ? error.message : String(error)}`, LogLabel.DATABASE, 'updatePoolLendingRates', { token });
+      return;
+    }
+
+    const { baseRate, optimalUtilization, rateSlope1, rateSlope2, reserveFactor } = rateParams;
+
+    // Calculate current utilization rate
+    let utilizationRate = 0;
+    if (currentStats.totalSupply > 0n) {
+      utilizationRate = Number((currentStats.totalBorrow * 10000n) / currentStats.totalSupply);
+    }
+
+    // Calculate new rates using current utilization
+    const borrowRate = calculateBorrowRate(utilizationRate, baseRate, optimalUtilization, rateSlope1, rateSlope2);
+    const supplyRate = calculateSupplyRate(borrowRate, utilizationRate, reserveFactor);
+
+    // Update only the rates
+    await db
+      .update(poolLendingStats, { id: statsId })
+      .set({
+        supplyRate,
+        borrowRate,
+        utilizationRate,
+        lastUpdated: timestamp,
+      });
+
+    logger.info(`Pool rates updated for ${token}: BorrowAPY=${(borrowRate/100).toFixed(2)}%, SupplyAPY=${(supplyRate/100).toFixed(2)}%`, LogLabel.SYSTEM, 'updatePoolLendingRates', {
+      token,
+      baseRate,
+      optimalUtilization,
+      rateSlope1,
+      rateSlope2,
+      utilizationRate,
+      borrowRate,
+      supplyRate
+    });
+  } catch (error) {
+    logger.error(`Failed to update pool lending rates for ${token}`, LogLabel.DATABASE, 'updatePoolLendingRates', { token, error: error instanceof Error ? error.message : String(error) });
+  }
+}
+
+// Update pool lending stats with new supply/borrow amounts and recalculate rates using smart contract logic
 async function updatePoolLendingStats(
   db: any,
   chainId: number,
@@ -577,30 +756,125 @@ async function updatePoolLendingStats(
   try {
     const statsId = `${chainId}-${token}`;
 
-    // Update the pool stats with new amounts
+    // Get current stats to calculate new utilization and rates
+    const currentStats = await db.find(poolLendingStats, { id: statsId });
+
+    // For negative amounts (withdrawals/repayments), we need existing stats
+    if (!currentStats && (supplyAmount < 0n || borrowAmount < 0n)) {
+      logger.warn(`Cannot update pool stats for ${token}: No existing stats for withdrawal/repayment`, LogLabel.DATABASE, 'updatePoolLendingStats', { token, supplyAmount: supplyAmount.toString(), borrowAmount: borrowAmount.toString() });
+      return;
+    }
+
+    // Calculate new totals (ensure non-negative)
+    const newTotalSupply = currentStats
+      ? (currentStats.totalSupply + supplyAmount < 0n ? 0n : currentStats.totalSupply + supplyAmount)
+      : (supplyAmount < 0n ? 0n : supplyAmount);
+    const newTotalBorrow = currentStats
+      ? (currentStats.totalBorrow + borrowAmount < 0n ? 0n : currentStats.totalBorrow + borrowAmount)
+      : (borrowAmount < 0n ? 0n : borrowAmount);
+
+    // Calculate utilization rate in basis points
+    let utilizationRate = 0;
+    if (newTotalSupply > 0n) {
+      utilizationRate = Number((newTotalBorrow * 10000n) / newTotalSupply);
+    }
+
+    // Get per-token interest rate parameters (will throw if not configured)
+    let rateParams;
+    try {
+      rateParams = await getInterestRateParams(db, chainId, token);
+    } catch (error) {
+      logger.warn(`Cannot update pool stats for ${token}: ${error instanceof Error ? error.message : String(error)}`, LogLabel.DATABASE, 'updatePoolLendingStats', { token });
+      // Update pool stats without rates if parameters not configured
+      await db
+        .insert(poolLendingStats)
+        .values({
+          id: statsId,
+          chainId,
+          poolId: `${chainId}-lending-${token}`,
+          token,
+          totalSupply: newTotalSupply,
+          totalBorrow: newTotalBorrow,
+          supplyRate: 0, // No rates available
+          borrowRate: 0, // No rates available
+          utilizationRate, // Store as basis points
+          totalYieldGenerated: currentStats ? currentStats.totalYieldGenerated : BigInt(0),
+          activeLenders: currentStats ? currentStats.activeLenders : 0,
+          activeBorrowers: currentStats ? currentStats.activeBorrowers : 0,
+          lastUpdated: timestamp,
+        })
+        .onConflictDoUpdate(() => ({
+          totalSupply: newTotalSupply,
+          totalBorrow: newTotalBorrow,
+          utilizationRate,
+          lastUpdated: timestamp,
+        }));
+
+      logger.info(`Pool stats updated for ${token} without rates (parameters not configured): Supply=${newTotalSupply.toString()}, Borrow=${newTotalBorrow.toString()}, Utilization=${(utilizationRate/100).toFixed(2)}%`, LogLabel.SYSTEM, 'updatePoolLendingStats', {
+        token,
+        supplyAmount: supplyAmount.toString(),
+        borrowAmount: borrowAmount.toString(),
+        utilizationRate: utilizationRate.toString()
+      });
+      return;
+    }
+
+    const { baseRate, optimalUtilization, rateSlope1, rateSlope2, reserveFactor } = rateParams;
+
+    // Calculate rates using smart contract formulas
+    const borrowRate = calculateBorrowRate(utilizationRate, baseRate, optimalUtilization, rateSlope1, rateSlope2);
+    const supplyRate = calculateSupplyRate(borrowRate, utilizationRate, reserveFactor);
+
+    // Update the pool stats with new amounts and calculated rates
     await db
-      .update(poolLendingStats, { id: statsId })
-      .set((row: any) => ({
-        totalSupply: row.totalSupply + supplyAmount,
-        totalBorrow: row.totalBorrow + borrowAmount,
-        utilizationRate: row.totalSupply + supplyAmount === 0n
-          ? 0n
-          : ((row.totalBorrow + borrowAmount) * 10000n) / (row.totalSupply + supplyAmount),
+      .insert(poolLendingStats)
+      .values({
+        id: statsId,
+        chainId,
+        poolId: `${chainId}-lending-${token}`,
+        token,
+        totalSupply: newTotalSupply,
+        totalBorrow: newTotalBorrow,
+        supplyRate, // Store as basis points
+        borrowRate, // Store as basis points
+        utilizationRate, // Store as basis points
+        totalYieldGenerated: currentStats ? currentStats.totalYieldGenerated : BigInt(0),
+        activeLenders: currentStats ? currentStats.activeLenders : 0,
+        activeBorrowers: currentStats ? currentStats.activeBorrowers : 0,
+        lastUpdated: timestamp,
+      })
+      .onConflictDoUpdate(() => ({
+        totalSupply: newTotalSupply,
+        totalBorrow: newTotalBorrow,
+        supplyRate,
+        borrowRate,
+        utilizationRate,
         lastUpdated: timestamp,
       }));
 
-    logger.info(`Pool stats updated for ${token}: +${supplyAmount} supply, +${borrowAmount} borrow`, LogLabel.SYSTEM, 'updatePoolLendingStats', { token, supplyAmount: supplyAmount.toString(), borrowAmount: borrowAmount.toString() });
+    logger.info(`Pool stats updated for ${token}: Supply=${newTotalSupply.toString()}, Borrow=${newTotalBorrow.toString()}, Utilization=${(utilizationRate/100).toFixed(2)}%, BorrowAPY=${(borrowRate/100).toFixed(2)}%, SupplyAPY=${(supplyRate/100).toFixed(2)}%`, LogLabel.SYSTEM, 'updatePoolLendingStats', {
+      token,
+      supplyAmount: supplyAmount.toString(),
+      borrowAmount: borrowAmount.toString(),
+      utilizationRate: utilizationRate.toString(),
+      baseRate,
+      optimalUtilization,
+      rateSlope1,
+      rateSlope2,
+      borrowRate: borrowRate.toString(),
+      supplyRate: supplyRate.toString()
+    });
   } catch (error) {
     logger.error(`Failed to update pool lending stats for ${token}`, LogLabel.DATABASE, 'updatePoolLendingStats', { token, error: error instanceof Error ? error.message : String(error) });
   }
 }
 
-// Initialize pool lending stats with calculated APY rates
+// Initialize pool lending stats with per-token smart contract rate model
 async function initializePoolLendingStats(
   db: any,
   chainId: number,
   token: string,
-  collateralFactor: number,
+  _collateralFactor: number, // Unused but kept for interface compatibility
   reserveFactor: number,
   timestamp: number
 ) {
@@ -608,28 +882,42 @@ async function initializePoolLendingStats(
     const poolId = `${chainId}-lending-${token}`;
     const statsId = `${chainId}-${token}`;
 
-    // Calculate base APY rates based on risk factors
-    // These are realistic rates similar to Aave/Compound
-    let baseSupplyAPY, baseBorrowAPY;
+    // Get per-token interest rate parameters (will throw if not configured)
+    let rateParams;
+    let initialBorrowRate = 0;
+    let initialSupplyRate = 0;
+    let baseRate = 0;
+    let optimalUtilization = 0;
+    let rateSlope1 = 0;
+    let rateSlope2 = 0;
 
-    if (collateralFactor >= 8000) { // 80%+ collateral factor (e.g., WBTC, WETH)
-      baseSupplyAPY = 150; // 1.5%
-      baseBorrowAPY = 400; // 4.0%
-    } else if (collateralFactor >= 7500) { // 75%+ collateral factor (e.g., major altcoins)
-      baseSupplyAPY = 250; // 2.5%
-      baseBorrowAPY = 600; // 6.0%
-    } else if (collateralFactor >= 7000) { // 70%+ collateral factor
-      baseSupplyAPY = 350; // 3.5%
-      baseBorrowAPY = 800; // 8.0%
-    } else { // Lower collateral factors
-      baseSupplyAPY = 500; // 5.0%
-      baseBorrowAPY = 1200; // 12.0%
+    try {
+      rateParams = await getInterestRateParams(db, chainId, token);
+      baseRate = rateParams.baseRate;
+      optimalUtilization = rateParams.optimalUtilization;
+      rateSlope1 = rateParams.rateSlope1;
+      rateSlope2 = rateParams.rateSlope2;
+
+      // Start with zero utilization, so rates will be at base levels
+      const initialUtilization = 0;
+      initialBorrowRate = calculateBorrowRate(initialUtilization, baseRate, optimalUtilization, rateSlope1, rateSlope2);
+      initialSupplyRate = calculateSupplyRate(initialBorrowRate, initialUtilization, reserveFactor);
+
+      logger.info(`Pool stats initialized for ${token} with per-token model: Base Rate=${baseRate/100}%, Optimal Util=${optimalUtilization/100}%, Slope1=${rateSlope1/100}%, Slope2=${rateSlope2/100}%`, LogLabel.SYSTEM, 'initializePoolLendingStats', {
+        token,
+        baseRate,
+        optimalUtilization,
+        rateSlope1,
+        rateSlope2,
+        reserveFactor,
+        initialBorrowRate,
+        initialSupplyRate
+      });
+    } catch (error) {
+      logger.warn(`Initializing pool stats for ${token} without rates: ${error instanceof Error ? error.message : String(error)}`, LogLabel.DATABASE, 'initializePoolLendingStats', { token });
     }
 
-    // Add reserve factor to borrow rate (protocol fee)
-    baseBorrowAPY = baseBorrowAPY + (reserveFactor / 10);
-
-    // Insert or update pool lending stats
+    // Insert or update pool lending stats (with or without rates)
     await db
       .insert(poolLendingStats)
       .values({
@@ -639,21 +927,20 @@ async function initializePoolLendingStats(
         token,
         totalSupply: BigInt(0),
         totalBorrow: BigInt(0),
-        supplyRate: baseSupplyAPY, // Store as basis points (150 = 1.5%)
-        borrowRate: baseBorrowAPY, // Store as basis points (400 = 4.0%)
-        utilizationRate: 0,
+        supplyRate: initialSupplyRate, // Store as basis points (0 if not configured)
+        borrowRate: initialBorrowRate, // Store as basis points (0 if not configured)
+        utilizationRate: 0, // Store as basis points
         totalYieldGenerated: BigInt(0),
         activeLenders: 0,
         activeBorrowers: 0,
         lastUpdated: timestamp,
       })
       .onConflictDoUpdate(() => ({
-        supplyRate: baseSupplyAPY,
-        borrowRate: baseBorrowAPY,
+        supplyRate: initialSupplyRate,
+        borrowRate: initialBorrowRate,
+        utilizationRate: 0,
         lastUpdated: timestamp,
       }));
-
-    logger.info(`Pool stats initialized for ${token}: Supply APY ${baseSupplyAPY / 100}%, Borrow APY ${baseBorrowAPY / 100}%`, LogLabel.SYSTEM, 'initializePoolLendingStats', { token, baseSupplyAPY, baseBorrowAPY, collateralFactor, reserveFactor });
   } catch (error) {
     logger.error(`Failed to initialize pool lending stats for ${token}`, LogLabel.DATABASE, 'initializePoolLendingStats', { token, error: error instanceof Error ? error.message : String(error) });
   }

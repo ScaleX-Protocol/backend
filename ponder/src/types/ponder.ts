@@ -71,6 +71,7 @@ export interface OrderPlacedEventArgs {
 	expiry: string;
 	autoRepay: boolean;
 	autoBorrow: boolean;
+	timeInForce: number;
 }
 
 /**
