@@ -415,24 +415,59 @@ export async function updateOrderQuantity(
 	}
 
 	try {
+		const oldQuantity = BigInt(existingOrder.quantity);
+		const oldPrice = BigInt(existingOrder.price);
+		const newFilledQuantity = existingOrder.filled + filledQuantity;
+
 		const updateData: any = {
-			filled: existingOrder.filled + filledQuantity,
+			filled: newFilledQuantity,
 		};
+
+		// Check if both old quantity and filled quantity are zero, or both old price and execution price are zero
+		if ((oldQuantity === BigInt(0) && newFilledQuantity === BigInt(0)) ||
+			(oldPrice === BigInt(0) && (!executionPrice || executionPrice === BigInt(0)))) {
+			updateData.status = "EXPIRED";
+			logger.info('Order has no quantity or price, updating status to EXPIRED', LogLabel.DATABASE, 'updateOrderQuantity', {
+				hashedOrderId,
+				oldQuantity: oldQuantity.toString(),
+				newFilledQuantity: newFilledQuantity.toString(),
+				oldPrice: oldPrice.toString(),
+				executionPrice: executionPrice?.toString() || 'undefined'
+			});
+		}
 
 		// Update price for market orders with actual execution price
 		if (existingOrder.type === 'Market' && executionPrice) {
-			const newFilledQuantity = existingOrder.filled + filledQuantity;
 			const executedQuoteValue = executionPrice * filledQuantity;
 			const totalQuoteValue = BigInt(existingOrder.executedQuoteQuantity || 0) + executedQuoteValue;
 			const weightedAveragePrice = newFilledQuantity > BigInt(0) ? totalQuoteValue / newFilledQuantity : BigInt(0);
 
 			updateData.price = weightedAveragePrice;
-			updateData.orderValue = weightedAveragePrice * BigInt(existingOrder.quantity);
+			updateData.orderValue = weightedAveragePrice * oldQuantity;
 			updateData.executedQuoteQuantity = totalQuoteValue;
 		} else {
 			// For limit orders, also update executed quote quantity
-			const executedQuoteValue = executionPrice * filledQuantity;
-			updateData.executedQuoteQuantity = (existingOrder.executedQuoteQuantity || BigInt(0)) + executedQuoteValue;
+			if (executionPrice) {
+				const executedQuoteValue = executionPrice * filledQuantity;
+				updateData.executedQuoteQuantity = (existingOrder.executedQuoteQuantity || BigInt(0)) + executedQuoteValue;
+			}
+		}
+
+		// Auto-update status based on filled quantity
+		if (newFilledQuantity >= oldQuantity) {
+			updateData.status = "FILLED";
+			logger.info('Order fully filled, updating status to FILLED', LogLabel.DATABASE, 'updateOrderQuantity', {
+				hashedOrderId,
+				filled: newFilledQuantity.toString(),
+				quantity: oldQuantity.toString()
+			});
+		} else if (newFilledQuantity > BigInt(0) && !updateData.status) {
+			updateData.status = "PARTIALLY_FILLED";
+			logger.debug('Order partially filled, updating status to PARTIALLY_FILLED', LogLabel.DATABASE, 'updateOrderQuantity', {
+				hashedOrderId,
+				filled: newFilledQuantity.toString(),
+				quantity: oldQuantity.toString()
+			});
 		}
 
 		await db
