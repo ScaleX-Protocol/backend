@@ -521,6 +521,7 @@ app.get("/api/depth", async c => {
 			.where(
 				and(
 					gt(orders.price, 0),
+					gt(orders.quantity, 0),
 					eq(orders.poolId, poolId),
 					eq(orders.side, "Buy"),
 					or(eq(orders.status, "OPEN"), eq(orders.status, "PARTIALLY_FILLED"))
@@ -542,6 +543,7 @@ app.get("/api/depth", async c => {
 			.where(
 				and(
 					gt(orders.price, 0),
+					gt(orders.quantity, 0),
 					eq(orders.poolId, poolId),
 					eq(orders.side, "Sell"),
 					or(eq(orders.status, "OPEN"), eq(orders.status, "PARTIALLY_FILLED"))
@@ -596,6 +598,7 @@ app.get("/api/depth-orders", async c => {
 			.where(
 				and(
 					gt(orders.price, 0),
+					gt(orders.quantity, 0),
 					eq(orders.poolId, poolId),
 					eq(orders.side, "Buy"),
 					or(eq(orders.status, "OPEN"), eq(orders.status, "PARTIALLY_FILLED"))
@@ -617,6 +620,7 @@ app.get("/api/depth-orders", async c => {
 			.where(
 				and(
 					gt(orders.price, 0),
+					gt(orders.quantity, 0),
 					eq(orders.poolId, poolId),
 					eq(orders.side, "Sell"),
 					or(eq(orders.status, "OPEN"), eq(orders.status, "PARTIALLY_FILLED"))
@@ -639,6 +643,7 @@ app.get("/api/depth-orders", async c => {
 				.where(
 					and(
 						gt(orders.price, 0),
+						gt(orders.quantity, 0),
 						eq(orders.poolId, poolId),
 						eq(orders.side, "Buy"),
 						or(eq(orders.status, "OPEN"), eq(orders.status, "PARTIALLY_FILLED")),
@@ -648,12 +653,14 @@ app.get("/api/depth-orders", async c => {
 				.execute() : [],
 
 			// Get all individual ask orders
+			// Filter out invalid orders (price=0, quantity=0)
 			askPriceLevels.length > 0 ? db
 				.select()
 				.from(orders)
 				.where(
 					and(
 						gt(orders.price, 0),
+						gt(orders.quantity, 0),
 						eq(orders.poolId, poolId),
 						eq(orders.side, "Sell"),
 						or(eq(orders.status, "OPEN"), eq(orders.status, "PARTIALLY_FILLED")),
@@ -1086,7 +1093,7 @@ app.get("/api/allOrders", async c => {
 				icebergQty: "0",
 				time: Number(order.timestamp) * 1000,
 				updateTime: Number(order.timestamp) * 1000,
-				isWorking: order.status === "NEW" || order.status === "PARTIALLY_FILLED",
+				isWorking: order.status === "OPEN" || order.status === "PARTIALLY_FILLED",
 				origQuoteOrderQty,
 			};
 		});
@@ -1110,7 +1117,7 @@ app.get("/api/openOrders", async c => {
 		let query = baseQuery.where(
 			and(
 				eq(orders.user, address as `0x${string}`),
-				or(eq(orders.status, "NEW"), eq(orders.status, "PARTIALLY_FILLED"), eq(orders.status, "OPEN"))
+				or(eq(orders.status, "OPEN"), eq(orders.status, "PARTIALLY_FILLED"))
 			)
 		);
 
@@ -1126,7 +1133,7 @@ app.get("/api/openOrders", async c => {
 				query = baseQuery.where(
 					and(
 						eq(orders.user, address as `0x${string}`),
-						or(eq(orders.status, "NEW"), eq(orders.status, "PARTIALLY_FILLED"), eq(orders.status, "OPEN")),
+						or(eq(orders.status, "OPEN"), eq(orders.status, "PARTIALLY_FILLED")),
 						eq(orders.poolId, poolId)
 					)
 				);
