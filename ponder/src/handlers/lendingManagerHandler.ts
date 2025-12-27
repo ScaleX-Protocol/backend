@@ -97,7 +97,7 @@ async function publishLendingEvent(
 
 // Supply event handler
 export async function handleSupply({ event, context }: any) {
-  await updateIndexerStatus(context, 'LendingManager:Supply');
+  await updateIndexerStatus(context, 'LendingManager:Supply', event);
   const { db } = context;
   const chainId = context.network.chainId;
 
@@ -217,7 +217,7 @@ export async function handleSupply({ event, context }: any) {
 
 // Borrow event handler
 export async function handleBorrow({ event, context }: any) {
-  await updateIndexerStatus(context, 'LendingManager:Borrow');
+  await updateIndexerStatus(context, 'LendingManager:Borrow', event);
   const { db } = context;
   const chainId = context.network.chainId;
 
@@ -312,7 +312,7 @@ export async function handleBorrow({ event, context }: any) {
 
 // Repay event handler
 export async function handleRepay({ event, context }: any) {
-  await updateIndexerStatus(context, 'LendingManager:Repay');
+  await updateIndexerStatus(context, 'LendingManager:Repay', event);
   const { db } = context;
   const chainId = context.network.chainId;
   const user = event.args.user;
@@ -362,7 +362,7 @@ export async function handleRepay({ event, context }: any) {
 
 // Withdraw event handler
 export async function handleWithdraw({ event, context }: any) {
-  await updateIndexerStatus(context, 'LendingManager:Withdraw');
+  await updateIndexerStatus(context, 'LendingManager:Withdraw', event);
   const { db } = context;
   const chainId = context.network.chainId;
   const user = event.args.user;
@@ -411,7 +411,7 @@ export async function handleWithdraw({ event, context }: any) {
 
 // Liquidation event handler
 export async function handleLiquidation({ event, context }: any) {
-  await updateIndexerStatus(context, 'LendingManager:Liquidation');
+  await updateIndexerStatus(context, 'LendingManager:Liquidation', event);
   const { db } = context;
   const chainId = context.network.chainId;
   const borrower = event.args.borrower;
@@ -491,7 +491,7 @@ export async function handleLiquidation({ event, context }: any) {
 
 // Oracle price update handler
 export async function handleOraclePriceUpdate({ event, context }: any) {
-  await updateIndexerStatus(context, 'LendingManager:OraclePriceUpdate');
+  await updateIndexerStatus(context, 'LendingManager:OraclePriceUpdate', event);
   const { db } = context;
   const chainId = context.network.chainId;
   const token = getAddress(event.args.token);
@@ -530,7 +530,7 @@ export async function handleOraclePriceUpdate({ event, context }: any) {
 
 // AssetConfigured event handler
 export async function handleAssetConfigured({ event, context }: any) {
-  await updateIndexerStatus(context, 'LendingManager:AssetConfigured');
+  await updateIndexerStatus(context, 'LendingManager:AssetConfigured', event);
   const { db } = context;
   const chainId = context.network.chainId;
   const token = getAddress(event.args.token);
@@ -575,7 +575,7 @@ export async function handleAssetConfigured({ event, context }: any) {
 
 // InterestRateParamsSet event handler
 export async function handleInterestRateParamsSet({ event, context }: any) {
-  await updateIndexerStatus(context, 'LendingManager:InterestRateParamsSet');
+  await updateIndexerStatus(context, 'LendingManager:InterestRateParamsSet', event);
   const { db } = context;
   const chainId = context.network.chainId;
   const token = getAddress(event.args.token);

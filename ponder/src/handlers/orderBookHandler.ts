@@ -210,7 +210,7 @@ export async function handleOrderPlaced({ event, context }: any) {
 
   try {
     // Track indexer progress
-    await updateIndexerStatus(context, 'OrderBook:OrderPlaced');
+    await updateIndexerStatus(context, 'OrderBook:OrderPlaced', event);
 
     const args = event.args as OrderPlacedEventArgs;
 
@@ -412,7 +412,7 @@ export async function handleOrderPlaced({ event, context }: any) {
 
 export async function handleOrderMatched({ event, context }: any) {
   // Track indexer progress
-  await updateIndexerStatus(context, 'OrderBook:OrderMatched');
+  await updateIndexerStatus(context, 'OrderBook:OrderMatched', event);
 
   const args = event.args as OrderMatchedEventArgs;
   const db = context.db;
@@ -607,7 +607,7 @@ export async function handleOrderMatched({ event, context }: any) {
 
 export async function handleOrderCancelled({ event, context }: any) {
   // Track indexer progress
-  await updateIndexerStatus(context, 'OrderBook:OrderCancelled');
+  await updateIndexerStatus(context, 'OrderBook:OrderCancelled', event);
 
   const db = context.db;
   const chainId = context.network.chainId;
@@ -672,7 +672,7 @@ export async function handleOrderCancelled({ event, context }: any) {
 
 export async function handleUpdateOrder({ event, context }: any) {
   // Track indexer progress
-  await updateIndexerStatus(context, 'OrderBook:UpdateOrder');
+  await updateIndexerStatus(context, 'OrderBook:UpdateOrder', event);
 
   const db = context.db;
   const chainId = context.network.chainId;

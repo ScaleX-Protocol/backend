@@ -13,14 +13,26 @@ interface RecentEvent {
  * Tracks indexer progress by updating a single row per chain.
  * Stores the latest block info and maintains an array of recent events (max 100).
  * This is efficient as it only does a single upsert per event.
+ *
+ * @param context - Ponder context object containing db and network info
+ * @param eventName - Name of the event being processed
+ * @param event - The event object containing block info (optional, falls back to context.block)
  */
 export async function updateIndexerStatus(
 	context: any,
-	eventName: string
+	eventName: string,
+	event?: any
 ) {
+	// Get block info from event or context
+	const block = event?.block || context.block;
+	if (!block) {
+		// Skip if no block info available
+		return;
+	}
+
 	const chainId = context.network.chainId;
-	const blockNumber = BigInt(context.event.block.number);
-	const blockTimestamp = Number(context.event.block.timestamp);
+	const blockNumber = BigInt(block.number);
+	const blockTimestamp = Number(block.timestamp);
 	const now = Math.floor(Date.now() / 1000);
 
 	// Create new event entry

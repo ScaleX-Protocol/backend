@@ -69,7 +69,7 @@ async function safeReadContract(client: any, address: string, functionName: stri
 
 export async function handlePoolCreated({ event, context }: any) {
 	try {
-		await updateIndexerStatus(context, 'PoolManager:PoolCreated');
+		await updateIndexerStatus(context, 'PoolManager:PoolCreated', event);
 		const { client, db } = context;
 		const chainId = context.network.chainId;
 
