@@ -8,7 +8,7 @@ import { getAddress } from "viem";
 
 // Oracle price update handler
 export async function handleOraclePriceUpdate({ event, context }: any) {
-  await updateIndexerStatus(context, 'Oracle:PriceUpdated');
+  await updateIndexerStatus(context, 'Oracle:PriceUpdated', event);
   const { db } = context;
   const chainId = context.network.chainId;
   const token = getAddress(event.args.token);

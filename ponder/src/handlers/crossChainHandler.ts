@@ -2,7 +2,7 @@ import { crossChainTransfers, hyperlaneMessages, crossChainMessageLinks } from "
 import { updateIndexerStatus } from "@/utils/indexerStatus";
 
 export async function handleHyperlaneMailboxDispatchId({ event, context }: any) {
-	await updateIndexerStatus(context, 'HyperlaneMailbox:DispatchId');
+	await updateIndexerStatus(context, 'HyperlaneMailbox:DispatchId', event);
 	const { db } = context;
 
 	// Store the Hyperlane DISPATCH message
@@ -81,7 +81,7 @@ export async function handleHyperlaneMailboxDispatchId({ event, context }: any) 
 }
 
 export async function handleHyperlaneMailboxProcessId({ event, context }: any) {
-	await updateIndexerStatus(context, 'HyperlaneMailbox:ProcessId');
+	await updateIndexerStatus(context, 'HyperlaneMailbox:ProcessId', event);
 	const { db } = context;
 
 	// Store the Hyperlane PROCESS message
