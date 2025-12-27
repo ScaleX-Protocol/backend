@@ -78,7 +78,7 @@ function fromId(id: number): string {
 }
 
 export async function handleDeposit({ event, context }: any) {
-	await updateIndexerStatus(context, 'BalanceManager:Deposit');
+	await updateIndexerStatus(context, 'BalanceManager:Deposit', event);
 	const { db } = context;
 	const chainId = context.network.chainId;
 	const user = event.args.user;
@@ -130,7 +130,7 @@ export async function handleDeposit({ event, context }: any) {
 }
 
 export async function handleWithdrawal({ event, context }: any) {
-	await updateIndexerStatus(context, 'BalanceManager:Withdrawal');
+	await updateIndexerStatus(context, 'BalanceManager:Withdrawal', event);
 	const { db } = context;
 	const chainId = context.network.chainId;
 	const user = event.args.user;
@@ -172,7 +172,7 @@ export async function handleWithdrawal({ event, context }: any) {
 }
 
 export async function handleTransferFrom({ event, context }: any) {
-	await updateIndexerStatus(context, 'BalanceManager:TransferFrom');
+	await updateIndexerStatus(context, 'BalanceManager:TransferFrom', event);
 	const { db } = context;
 	const chainId = context.network.chainId;
 	const netAmount = BigInt(event.args.amount) - BigInt(event.args.feeAmount);
@@ -237,7 +237,7 @@ export async function handleTransferFrom({ event, context }: any) {
 }
 
 export async function handleTransferLockedFrom({ event, context }: any) {
-	await updateIndexerStatus(context, 'BalanceManager:TransferLockedFrom');
+	await updateIndexerStatus(context, 'BalanceManager:TransferLockedFrom', event);
 	const { db } = context;
 	const chainId = context.network.chainId;
 	const netAmount = BigInt(event.args.amount) - BigInt(event.args.feeAmount);
@@ -301,7 +301,7 @@ export async function handleTransferLockedFrom({ event, context }: any) {
 }
 
 export async function handleLock({ event, context }: any) {
-	await updateIndexerStatus(context, 'BalanceManager:Lock');
+	await updateIndexerStatus(context, 'BalanceManager:Lock', event);
 	const { db } = context;
 	const chainId = context.network.chainId;
 	const user = event.args.user;
@@ -331,7 +331,7 @@ export async function handleLock({ event, context }: any) {
 }
 
 export async function handleUnlock({ event, context }: any) {
-	await updateIndexerStatus(context, 'BalanceManager:Unlock');
+	await updateIndexerStatus(context, 'BalanceManager:Unlock', event);
 	const { db } = context;
 	const chainId = context.network.chainId;
 	const user = event.args.user;
