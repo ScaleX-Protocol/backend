@@ -6,6 +6,7 @@ import { ERC20ABI } from "../../abis/ERC20";
 import { createLogger, log, LogLabel, LogLevel } from "../utils/logger";
 import { createPoolCacheKey, setChainCachedData } from "../utils/redis";
 import { executeIfInSync } from "../utils/syncState";
+import { updateIndexerStatus } from "@/utils/indexerStatus";
 import { pushMiniTicker } from "../websocket/broadcaster";
 
 const REDIS_CACHE_TTL = parseInt(process.env.REDIS_CACHE_TTL || '2147483647');
@@ -68,6 +69,7 @@ async function safeReadContract(client: any, address: string, functionName: stri
 
 export async function handlePoolCreated({ event, context }: any) {
 	try {
+		await updateIndexerStatus(context, 'PoolManager:PoolCreated');
 		const { client, db } = context;
 		const chainId = context.network.chainId;
 

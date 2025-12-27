@@ -14,6 +14,7 @@ import schema, {
 	fiveMinuteBuckets,
 	hourBuckets,
 	hyperlaneMessages,
+	indexerStatus,
 	interestRateParameters,
 	lendingEvents,
 	lendingPositions,
@@ -488,6 +489,67 @@ app.get("/api/kline", async c => {
 	}
 });
 
+// Sync status endpoint - returns indexer sync status vs chain head
+app.get("/api/sync-status", async c => {
+	try {
+		const client = getViemClient();
+		const chainId = Number(process.env.CHAIN_ID);
+
+		// Get latest block from chain
+		const latestBlock = await client.getBlock();
+
+		// Get indexer status (single row per chain)
+		const status = await db.select()
+			.from(indexerStatus)
+			.where(eq(indexerStatus.id, chainId))
+			.limit(1)
+			.execute();
+
+		const indexerData = status[0];
+		const indexedTimestamp = indexerData?.latestBlockTimestamp ?? 0;
+		const indexedBlockNumber = indexerData?.latestBlockNumber ? Number(indexerData.latestBlockNumber) : 0;
+		const lastEventName = indexerData?.latestEventName || null;
+		const recentEvents = indexerData?.recentEvents || [];
+
+		const chainTimestamp = Number(latestBlock.timestamp);
+		const chainBlockNumber = Number(latestBlock.number);
+
+		const lagSeconds = chainTimestamp - indexedTimestamp;
+		const lagBlocks = chainBlockNumber - indexedBlockNumber;
+
+		return c.json({
+			indexed: {
+				timestamp: indexedTimestamp,
+				blockNumber: indexedBlockNumber,
+				time: indexedTimestamp > 0 ? new Date(indexedTimestamp * 1000).toISOString() : null,
+				lastEvent: lastEventName
+			},
+			chain: {
+				timestamp: chainTimestamp,
+				blockNumber: chainBlockNumber,
+				time: new Date(chainTimestamp * 1000).toISOString()
+			},
+			lag: {
+				seconds: lagSeconds,
+				blocks: lagBlocks,
+				formatted: lagSeconds > 60
+					? `${Math.floor(lagSeconds / 60)}m ${lagSeconds % 60}s`
+					: `${lagSeconds}s`
+			},
+			isSynced: lagSeconds < 30,
+			chainId: chainId,
+			recentEvents: recentEvents.slice(0, 10).map((e: any) => ({
+				blockNumber: Number(e.blockNumber),
+				blockTimestamp: e.blockTimestamp,
+				eventName: e.eventName,
+				time: new Date(e.blockTimestamp * 1000).toISOString()
+			}))
+		});
+	} catch (error) {
+		return c.json({ error: `Failed to fetch sync status: ${error}` }, 500);
+	}
+});
+
 app.get("/api/depth", async c => {
 	const symbol = c.req.query("symbol");
 	const limit = parseInt(c.req.query("limit") || "100");
@@ -528,7 +590,7 @@ app.get("/api/depth", async c => {
 				)
 			)
 			.groupBy(orders.price)
-			.orderBy(asc(orders.price))
+			.orderBy(desc(orders.price))
 			.limit(limit)
 			.execute();
 
