@@ -1,5 +1,6 @@
 import { getEventPublisher } from "@/events/index";
 import { executeIfInSync } from "@/utils/syncState";
+import { updateIndexerStatus } from "@/utils/indexerStatus";
 import {
   oraclePrices
 } from "ponder:schema";
@@ -7,6 +8,7 @@ import { getAddress } from "viem";
 
 // Oracle price update handler
 export async function handleOraclePriceUpdate({ event, context }: any) {
+  await updateIndexerStatus(context, 'Oracle:PriceUpdated');
   const { db } = context;
   const chainId = context.network.chainId;
   const token = getAddress(event.args.token);

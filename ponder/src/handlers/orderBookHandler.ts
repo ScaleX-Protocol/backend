@@ -1,6 +1,7 @@
 import { getEventPublisher } from "@/events/index";
 import { OrderMatchedEventArgs, OrderPlacedEventArgs } from "@/types";
-import { createLogger, LogLabel, log, LogLevel } from "../utils/logger";
+import { updateIndexerStatus } from "@/utils/indexerStatus";
+import { createLogger, LogLabel, log, LogLevel, ServiceName } from "../utils/logger";
 import {
   createDepthData,
   createOrderData,
@@ -208,6 +209,8 @@ async function publishKlineEvent(symbol: string, interval: string, klinePayload:
 export async function handleOrderPlaced({ event, context }: any) {
 
   try {
+    // Track indexer progress
+    await updateIndexerStatus(context, 'OrderBook:OrderPlaced');
 
     const args = event.args as OrderPlacedEventArgs;
 
@@ -408,6 +411,8 @@ export async function handleOrderPlaced({ event, context }: any) {
 }
 
 export async function handleOrderMatched({ event, context }: any) {
+  // Track indexer progress
+  await updateIndexerStatus(context, 'OrderBook:OrderMatched');
 
   const args = event.args as OrderMatchedEventArgs;
   const db = context.db;
@@ -601,6 +606,9 @@ export async function handleOrderMatched({ event, context }: any) {
 }
 
 export async function handleOrderCancelled({ event, context }: any) {
+  // Track indexer progress
+  await updateIndexerStatus(context, 'OrderBook:OrderCancelled');
+
   const db = context.db;
   const chainId = context.network.chainId;
   const poolAddress = event.log.address!;
@@ -663,6 +671,9 @@ export async function handleOrderCancelled({ event, context }: any) {
 }
 
 export async function handleUpdateOrder({ event, context }: any) {
+  // Track indexer progress
+  await updateIndexerStatus(context, 'OrderBook:UpdateOrder');
+
   const db = context.db;
   const chainId = context.network.chainId;
   const poolAddress = event.log.address;

@@ -5,6 +5,7 @@ import { getAddress } from "viem";
 import { executeIfInSync } from "../utils/syncState";
 import { getEventPublisher } from "@/events/index";
 import { createLogger, LogLabel } from "../utils/logger";
+import { updateIndexerStatus } from "@/utils/indexerStatus";
 
 dotenv.config();
 
@@ -77,6 +78,7 @@ function fromId(id: number): string {
 }
 
 export async function handleDeposit({ event, context }: any) {
+	await updateIndexerStatus(context, 'BalanceManager:Deposit');
 	const { db } = context;
 	const chainId = context.network.chainId;
 	const user = event.args.user;
@@ -128,6 +130,7 @@ export async function handleDeposit({ event, context }: any) {
 }
 
 export async function handleWithdrawal({ event, context }: any) {
+	await updateIndexerStatus(context, 'BalanceManager:Withdrawal');
 	const { db } = context;
 	const chainId = context.network.chainId;
 	const user = event.args.user;
@@ -169,6 +172,7 @@ export async function handleWithdrawal({ event, context }: any) {
 }
 
 export async function handleTransferFrom({ event, context }: any) {
+	await updateIndexerStatus(context, 'BalanceManager:TransferFrom');
 	const { db } = context;
 	const chainId = context.network.chainId;
 	const netAmount = BigInt(event.args.amount) - BigInt(event.args.feeAmount);
@@ -233,6 +237,7 @@ export async function handleTransferFrom({ event, context }: any) {
 }
 
 export async function handleTransferLockedFrom({ event, context }: any) {
+	await updateIndexerStatus(context, 'BalanceManager:TransferLockedFrom');
 	const { db } = context;
 	const chainId = context.network.chainId;
 	const netAmount = BigInt(event.args.amount) - BigInt(event.args.feeAmount);
@@ -296,6 +301,7 @@ export async function handleTransferLockedFrom({ event, context }: any) {
 }
 
 export async function handleLock({ event, context }: any) {
+	await updateIndexerStatus(context, 'BalanceManager:Lock');
 	const { db } = context;
 	const chainId = context.network.chainId;
 	const user = event.args.user;
@@ -325,6 +331,7 @@ export async function handleLock({ event, context }: any) {
 }
 
 export async function handleUnlock({ event, context }: any) {
+	await updateIndexerStatus(context, 'BalanceManager:Unlock');
 	const { db } = context;
 	const chainId = context.network.chainId;
 	const user = event.args.user;
