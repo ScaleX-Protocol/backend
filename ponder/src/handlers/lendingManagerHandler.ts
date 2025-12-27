@@ -1,7 +1,8 @@
 import { getEventPublisher } from "@/events/index";
 import { createBalanceId, createLendingPositionId } from "@/utils";
 import { executeIfInSync } from "@/utils/syncState";
-import { createLogger, LogLabel, log, LogLevel } from "../utils/logger";
+import { updateIndexerStatus } from "@/utils/indexerStatus";
+import { createLogger, LogLabel, log, LogLevel, ServiceName } from "../utils/logger";
 import { sql } from "ponder";
 import {
   assetConfigurations,
@@ -96,6 +97,7 @@ async function publishLendingEvent(
 
 // Supply event handler
 export async function handleSupply({ event, context }: any) {
+  await updateIndexerStatus(context, 'LendingManager:Supply');
   const { db } = context;
   const chainId = context.network.chainId;
 
@@ -215,6 +217,7 @@ export async function handleSupply({ event, context }: any) {
 
 // Borrow event handler
 export async function handleBorrow({ event, context }: any) {
+  await updateIndexerStatus(context, 'LendingManager:Borrow');
   const { db } = context;
   const chainId = context.network.chainId;
 
@@ -309,6 +312,7 @@ export async function handleBorrow({ event, context }: any) {
 
 // Repay event handler
 export async function handleRepay({ event, context }: any) {
+  await updateIndexerStatus(context, 'LendingManager:Repay');
   const { db } = context;
   const chainId = context.network.chainId;
   const user = event.args.user;
@@ -358,6 +362,7 @@ export async function handleRepay({ event, context }: any) {
 
 // Withdraw event handler
 export async function handleWithdraw({ event, context }: any) {
+  await updateIndexerStatus(context, 'LendingManager:Withdraw');
   const { db } = context;
   const chainId = context.network.chainId;
   const user = event.args.user;
@@ -406,6 +411,7 @@ export async function handleWithdraw({ event, context }: any) {
 
 // Liquidation event handler
 export async function handleLiquidation({ event, context }: any) {
+  await updateIndexerStatus(context, 'LendingManager:Liquidation');
   const { db } = context;
   const chainId = context.network.chainId;
   const borrower = event.args.borrower;
@@ -485,6 +491,7 @@ export async function handleLiquidation({ event, context }: any) {
 
 // Oracle price update handler
 export async function handleOraclePriceUpdate({ event, context }: any) {
+  await updateIndexerStatus(context, 'LendingManager:OraclePriceUpdate');
   const { db } = context;
   const chainId = context.network.chainId;
   const token = getAddress(event.args.token);
@@ -523,6 +530,7 @@ export async function handleOraclePriceUpdate({ event, context }: any) {
 
 // AssetConfigured event handler
 export async function handleAssetConfigured({ event, context }: any) {
+  await updateIndexerStatus(context, 'LendingManager:AssetConfigured');
   const { db } = context;
   const chainId = context.network.chainId;
   const token = getAddress(event.args.token);
@@ -567,6 +575,7 @@ export async function handleAssetConfigured({ event, context }: any) {
 
 // InterestRateParamsSet event handler
 export async function handleInterestRateParamsSet({ event, context }: any) {
+  await updateIndexerStatus(context, 'LendingManager:InterestRateParamsSet');
   const { db } = context;
   const chainId = context.network.chainId;
   const token = getAddress(event.args.token);

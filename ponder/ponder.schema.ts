@@ -1,5 +1,24 @@
 import { index, onchainTable, relations } from "ponder";
 
+// Track indexer sync status - single row per chain with recent events array
+export const indexerStatus = onchainTable(
+	"indexer_status",
+	t => ({
+		id: t.integer().primaryKey(), // chainId as primary key
+		latestBlockNumber: t.bigint().notNull(),
+		latestBlockTimestamp: t.integer().notNull(),
+		latestEventName: t.varchar(),
+		updatedAt: t.integer().notNull(),
+		// JSON array of recent events: [{blockNumber, blockTimestamp, eventName, createdAt}]
+		recentEvents: t.json().$type<Array<{
+			blockNumber: string;
+			blockTimestamp: number;
+			eventName: string;
+			createdAt: number;
+		}>>(),
+	})
+);
+
 export const pools = onchainTable(
 	"pools",
 	t => ({
