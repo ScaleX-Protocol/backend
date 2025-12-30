@@ -65,6 +65,7 @@ export const PonderEvents = {
 	LENDING_MANAGER_BALANCE_MANAGER_SET: ponderEvent("LendingManager:BalanceManagerSet"),
 	LENDING_MANAGER_ASSET_CONFIGURED: ponderEvent("LendingManager:AssetConfigured"),
 	LENDING_MANAGER_INTEREST_RATE_PARAMS_SET: ponderEvent("LendingManager:InterestRateParamsSet"),
+	LENDING_MANAGER_SUPPLY_TRANSFERRED: ponderEvent("LendingManager:SupplyTransferred"),
 
 	// Oracle Events
 	ORACLE_PRICE_UPDATED: ponderEvent("Oracle:PriceUpdated"),
