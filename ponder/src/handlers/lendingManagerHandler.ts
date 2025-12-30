@@ -954,3 +954,137 @@ async function initializePoolLendingStats(
     logger.error(`Failed to initialize pool lending stats for ${token}`, LogLabel.DATABASE, 'initializePoolLendingStats', { token, error: error instanceof Error ? error.message : String(error) });
   }
 }
+
+// SupplyTransferred event handler - handles supply position transfers during trades
+export async function handleSupplyTransferred({ event, context }: any) {
+  await updateIndexerStatus(context, 'LendingManager:SupplyTransferred', event);
+  const { db } = context;
+  const chainId = context.network.chainId;
+
+  const from = event.args.from;
+  const to = event.args.to;
+  const token = getAddress(event.args.token);
+  const amount = BigInt(event.args.amount);
+  const timestamp = Number(event.block.timestamp);
+  const txHash = event.transaction.hash;
+
+  try {
+    // Update lending position for sender (decrease supply)
+    const fromPositionId = createLendingPositionId(chainId, from, token, token);
+    const fromPosition = await context.db.find(lendingPositions, { id: fromPositionId });
+
+    if (fromPosition && fromPosition.collateralAmount > 0n) {
+      const newFromAmount = fromPosition.collateralAmount >= amount
+        ? fromPosition.collateralAmount - amount
+        : 0n;
+
+      await db
+        .update(lendingPositions, { id: fromPositionId })
+        .set({
+          collateralAmount: newFromAmount,
+          lastUpdated: timestamp,
+          isActive: newFromAmount > 0n,
+        });
+    }
+
+    // Update lending position for receiver (increase supply)
+    const toPositionId = createLendingPositionId(chainId, to, token, token);
+    await db
+      .insert(lendingPositions)
+      .values({
+        id: toPositionId,
+        chainId,
+        user: to,
+        collateralToken: token,
+        debtToken: token,
+        collateralAmount: amount,
+        debtAmount: BigInt(0),
+        lastUpdated: timestamp,
+        isActive: true,
+      })
+      .onConflictDoUpdate((row: any) => ({
+        collateralAmount: row.collateralAmount + amount,
+        lastUpdated: timestamp,
+        isActive: true,
+      }));
+
+    // Record lending event for supply transfer
+    const eventId = `${txHash}-supply-transferred-${timestamp}`;
+    await db.insert(lendingEvents).values({
+      id: eventId,
+      chainId,
+      user: from,
+      action: "SUPPLY_TRANSFERRED",
+      token,
+      amount,
+      timestamp,
+      transactionId: txHash,
+      blockNumber: BigInt(event.block.number),
+    }).onConflictDoUpdate((row: any) => ({
+      action: "SUPPLY_TRANSFERRED",
+      token,
+      amount,
+      timestamp,
+      transactionId: txHash,
+      blockNumber: BigInt(event.block.number),
+    }));
+
+    // Update user balance for sender (decrease collateral)
+    const fromBalanceId = createBalanceId(chainId, token, from);
+    const fromBalance = await db.find(balances, { id: fromBalanceId });
+    if (fromBalance) {
+      const newCollateral = fromBalance.collateralAmount >= amount
+        ? fromBalance.collateralAmount - amount
+        : 0n;
+      await db
+        .update(balances, { id: fromBalanceId })
+        .set({
+          collateralAmount: newCollateral,
+          lastUpdated: timestamp,
+        });
+    }
+
+    // Update user balance for receiver (increase collateral)
+    const toBalanceId = createBalanceId(chainId, token, to);
+    await db
+      .insert(balances)
+      .values({
+        id: toBalanceId,
+        user: to,
+        chainId,
+        currency: token,
+        amount: BigInt(0),
+        lockedAmount: BigInt(0),
+        collateralAmount: amount,
+        lastUpdated: timestamp,
+      })
+      .onConflictDoUpdate({
+        collateralAmount: sql`${balances.collateralAmount} + ${amount}`,
+        lastUpdated: timestamp,
+      });
+
+    logger.info(`Supply transferred: ${amount} of ${token} from ${from} to ${to}`, LogLabel.EVENT_HANDLER, 'handleSupplyTransferred', {
+      from,
+      to,
+      token,
+      amount: amount.toString(),
+      txHash
+    });
+
+    // Publish events if in sync
+    await executeIfInSync(Number(event.block.number), async () => {
+      await publishLendingEvent("SUPPLY_TRANSFERRED", from, token, amount.toString(), timestamp, {
+        to,
+        from,
+      });
+    }, 'handleSupplyTransferred');
+  } catch (error) {
+    logger.error('handleSupplyTransferred ERROR', LogLabel.EVENT_HANDLER, 'handleSupplyTransferred', {
+      error: error instanceof Error ? error.message : String(error),
+      from,
+      to,
+      token,
+      amount: amount.toString()
+    });
+  }
+}

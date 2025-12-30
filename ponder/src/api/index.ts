@@ -76,6 +76,86 @@ function formatSymbol(symbol: string): string {
 	return symbol;
 }
 
+// Format USD with oracle price conversion
+function formatUSDWithPrice(value: string | bigint, decimals: number, priceUSD: number, priceDecimals: number = 8): string {
+	const amount = Number(value) / Math.pow(10, decimals);
+	const usdValue = amount * (priceUSD / Math.pow(10, priceDecimals));
+	return `$${usdValue.toLocaleString('en-US', {
+		minimumFractionDigits: 2,
+		maximumFractionDigits: 2
+	})}`;
+}
+
+// Helper function to fetch token prices from latest trades
+async function getTokenPricesFromTrades(tokenAddresses: string[], chainId: number): Promise<Map<string, { price: bigint, quoteDecimals: number }>> {
+	const priceMap = new Map<string, { price: bigint, quoteDecimals: number }>();
+
+	if (tokenAddresses.length === 0) return priceMap;
+
+	try {
+		// Get all pools to map base currency to pool info
+		const poolsData = await db
+			.select({
+				id: pools.id,
+				baseCurrency: pools.baseCurrency,
+				quoteCurrency: pools.quoteCurrency,
+				quoteDecimals: pools.quoteDecimals,
+			})
+			.from(pools)
+			.where(eq(pools.chainId, chainId))
+			.execute();
+
+		// For each pool, get the latest trade price
+		for (const pool of poolsData) {
+			const baseAddr = pool.baseCurrency.toLowerCase();
+
+			// Skip if we already have a price for this token
+			if (priceMap.has(baseAddr)) continue;
+
+			// Get the latest trade for this pool
+			const latestTrade = await db
+				.select({
+					price: orderBookTrades.price,
+				})
+				.from(orderBookTrades)
+				.where(and(
+					eq(orderBookTrades.poolId, pool.id),
+					eq(orderBookTrades.chainId, chainId)
+				))
+				.orderBy(desc(orderBookTrades.timestamp))
+				.limit(1)
+				.execute();
+
+			if (latestTrade.length > 0 && latestTrade[0].price && latestTrade[0].price > 0n && pool.quoteDecimals) {
+				priceMap.set(baseAddr, {
+					price: latestTrade[0].price,
+					quoteDecimals: pool.quoteDecimals
+				});
+			}
+		}
+
+		// For stablecoins (quote currencies), set price to 1 USD
+		for (const tokenAddr of tokenAddresses) {
+			const tokenLower = tokenAddr.toLowerCase();
+			if (!priceMap.has(tokenLower)) {
+				// Check if this token is used as quote currency in any pool
+				const poolWithToken = poolsData.find(p => p.quoteCurrency.toLowerCase() === tokenLower);
+				if (poolWithToken && poolWithToken.quoteDecimals) {
+					// Stablecoin = $1 (price in its own decimals)
+					priceMap.set(tokenLower, {
+						price: BigInt(Math.pow(10, poolWithToken.quoteDecimals)),
+						quoteDecimals: poolWithToken.quoteDecimals
+					});
+				}
+			}
+		}
+	} catch (error) {
+		console.error("Error fetching token prices from trades:", error);
+	}
+
+	return priceMap;
+}
+
 // Helper function to fetch multiple token information at once
 async function getMultipleTokenInfo(tokenAddresses: string[], chainId?: number) {
 	try {
@@ -1862,6 +1942,16 @@ app.get("/api/lending/dashboard/:user", async c => {
 			}
 		}
 
+		// Fetch token prices from latest trades for USD value conversion
+		let tokenPriceMap = new Map<string, { price: bigint, quoteDecimals: number }>();
+		if (uniqueTokenAddresses.size > 0) {
+			try {
+				tokenPriceMap = await getTokenPricesFromTrades(Array.from(uniqueTokenAddresses), targetChainId);
+			} catch (priceError) {
+				console.error("Error fetching token prices from trades:", priceError);
+			}
+		}
+
 		// Format activity history for response (now that tokenInfoMap is available)
 		const formattedActivityHistory = await Promise.all(activityHistory.map(async (activity) => {
 			const tokenInfo = tokenInfoMap.get(activity.token.toLowerCase()) || { decimals: 18, symbol: "UNKNOWN" };
@@ -1967,12 +2057,18 @@ app.get("/api/lending/dashboard/:user", async c => {
 					const supplyDurationDays = supplyDurationSeconds > 0 ? Math.floor(supplyDurationSeconds / 86400) : 0;
 					const supplyDurationHours = supplyDurationSeconds > 0 ? Math.floor((supplyDurationSeconds % 86400) / 3600) : 0;
 
+					// Get token price from pools for USD conversion
+					const tokenPrice = tokenPriceMap.get(position.collateralToken.toLowerCase());
+					const currentValueUSD = tokenPrice
+						? formatUSDWithPrice(collateralAmount, collateralTokenInfo.decimals, Number(tokenPrice.price), tokenPrice.quoteDecimals)
+						: formatUSD(collateralAmount, collateralTokenInfo.decimals); // fallback to 1:1 if no pool price
+
 					result.supplies.push({
 						id: position.id || `supply-${index}`,
 						asset: cleanSymbol,
 						assetAddress: position.collateralToken,
 						suppliedAmount: formatAmount(collateralAmount, collateralTokenInfo.decimals),
-						currentValue: formatUSD(collateralAmount, collateralTokenInfo.decimals),
+						currentValue: currentValueUSD,
 						apy: formatAPY(supplyRateBP.toString()),
 						earnings: formatUSD("0", collateralTokenInfo.decimals),
 						projectedEarnings,
@@ -2081,7 +2177,15 @@ app.get("/api/lending/dashboard/:user", async c => {
 					const principalAmount = BigInt(debtAmount);
 					const totalDebtWithInterest = principalAmount + accruedInterest;
 					const totalDebtFormatted = formatAmount(totalDebtWithInterest.toString(), debtTokenInfo.decimals);
-					const totalDebtUSD = formatUSD(totalDebtWithInterest.toString(), debtTokenInfo.decimals);
+
+					// Get token price from pools for USD conversion
+					const debtTokenPrice = tokenPriceMap.get(position.debtToken.toLowerCase());
+					const currentDebtUSD = debtTokenPrice
+						? formatUSDWithPrice(debtAmount, debtTokenInfo.decimals, Number(debtTokenPrice.price), debtTokenPrice.quoteDecimals)
+						: formatUSD(debtAmount, debtTokenInfo.decimals);
+					const totalDebtUSD = debtTokenPrice
+						? formatUSDWithPrice(totalDebtWithInterest.toString(), debtTokenInfo.decimals, Number(debtTokenPrice.price), debtTokenPrice.quoteDecimals)
+						: formatUSD(totalDebtWithInterest.toString(), debtTokenInfo.decimals);
 
 					// Placeholder health factor - will be calculated correctly after all positions are processed
 					let healthFactor = 999999;
@@ -2095,7 +2199,7 @@ app.get("/api/lending/dashboard/:user", async c => {
 						asset: cleanSymbol,
 						assetAddress: position.debtToken,
 						borrowedAmount: formatAmount(debtAmount, debtTokenInfo.decimals),
-						currentDebt: formatUSD(debtAmount, debtTokenInfo.decimals),
+						currentDebt: currentDebtUSD,
 						apy: formatAPY(borrowRateBP.toString()),
 						interestAccrued: formatUSD("0", debtTokenInfo.decimals),
 						projectedInterest,
