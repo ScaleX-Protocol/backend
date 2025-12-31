@@ -46,7 +46,6 @@ ponder.on(PonderEvents.LENDING_MANAGER_WITHDRAW, withEventValidator(lendingManag
 ponder.on(PonderEvents.LENDING_MANAGER_LIQUIDATION, withEventValidator(lendingManagerHandler.handleLiquidation, 'liquidation'));
 ponder.on(PonderEvents.LENDING_MANAGER_ASSET_CONFIGURED, withEventValidator(lendingManagerHandler.handleAssetConfigured, 'assetConfigured'));
 ponder.on(PonderEvents.LENDING_MANAGER_INTEREST_RATE_PARAMS_SET, withEventValidator(lendingManagerHandler.handleInterestRateParamsSet, 'interestRateParamsSet'));
-ponder.on(PonderEvents.LENDING_MANAGER_SUPPLY_TRANSFERRED, withEventValidator(lendingManagerHandler.handleSupplyTransferred, 'supplyTransferred'));
 
 // Oracle Events - Temporarily disabled due to telemetry issue
 ponder.on(PonderEvents.ORACLE_PRICE_UPDATED, oracleHandler.handleOraclePriceUpdate);

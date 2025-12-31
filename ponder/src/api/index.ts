@@ -76,61 +76,83 @@ function formatSymbol(symbol: string): string {
 	return symbol;
 }
 
-// Format USD with oracle price conversion
-function formatUSDWithPrice(value: string | bigint, decimals: number, priceUSD: number, priceDecimals: number = 8): string {
-	const amount = Number(value) / Math.pow(10, decimals);
-	const usdValue = amount * (priceUSD / Math.pow(10, priceDecimals));
+// Format USD with price conversion
+// Price decimals depend on the quote currency decimals in the pool
+function formatUSDWithPrice(value: string | bigint, tokenDecimals: number, price: number, quoteDecimals: number): string {
+	const amount = Number(value) / Math.pow(10, tokenDecimals);
+	const usdValue = amount * (price / Math.pow(10, quoteDecimals));
 	return `$${usdValue.toLocaleString('en-US', {
 		minimumFractionDigits: 2,
 		maximumFractionDigits: 2
 	})}`;
 }
 
-// Helper function to fetch token prices from latest trades
+// Helper function to fetch token prices from pools
+// Maps underlying tokens (WETH) to their synthetic counterparts (gsWETH) to find pool prices
 async function getTokenPricesFromTrades(tokenAddresses: string[], chainId: number): Promise<Map<string, { price: bigint, quoteDecimals: number }>> {
 	const priceMap = new Map<string, { price: bigint, quoteDecimals: number }>();
 
 	if (tokenAddresses.length === 0) return priceMap;
 
 	try {
-		// Get all pools to map base currency to pool info
+		// Get all currencies with their decimals
+		const allCurrencies = await db
+			.select({
+				address: currencies.address,
+				decimals: currencies.decimals,
+				underlyingAddress: currencies.underlyingTokenAddress,
+				tokenType: currencies.tokenType,
+			})
+			.from(currencies)
+			.where(eq(currencies.chainId, chainId))
+			.execute();
+
+		// Create underlying -> synthetic mapping and address -> decimals mapping
+		const underlyingToSynthetic = new Map<string, string>();
+		const addressToDecimals = new Map<string, number>();
+
+		for (const currency of allCurrencies) {
+			if (currency.decimals) {
+				addressToDecimals.set(currency.address.toLowerCase(), currency.decimals);
+			}
+			if (currency.tokenType === "synthetic" && currency.underlyingAddress) {
+				underlyingToSynthetic.set(
+					currency.underlyingAddress.toLowerCase(),
+					currency.address.toLowerCase()
+				);
+			}
+		}
+
+		// Get all pools with their prices
 		const poolsData = await db
 			.select({
 				id: pools.id,
 				baseCurrency: pools.baseCurrency,
 				quoteCurrency: pools.quoteCurrency,
-				quoteDecimals: pools.quoteDecimals,
+				price: pools.price,
 			})
 			.from(pools)
 			.where(eq(pools.chainId, chainId))
 			.execute();
 
-		// For each pool, get the latest trade price
+		// Map pool prices to underlying tokens
 		for (const pool of poolsData) {
-			const baseAddr = pool.baseCurrency.toLowerCase();
+			// Get actual quote decimals from currencies table
+			const quoteDecimals = addressToDecimals.get(pool.quoteCurrency.toLowerCase()) || 6;
 
-			// Skip if we already have a price for this token
-			if (priceMap.has(baseAddr)) continue;
+			if (pool.price && pool.price > 0n) {
+				const syntheticBaseAddr = pool.baseCurrency.toLowerCase();
 
-			// Get the latest trade for this pool
-			const latestTrade = await db
-				.select({
-					price: orderBookTrades.price,
-				})
-				.from(orderBookTrades)
-				.where(and(
-					eq(orderBookTrades.poolId, pool.id),
-					eq(orderBookTrades.chainId, chainId)
-				))
-				.orderBy(desc(orderBookTrades.timestamp))
-				.limit(1)
-				.execute();
+				// Find the underlying token for this synthetic base currency
+				const underlyingAddr = [...underlyingToSynthetic.entries()]
+					.find(([_, synthetic]) => synthetic === syntheticBaseAddr)?.[0];
 
-			if (latestTrade.length > 0 && latestTrade[0].price && latestTrade[0].price > 0n && pool.quoteDecimals) {
-				priceMap.set(baseAddr, {
-					price: latestTrade[0].price,
-					quoteDecimals: pool.quoteDecimals
-				});
+				if (underlyingAddr && !priceMap.has(underlyingAddr)) {
+					priceMap.set(underlyingAddr, {
+						price: pool.price,
+						quoteDecimals: quoteDecimals
+					});
+				}
 			}
 		}
 
@@ -138,19 +160,24 @@ async function getTokenPricesFromTrades(tokenAddresses: string[], chainId: numbe
 		for (const tokenAddr of tokenAddresses) {
 			const tokenLower = tokenAddr.toLowerCase();
 			if (!priceMap.has(tokenLower)) {
-				// Check if this token is used as quote currency in any pool
-				const poolWithToken = poolsData.find(p => p.quoteCurrency.toLowerCase() === tokenLower);
-				if (poolWithToken && poolWithToken.quoteDecimals) {
-					// Stablecoin = $1 (price in its own decimals)
-					priceMap.set(tokenLower, {
-						price: BigInt(Math.pow(10, poolWithToken.quoteDecimals)),
-						quoteDecimals: poolWithToken.quoteDecimals
-					});
+				// Get synthetic token for this underlying
+				const syntheticAddr = underlyingToSynthetic.get(tokenLower);
+				if (syntheticAddr) {
+					// Check if this synthetic is used as quote currency in any pool
+					const poolWithToken = poolsData.find(p => p.quoteCurrency.toLowerCase() === syntheticAddr);
+					if (poolWithToken) {
+						const quoteDecimals = addressToDecimals.get(syntheticAddr) || 6;
+						// Stablecoin = $1 (price in its own decimals)
+						priceMap.set(tokenLower, {
+							price: BigInt(Math.pow(10, quoteDecimals)),
+							quoteDecimals: quoteDecimals
+						});
+					}
 				}
 			}
 		}
 	} catch (error) {
-		console.error("Error fetching token prices from trades:", error);
+		console.error("Error fetching token prices:", error);
 	}
 
 	return priceMap;
