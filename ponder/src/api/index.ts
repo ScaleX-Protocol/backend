@@ -2804,6 +2804,61 @@ function calculatePositionsFromEvents(events: any[]): any[] {
 					balance.lastSupplyTimestamp = null;
 				}
 				break;
+
+			case 'TRANSFER_OUT':
+				// Handle transfer out - reduces supply (similar to WITHDRAW)
+				// This occurs when gsTokens are transferred during order matching
+				if (balance.supplySegments.length > 0) {
+					const lastSegment = balance.supplySegments[balance.supplySegments.length - 1];
+					if (lastSegment && lastSegment.endTimestamp === null) {
+						lastSegment.endTimestamp = timestamp;
+					}
+				}
+
+				balance.supplied = balance.supplied >= amount ? balance.supplied - amount : 0n;
+
+				// Start a new segment if still has supply
+				if (balance.supplied > 0n) {
+					balance.supplySegments.push({
+						amount: balance.supplied,
+						startTimestamp: timestamp,
+						endTimestamp: null
+					});
+				}
+
+				// Reset timestamps if all transferred out
+				if (balance.supplied === 0n) {
+					balance.firstSupplyTimestamp = null;
+					balance.lastSupplyTimestamp = null;
+				}
+				break;
+
+			case 'TRANSFER_IN':
+				// Handle transfer in - increases supply (similar to SUPPLY)
+				// This occurs when gsTokens are received during order matching
+				if (balance.supplySegments.length > 0) {
+					const lastSegment = balance.supplySegments[balance.supplySegments.length - 1];
+					if (lastSegment && lastSegment.endTimestamp === null) {
+						lastSegment.endTimestamp = timestamp;
+					}
+				}
+
+				balance.supplied += amount;
+
+				// Start a new segment with the new balance
+				if (balance.supplied > 0n) {
+					balance.supplySegments.push({
+						amount: balance.supplied,
+						startTimestamp: timestamp,
+						endTimestamp: null
+					});
+				}
+
+				if (balance.firstSupplyTimestamp === null) {
+					balance.firstSupplyTimestamp = timestamp;
+				}
+				balance.lastSupplyTimestamp = timestamp;
+				break;
 		}
 	});
 

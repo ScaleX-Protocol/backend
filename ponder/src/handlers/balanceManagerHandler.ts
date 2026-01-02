@@ -1,11 +1,12 @@
 import dotenv from "dotenv";
-import { balances, deposits, withdrawals, users } from "ponder:schema";
+import { balances, deposits, withdrawals, users, lendingEvents, currencies } from "ponder:schema";
 import { createBalanceId } from "@/utils";
 import { getAddress } from "viem";
 import { executeIfInSync } from "../utils/syncState";
 import { getEventPublisher } from "@/events/index";
 import { createLogger, LogLabel } from "../utils/logger";
 import { updateIndexerStatus } from "@/utils/indexerStatus";
+import { eq, and } from "ponder";
 
 dotenv.config();
 
@@ -49,6 +50,113 @@ async function upsertUserActivity(db: any, chainId: number, user: string, timest
 		.onConflictDoUpdate((row: any) => ({
 			lastSeenTimestamp: timestamp,
 		}));
+}
+
+async function recordLendingTransferEvents(
+	db: any,
+	chainId: number,
+	sender: string,
+	receiver: string,
+	currency: string,
+	amount: bigint,
+	feeAmount: bigint,
+	timestamp: number,
+	txHash: string,
+	blockNumber: bigint,
+	logIndex: number
+) {
+	try {
+		// Check if the currency is a synthetic token by looking up in currencies table
+		// Synthetic tokens have tokenType = "synthetic" and underlyingTokenAddress set
+		const currencyLower = currency.toLowerCase() as `0x${string}`;
+
+		const syntheticCurrency = await db.sql
+			.select()
+			.from(currencies)
+			.where(
+				and(
+					eq(currencies.chainId, chainId),
+					eq(currencies.address, currencyLower),
+					eq(currencies.tokenType, "synthetic")
+				)
+			)
+			.limit(1);
+
+		// If this is not a synthetic token, skip lending event recording
+		if (!syntheticCurrency || syntheticCurrency.length === 0 || !syntheticCurrency[0].underlyingTokenAddress) {
+			return;
+		}
+
+		const underlyingToken = syntheticCurrency[0].underlyingTokenAddress;
+		const netAmount = amount - feeAmount;
+
+		// Record TRANSFER_OUT event for sender (reduces their supply)
+		// Include logIndex in ID to handle multiple transfers in same transaction
+		const transferOutEventId = `${txHash}-transfer-out-${sender}-${logIndex}`;
+		await db.insert(lendingEvents).values({
+			id: transferOutEventId,
+			chainId,
+			user: sender,
+			action: "TRANSFER_OUT",
+			token: underlyingToken, // Use underlying token for consistency with other lending events
+			amount: amount, // Full amount transferred out
+			timestamp,
+			transactionId: txHash,
+			blockNumber,
+		}).onConflictDoUpdate({
+			id: transferOutEventId,
+			chainId,
+			user: sender,
+			action: "TRANSFER_OUT",
+			token: underlyingToken,
+			amount: amount,
+			timestamp,
+			transactionId: txHash,
+			blockNumber,
+		});
+
+		// Record TRANSFER_IN event for receiver (increases their supply)
+		const transferInEventId = `${txHash}-transfer-in-${receiver}-${logIndex}`;
+		await db.insert(lendingEvents).values({
+			id: transferInEventId,
+			chainId,
+			user: receiver,
+			action: "TRANSFER_IN",
+			token: underlyingToken, // Use underlying token for consistency
+			amount: netAmount, // Amount after fee
+			timestamp,
+			transactionId: txHash,
+			blockNumber,
+		}).onConflictDoUpdate({
+			id: transferInEventId,
+			chainId,
+			user: receiver,
+			action: "TRANSFER_IN",
+			token: underlyingToken,
+			amount: netAmount,
+			timestamp,
+			transactionId: txHash,
+			blockNumber,
+		});
+
+		logger.info(`Recorded lending transfer events: ${sender} -> ${receiver}, amount: ${amount.toString()}, underlying: ${underlyingToken}`, LogLabel.EVENT_HANDLER, 'recordLendingTransferEvents', {
+			sender,
+			receiver,
+			currency,
+			underlyingToken,
+			amount: amount.toString(),
+			netAmount: netAmount.toString(),
+			txHash
+		});
+	} catch (error) {
+		logger.error('Failed to record lending transfer events', LogLabel.EVENT_HANDLER, 'recordLendingTransferEvents', {
+			error: error instanceof Error ? error.message : String(error),
+			sender,
+			receiver,
+			currency,
+			amount: amount.toString()
+		});
+	}
 }
 
 async function fetchAndPushBalance(context: any, balanceId: string, timestamp: number, blockNumber: number) {
@@ -179,6 +287,20 @@ export async function handleTransferFrom({ event, context }: any) {
 	const currency = getAddress(fromId(event.args.id));
 	const timestamp = Number(event.block.timestamp);
 
+	await recordLendingTransferEvents(
+		db,
+		chainId,
+		event.args.sender,
+		event.args.receiver,
+		currency,
+		BigInt(event.args.amount),
+		BigInt(event.args.feeAmount),
+		timestamp,
+		event.transaction.hash,
+		BigInt(event.block.number),
+		Number(event.log.logIndex)
+	);
+
 	// Update or insert sender balance
 	const senderId = createBalanceId(chainId, currency, event.args.sender);
 	await context.db.update(balances, { id: senderId }).set((row: any) => ({
@@ -243,6 +365,20 @@ export async function handleTransferLockedFrom({ event, context }: any) {
 	const netAmount = BigInt(event.args.amount) - BigInt(event.args.feeAmount);
 	const currency = getAddress(fromId(event.args.id));
 	const timestamp = Number(event.block.timestamp);
+
+	await recordLendingTransferEvents(
+		db,
+		chainId,
+		event.args.sender,
+		event.args.receiver,
+		currency,
+		BigInt(event.args.amount),
+		BigInt(event.args.feeAmount),
+		timestamp,
+		event.transaction.hash,
+		BigInt(event.block.number),
+		Number(event.log.logIndex)
+	);
 
 	// Update sender locked balance
 	const senderId = createBalanceId(chainId, currency, event.args.sender);
