@@ -1911,8 +1911,8 @@ app.get("/api/lending/dashboard/:user", async c => {
 		configs.forEach(config => {
 			const tokenLower = config.token.toLowerCase();
 			assetConfigMap[tokenLower] = {
-				collateralFactor: config.collateralFactor / 100,
-				liquidationThreshold: config.liquidationThreshold / 100
+				collateralFactor: config.collateralFactor / 10000,
+				liquidationThreshold: config.liquidationThreshold / 10000
 			};
 		});
 
