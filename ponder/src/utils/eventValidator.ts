@@ -50,20 +50,20 @@ export function withEventValidator(handler: Function, eventType: string) {
     // Execute the actual handler if validation passes
     try {
       await handler(context);
-      
-      // Log successful processing
-      const processingTime = Date.now() - startTime;
-      logger.debug(
-        `Event processed successfully`,
-        LogLabel.EVENT_HANDLER,
-        'withEventValidator',
-        {
-          eventType,
-          txHash: event.transaction.hash,
-          blockNumber: event.block.number,
-          processingTimeMs: processingTime
-        }
-      );
+
+      // Log successful processing (COMMENTED OUT - creates too much log spam)
+      // const processingTime = Date.now() - startTime;
+      // logger.debug(
+      //   `Event processed successfully`,
+      //   LogLabel.EVENT_HANDLER,
+      //   'withEventValidator',
+      //   {
+      //     eventType,
+      //     txHash: event.transaction.hash,
+      //     blockNumber: event.block.number,
+      //     processingTimeMs: processingTime
+      //   }
+      // );
     } catch (error) {
       const errorInfo = {
         eventType,
