@@ -702,6 +702,56 @@ export const withdrawals = onchainTable(
 	})
 );
 
+export const lockEvents = onchainTable(
+	"lock_events",
+	t => ({
+		id: t.text().primaryKey(),
+		chainId: t.integer().notNull(),
+		user: t.hex().notNull(),
+		currency: t.hex().notNull(),
+		amount: t.bigint().notNull(),
+		timestamp: t.integer().notNull(),
+		transactionId: t.text().notNull(),
+		blockNumber: t.bigint().notNull(),
+	}),
+	table => ({
+		userIdx: index().on(table.user),
+		currencyIdx: index().on(table.currency),
+		chainIdIdx: index().on(table.chainId),
+		timestampIdx: index().on(table.timestamp),
+		userCurrencyIdx: index().on(table.user, table.currency),
+		userChainIdx: index().on(table.user, table.chainId),
+		currencyChainIdx: index().on(table.currency, table.chainId),
+		userCurrencyChainIdx: index().on(table.user, table.currency, table.chainId),
+		transactionIdx: index().on(table.transactionId),
+	})
+);
+
+export const unlockEvents = onchainTable(
+	"unlock_events",
+	t => ({
+		id: t.text().primaryKey(),
+		chainId: t.integer().notNull(),
+		user: t.hex().notNull(),
+		currency: t.hex().notNull(),
+		amount: t.bigint().notNull(),
+		timestamp: t.integer().notNull(),
+		transactionId: t.text().notNull(),
+		blockNumber: t.bigint().notNull(),
+	}),
+	table => ({
+		userIdx: index().on(table.user),
+		currencyIdx: index().on(table.currency),
+		chainIdIdx: index().on(table.chainId),
+		timestampIdx: index().on(table.timestamp),
+		userCurrencyIdx: index().on(table.user, table.currency),
+		userChainIdx: index().on(table.user, table.chainId),
+		currencyChainIdx: index().on(table.currency, table.chainId),
+		userCurrencyChainIdx: index().on(table.user, table.currency, table.chainId),
+		transactionIdx: index().on(table.transactionId),
+	})
+);
+
 // =============================================================
 //                   LENDING PROTOCOL TABLES
 // =============================================================
