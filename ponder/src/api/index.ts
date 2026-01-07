@@ -11,6 +11,7 @@ import schema, {
 	chainBalanceDeposits,
 	currencies,
 	dailyBuckets,
+	deposits,
 	fiveMinuteBuckets,
 	hourBuckets,
 	hyperlaneMessages,
@@ -18,6 +19,7 @@ import schema, {
 	interestRateParameters,
 	lendingEvents,
 	lendingPositions,
+	lockEvents,
 	minuteBuckets,
 	orderBookDepth,
 	orderBookTrades,
@@ -25,7 +27,9 @@ import schema, {
 	poolLendingStats,
 	pools,
 	thirtyMinuteBuckets,
-	tokenMappings
+	tokenMappings,
+	unlockEvents,
+	withdrawals
 } from "ponder:schema";
 import { createPublicClient, http } from "viem";
 import { base, baseSepolia, mainnet, sepolia } from "viem/chains";
@@ -1711,32 +1715,101 @@ app.get("/api/account", async c => {
 	}
 
 	try {
-		const userBalances = await db
+		// Fetch all balance events for the user from event tables
+		const [depositEvents, withdrawalEvents, lendingEventsData, lockEventsData, unlockEventsData] = await Promise.all([
+			db.select().from(deposits).where(eq(deposits.user, address as `0x${string}`)).execute(),
+			db.select().from(withdrawals).where(eq(withdrawals.user, address as `0x${string}`)).execute(),
+			db.select().from(lendingEvents).where(eq(lendingEvents.user, address as `0x${string}`)).execute(),
+			db.select().from(lockEvents).where(eq(lockEvents.user, address as `0x${string}`)).execute(),
+			db.select().from(unlockEvents).where(eq(unlockEvents.user, address as `0x${string}`)).execute(),
+		]);
+
+		// Calculate balances from events for each currency
+		const currencyBalances = new Map<string, { total: bigint, locked: bigint, chainId: number }>();
+
+		// Process deposits (increase total balance)
+		depositEvents.forEach(event => {
+			const key = `${event.currency}-${event.chainId}`;
+			const current = currencyBalances.get(key) || { total: 0n, locked: 0n, chainId: event.chainId };
+			current.total += BigInt(event.amount);
+			currencyBalances.set(key, current);
+		});
+
+		// Process withdrawals (decrease total balance)
+		withdrawalEvents.forEach(event => {
+			const key = `${event.currency}-${event.chainId}`;
+			const current = currencyBalances.get(key) || { total: 0n, locked: 0n, chainId: event.chainId };
+			current.total -= BigInt(event.amount);
+			currencyBalances.set(key, current);
+		});
+
+		// Get all currency mappings to map underlying tokens to synthetic tokens
+		const allCurrencies = await db
 			.select()
-			.from(balances)
-			.where(eq(balances.user, address as `0x${string}`))
+			.from(currencies)
+			.where(eq(currencies.chainId, 84532))
 			.execute();
 
+		// Create mapping: underlyingToken -> syntheticToken
+		const underlyingToSynthetic = new Map<string, string>();
+		allCurrencies.forEach(currency => {
+			if (currency.tokenType === 'synthetic' && currency.underlyingTokenAddress) {
+				underlyingToSynthetic.set(currency.underlyingTokenAddress.toLowerCase(), currency.address.toLowerCase());
+			}
+		});
+
+		// Process lending events (TRANSFER_IN increases, TRANSFER_OUT decreases)
+		// Note: lending_events use the underlying token, so we need to map to synthetic
+		lendingEventsData.forEach(event => {
+			const underlyingToken = event.token.toLowerCase();
+			// Map underlying token to synthetic token (e.g., USDC -> gsUSDC)
+			const syntheticToken = underlyingToSynthetic.get(underlyingToken) || underlyingToken;
+			const key = `${syntheticToken}-${event.chainId}`;
+			const current = currencyBalances.get(key) || { total: 0n, locked: 0n, chainId: event.chainId };
+
+			if (event.action === 'TRANSFER_IN') {
+				current.total += BigInt(event.amount);
+			} else if (event.action === 'TRANSFER_OUT') {
+				current.total -= BigInt(event.amount);
+			}
+			currencyBalances.set(key, current);
+		});
+
+		// Process lock events (increase locked balance)
+		lockEventsData.forEach(event => {
+			const key = `${event.currency}-${event.chainId}`;
+			const current = currencyBalances.get(key) || { total: 0n, locked: 0n, chainId: event.chainId };
+			current.locked += BigInt(event.amount);
+			currencyBalances.set(key, current);
+		});
+
+		// Process unlock events (decrease locked balance)
+		unlockEventsData.forEach(event => {
+			const key = `${event.currency}-${event.chainId}`;
+			const current = currencyBalances.get(key) || { total: 0n, locked: 0n, chainId: event.chainId };
+			current.locked -= BigInt(event.amount);
+			currencyBalances.set(key, current);
+		});
+
+		// Get currency info for each balance
 		const balancesWithInfo = await Promise.all(
-			userBalances.map(async balance => {
+			Array.from(currencyBalances.entries()).map(async ([key, balance]) => {
+				const [currencyAddress] = key.split('-');
 				const currency = await db
 					.select()
 					.from(currencies)
 					.where(
-						and(eq(currencies.address, balance.currency as `0x${string}`), eq(currencies.chainId, balance.chainId))
+						and(eq(currencies.address, currencyAddress as `0x${string}`), eq(currencies.chainId, balance.chainId))
 					)
 					.execute();
 
 				const symbol = currency[0]?.symbol || "UNKNOWN";
-
-				const amount = BigInt(balance.amount || 0);
-				const locked = BigInt(balance.lockedAmount || 0);
-				const free = amount >= locked ? (amount - locked).toString() : "0";
+				const free = balance.total >= balance.locked ? (balance.total - balance.locked).toString() : "0";
 
 				return {
 					asset: symbol,
 					free: free,
-					locked: balance.lockedAmount?.toString() || "0",
+					locked: balance.locked.toString(),
 				};
 			})
 		);
