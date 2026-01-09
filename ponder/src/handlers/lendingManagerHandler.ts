@@ -102,11 +102,37 @@ export async function handleSupply({ event, context }: any) {
   const chainId = context.network.chainId;
 
 
-  const user = event.args.user;
+  const user_address = event.args.user;
   const token = getAddress(event.args.token);
   const amount = BigInt(event.args.amount);
   const timestamp = Number(event.block.timestamp);
   const txHash = event.transaction.hash;
+
+  // DEBUG: Log event args to diagnose user address issue
+  const debugInfo = {
+    txHash,
+    blockNumber: event.block.number,
+    rawUser: event.args.user,
+    rawUserType: typeof event.args.user,
+    extractedUser: user,
+    extractedUserType: typeof user,
+    token,
+    amount: amount.toString(),
+    isValidAddress: user && typeof user === 'string' && user.startsWith('0x') && user.length === 42,
+  };
+  logger.info('[LENDING-DEBUG] Supply event extracted values', LogLabel.EVENT_HANDLER, 'handleSupply', debugInfo);
+  console.log('[LENDING-DEBUG] Supply event:', {
+    txHash,
+    blockNumber: event.block.number,
+    eventArgs: JSON.stringify({
+      user_address: event.args.user,
+      userLength: typeof event.args.user === 'string' ? event.args.user.length : 'N/A',
+      token: event.args.token,
+      amount: event.args.amount?.toString(),
+    }),
+    extracted: { user, token, amount: amount.toString() },
+    ...debugInfo,
+  });
 
   // Create/update lending position
   const positionId = createLendingPositionId(chainId, user, token, token);
@@ -145,7 +171,7 @@ export async function handleSupply({ event, context }: any) {
   // Record lending event
   const eventId = `${txHash}-supply-${timestamp}`;
 
-  await db.insert(lendingEvents).values({
+  const insertValues = {
     id: eventId,
     chainId,
     user,
@@ -155,7 +181,12 @@ export async function handleSupply({ event, context }: any) {
     timestamp,
     transactionId: txHash,
     blockNumber: BigInt(event.block.number),
-  }).onConflictDoUpdate((row: any) => ({
+  };
+  console.log('[LENDING-DB-INSERT] About to insert lending event:', JSON.stringify(insertValues, (key, value) =>
+    typeof value === 'bigint' ? value.toString() : value
+  ));
+
+  await db.insert(lendingEvents).values(insertValues).onConflictDoUpdate((row: any) => ({
     chainId,
     user,
     action: "SUPPLY",
@@ -221,11 +252,37 @@ export async function handleBorrow({ event, context }: any) {
   const { db } = context;
   const chainId = context.network.chainId;
 
-  const user = event.args.user;
+  const user_address = event.args.user;
   const token = getAddress(event.args.token);
   const amount = BigInt(event.args.amount);
   const timestamp = Number(event.block.timestamp);
   const txHash = event.transaction.hash;
+
+  // DEBUG: Log event args to diagnose user address issue
+  const debugInfo = {
+    txHash,
+    blockNumber: event.block.number,
+    rawUser: event.args.user,
+    rawUserType: typeof event.args.user,
+    extractedUser: user,
+    extractedUserType: typeof user,
+    token,
+    amount: amount.toString(),
+    isValidAddress: user && typeof user === 'string' && user.startsWith('0x') && user.length === 42,
+  };
+  logger.info('[LENDING-DEBUG] Borrow event extracted values', LogLabel.EVENT_HANDLER, 'handleBorrow', debugInfo);
+  console.log('[LENDING-DEBUG] Borrow event:', {
+    txHash,
+    blockNumber: event.block.number,
+    eventArgs: JSON.stringify({
+      user_address: event.args.user,
+      userLength: typeof event.args.user === 'string' ? event.args.user.length : 'N/A',
+      token: event.args.token,
+      amount: event.args.amount?.toString(),
+    }),
+    extracted: { user, token, amount: amount.toString() },
+    ...debugInfo,
+  });
 
   try {
     // Update lending position
@@ -315,12 +372,40 @@ export async function handleRepay({ event, context }: any) {
   await updateIndexerStatus(context, 'LendingManager:Repay', event);
   const { db } = context;
   const chainId = context.network.chainId;
-  const user = event.args.user;
+  const user_address = event.args.user;
   const token = getAddress(event.args.token);
   const amount = BigInt(event.args.amount);
   const interest = BigInt(event.args.interest || 0);
   const timestamp = Number(event.block.timestamp);
   const txHash = event.transaction.hash;
+
+  // DEBUG: Log event args to diagnose user address issue
+  const debugInfo = {
+    txHash,
+    blockNumber: event.block.number,
+    rawUser: event.args.user,
+    rawUserType: typeof event.args.user,
+    extractedUser: user,
+    extractedUserType: typeof user,
+    token,
+    amount: amount.toString(),
+    interest: interest.toString(),
+    isValidAddress: user && typeof user === 'string' && user.startsWith('0x') && user.length === 42,
+  };
+  logger.info('[LENDING-DEBUG] Repay event extracted values', LogLabel.EVENT_HANDLER, 'handleRepay', debugInfo);
+  console.log('[LENDING-DEBUG] Repay event:', {
+    txHash,
+    blockNumber: event.block.number,
+    eventArgs: JSON.stringify({
+      user_address: event.args.user,
+      userLength: typeof event.args.user === 'string' ? event.args.user.length : 'N/A',
+      token: event.args.token,
+      amount: event.args.amount?.toString(),
+      interest: event.args.interest?.toString(),
+    }),
+    extracted: { user, token, amount: amount.toString(), interest: interest.toString() },
+    ...debugInfo,
+  });
 
   // Record repay event
   const eventId = `${txHash}-repay-${timestamp}`;
@@ -365,12 +450,38 @@ export async function handleWithdraw({ event, context }: any) {
   await updateIndexerStatus(context, 'LendingManager:Withdraw', event);
   const { db } = context;
   const chainId = context.network.chainId;
-  const user = event.args.user;
+  const user_address = event.args.user;
   const token = getAddress(event.args.token);
   const amount = BigInt(event.args.amount);
   const yieldAmount = BigInt(event.args.yield || 0);
   const timestamp = Number(event.block.timestamp);
   const txHash = event.transaction.hash;
+
+  // DEBUG: Log event args to diagnose user address issue
+  const debugInfo = {
+    txHash,
+    blockNumber: event.block.number,
+    rawUser: event.args.user,
+    rawUserType: typeof event.args.user,
+    extractedUser: user,
+    extractedUserType: typeof user,
+    token,
+    amount: amount.toString(),
+    yieldAmount: yieldAmount.toString(),
+    isValidAddress: user && typeof user === 'string' && user.startsWith('0x') && user.length === 42,
+  };
+  logger.info('[LENDING-DEBUG] Withdraw event extracted values', LogLabel.EVENT_HANDLER, 'handleWithdraw', debugInfo);
+  console.log('[LENDING-DEBUG] Withdraw event:', {
+    eventArgs: JSON.stringify({
+      user_address: event.args.user,
+      userLength: typeof event.args.user === 'string' ? event.args.user.length : 'N/A',
+      token: event.args.token,
+      amount: event.args.amount?.toString(),
+      yield: event.args.yield?.toString(),
+    }),
+    extracted: { user, token, amount: amount.toString(), yieldAmount: yieldAmount.toString() },
+    ...debugInfo,
+  });
 
   // Update pool lending stats (decrement supply on withdraw)
   await updatePoolLendingStats(db, chainId, token, -amount, BigInt(0), timestamp);

@@ -790,7 +790,7 @@ export const lendingEvents = onchainTable(
 	t => ({
 		id: t.text().primaryKey(),
 		chainId: t.integer().notNull(),
-		user_address: t.text().notNull(), // CRITICAL FIX: Renamed from 'user' to avoid PostgreSQL reserved keyword conflict
+		user: t.text().notNull(), // BUGFIX: Changed from t.hex() to t.text() due to Ponder bug where hex fields insert postgres username
 		action: t.varchar().notNull(), // "SUPPLY", "BORROW", "REPAY", "WITHDRAW", "LIQUIDATE"
 		token: t.hex().notNull(),
 		amount: t.bigint().notNull(),
@@ -804,15 +804,15 @@ export const lendingEvents = onchainTable(
 		liquidatedAmount: t.bigint(), // For liquidation events
 	}),
 	table => ({
-		userIdx: index().on(table.user_address),
+		userIdx: index().on(table.user),
 		chainIdIdx: index().on(table.chainId),
 		actionIdx: index().on(table.action),
 		tokenIdx: index().on(table.token),
 		timestampIdx: index().on(table.timestamp),
 		transactionIdx: index().on(table.transactionId),
-		userActionIdx: index().on(table.user_address, table.action),
+		userActionIdx: index().on(table.user, table.action),
 		tokenActionIdx: index().on(table.token, table.action),
-		userTimestampIdx: index().on(table.user_address, table.timestamp),
+		userTimestampIdx: index().on(table.user, table.timestamp),
 		healthFactorIdx: index().on(table.healthFactor),
 		liquidatorIdx: index().on(table.liquidator),
 	})

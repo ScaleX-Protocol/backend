@@ -167,7 +167,7 @@ export async function handleDeposit({ event, context }: any) {
 	await updateIndexerStatus(context, 'BalanceManager:Deposit', event);
 	const { db } = context;
 	const chainId = context.network.chainId;
-	const user = event.args.user;
+	const user_address = event.args.user;
 	const currency = getAddress(fromId(event.args.id));
 	const timestamp = Number(event.block.timestamp);
 
@@ -192,7 +192,7 @@ export async function handleWithdrawal({ event, context }: any) {
 	await updateIndexerStatus(context, 'BalanceManager:Withdrawal', event);
 	const { db } = context;
 	const chainId = context.network.chainId;
-	const user = event.args.user;
+	const user_address = event.args.user;
 	const currency = getAddress(fromId(event.args.id));
 	const timestamp = Number(event.block.timestamp);
 
@@ -277,7 +277,7 @@ export async function handleLock({ event, context }: any) {
 	await updateIndexerStatus(context, 'BalanceManager:Lock', event);
 	const { db } = context;
 	const chainId = context.network.chainId;
-	const user = event.args.user;
+	const user_address = event.args.user;
 	const currency = getAddress(fromId(event.args.id));
 	const timestamp = Number(event.block.timestamp);
 
@@ -302,7 +302,7 @@ export async function handleUnlock({ event, context }: any) {
 	await updateIndexerStatus(context, 'BalanceManager:Unlock', event);
 	const { db } = context;
 	const chainId = context.network.chainId;
-	const user = event.args.user;
+	const user_address = event.args.user;
 	const currency = getAddress(fromId(event.args.id));
 	const timestamp = Number(event.block.timestamp);
 
