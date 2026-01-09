@@ -24,13 +24,13 @@ const logger = createLogger('lendingManagerHandler.ts');
 async function upsertUserLendingStats(
   db: any,
   chainId: number,
-  user: string,
+  userAddress: string,
   action: string,
   amount: bigint,
   timestamp: number
 ) {
-  const userId = `${chainId}-${user}`;
-  const statsId = `${chainId}-${user}-lending`;
+  const userId = `${chainId}-${userAddress}`;
+  const statsId = `${chainId}-${userAddress}-lending`;
 
   const updateData: any = {
     lastLendingActivity: timestamp,
@@ -61,7 +61,7 @@ async function upsertUserLendingStats(
     .values({
       id: statsId,
       chainId,
-      user,
+      user_address: userAddress,
       firstLendingActivity: timestamp,
       lastLendingActivity: timestamp,
       activePositions: 0,
@@ -102,7 +102,7 @@ export async function handleSupply({ event, context }: any) {
   const chainId = context.network.chainId;
 
 
-  const user_address = event.args.user;
+  const userAddress = getAddress(event.args.user);
   const token = getAddress(event.args.token);
   const amount = BigInt(event.args.amount);
   const timestamp = Number(event.block.timestamp);
@@ -114,28 +114,28 @@ export async function handleSupply({ event, context }: any) {
     blockNumber: event.block.number,
     rawUser: event.args.user,
     rawUserType: typeof event.args.user,
-    extractedUser: user,
-    extractedUserType: typeof user,
+    extractedUser: userAddress,
+    extractedUserType: typeof userAddress,
     token,
     amount: amount.toString(),
-    isValidAddress: user && typeof user === 'string' && user.startsWith('0x') && user.length === 42,
+    isValidAddress: userAddress && typeof userAddress === 'string' && userAddress.startsWith('0x') && userAddress.length === 42,
   };
   logger.info('[LENDING-DEBUG] Supply event extracted values', LogLabel.EVENT_HANDLER, 'handleSupply', debugInfo);
   console.log('[LENDING-DEBUG] Supply event:', {
     txHash,
     blockNumber: event.block.number,
     eventArgs: JSON.stringify({
-      user_address: event.args.user,
+      userAddress: event.args.user,
       userLength: typeof event.args.user === 'string' ? event.args.user.length : 'N/A',
       token: event.args.token,
       amount: event.args.amount?.toString(),
     }),
-    extracted: { user, token, amount: amount.toString() },
+    extracted: { userAddress, token, amount: amount.toString() },
     ...debugInfo,
   });
 
   // Create/update lending position
-  const positionId = createLendingPositionId(chainId, user, token, token);
+  const positionId = createLendingPositionId(chainId, userAddress, token, token);
 
   // Try to find existing position first
   const existingPosition = await context.db.find(lendingPositions, {
@@ -158,7 +158,7 @@ export async function handleSupply({ event, context }: any) {
       .values({
         id: positionId,
         chainId,
-        user,
+        user_address: userAddress,
         collateralToken: token,
         debtToken: token,
         collateralAmount: amount,
@@ -174,7 +174,7 @@ export async function handleSupply({ event, context }: any) {
   const insertValues = {
     id: eventId,
     chainId,
-    user,
+    user_address: userAddress,
     action: "SUPPLY",
     token,
     amount,
@@ -188,7 +188,7 @@ export async function handleSupply({ event, context }: any) {
 
   await db.insert(lendingEvents).values(insertValues).onConflictDoUpdate((row: any) => ({
     chainId,
-    user,
+    user_address: userAddress,
     action: "SUPPLY",
     token,
     amount,
@@ -198,18 +198,18 @@ export async function handleSupply({ event, context }: any) {
   }));
 
   // Update user stats
-  await upsertUserLendingStats(db, chainId, user, "SUPPLY", amount, timestamp);
+  await upsertUserLendingStats(db, chainId, userAddress, "SUPPLY", amount, timestamp);
 
   // Update pool lending stats
   await updatePoolLendingStats(db, chainId, token, amount, BigInt(0), timestamp);
 
   // Update user balance to reflect real lending supply
-  const balanceId = createBalanceId(chainId, token, user);
+  const balanceId = createBalanceId(chainId, token, userAddress);
   await db
     .insert(balances)
     .values({
       id: balanceId,
-      user,
+      user_address: userAddress,
       chainId,
       currency: token,
       amount: BigInt(0),
@@ -229,14 +229,14 @@ export async function handleSupply({ event, context }: any) {
 
   // Publish events if in sync
   await executeIfInSync(Number(event.block.number), async () => {
-    await publishLendingEvent("SUPPLY", user, token, amount.toString(), timestamp);
+    await publishLendingEvent("SUPPLY", userAddress, token, amount.toString(), timestamp);
 
     // Update balance event
     const balance = await db.find(balances, { id: balanceId });
     if (balance) {
       const eventPublisher = getEventPublisher();
       await eventPublisher.publishBalanceUpdate({
-        userId: balance.user,
+        userId: balance.user_address,
         token: balance.currency,
         available: (balance.amount ?? BigInt(0)).toString(),
         locked: (balance.lockedAmount ?? BigInt(0)).toString(),
@@ -252,7 +252,7 @@ export async function handleBorrow({ event, context }: any) {
   const { db } = context;
   const chainId = context.network.chainId;
 
-  const user_address = event.args.user;
+  const userAddress = getAddress(event.args.user);
   const token = getAddress(event.args.token);
   const amount = BigInt(event.args.amount);
   const timestamp = Number(event.block.timestamp);
@@ -264,35 +264,35 @@ export async function handleBorrow({ event, context }: any) {
     blockNumber: event.block.number,
     rawUser: event.args.user,
     rawUserType: typeof event.args.user,
-    extractedUser: user,
-    extractedUserType: typeof user,
+    extractedUser: userAddress,
+    extractedUserType: typeof userAddress,
     token,
     amount: amount.toString(),
-    isValidAddress: user && typeof user === 'string' && user.startsWith('0x') && user.length === 42,
+    isValidAddress: userAddress && typeof userAddress === 'string' && userAddress.startsWith('0x') && userAddress.length === 42,
   };
   logger.info('[LENDING-DEBUG] Borrow event extracted values', LogLabel.EVENT_HANDLER, 'handleBorrow', debugInfo);
   console.log('[LENDING-DEBUG] Borrow event:', {
     txHash,
     blockNumber: event.block.number,
     eventArgs: JSON.stringify({
-      user_address: event.args.user,
+      userAddress: event.args.user,
       userLength: typeof event.args.user === 'string' ? event.args.user.length : 'N/A',
       token: event.args.token,
       amount: event.args.amount?.toString(),
     }),
-    extracted: { user, token, amount: amount.toString() },
+    extracted: { userAddress, token, amount: amount.toString() },
     ...debugInfo,
   });
 
   try {
     // Update lending position
-    const positionId = createLendingPositionId(chainId, user, token, token);
+    const positionId = createLendingPositionId(chainId, userAddress, token, token);
     await db
       .insert(lendingPositions)
       .values({
         id: positionId,
         chainId,
-        user,
+        user_address: userAddress,
         collateralToken: token,
         debtToken: token,
         collateralAmount: BigInt(0),
@@ -311,7 +311,7 @@ export async function handleBorrow({ event, context }: any) {
     await db.insert(lendingEvents).values({
       id: eventId,
       chainId,
-      user,
+      user_address: userAddress,
       action: "BORROW",
       token: token,
       amount,
@@ -331,18 +331,18 @@ export async function handleBorrow({ event, context }: any) {
     }));
 
     // Update user stats
-    await upsertUserLendingStats(db, chainId, user, "BORROW", amount, timestamp);
+    await upsertUserLendingStats(db, chainId, userAddress, "BORROW", amount, timestamp);
 
     // Update pool lending stats
     await updatePoolLendingStats(db, chainId, token, BigInt(0), amount, timestamp);
 
     // Update user balance to reflect debt (negative balance indicates debt)
-    const balanceId = createBalanceId(chainId, token, user);
+    const balanceId = createBalanceId(chainId, token, userAddress);
     await db
       .insert(balances)
       .values({
         id: balanceId,
-        user,
+        user_address: userAddress,
         chainId,
         currency: token,
         amount: BigInt(0),
@@ -356,13 +356,13 @@ export async function handleBorrow({ event, context }: any) {
 
     // // Publish events if in sync
     await executeIfInSync(Number(event.block.number), async () => {
-      await publishLendingEvent("BORROW", user, token, amount.toString(), timestamp, {
+      await publishLendingEvent("BORROW", userAddress, token, amount.toString(), timestamp, {
         healthFactor: "10000",
         interestRate: "0"
       });
     }, 'handleBorrow');
   } catch (error) {
-    log(LogLevel.ERROR, 'handleBorrow ERROR', LogLabel.EVENT_HANDLER, { error: error instanceof Error ? error.message : String(error), user, token, amount: amount.toString() }, 'lendingManagerHandler.ts', 'handleBorrow');
+    log(LogLevel.ERROR, 'handleBorrow ERROR', LogLabel.EVENT_HANDLER, { error: error instanceof Error ? error.message : String(error), userAddress, token, amount: amount.toString() }, 'lendingManagerHandler.ts', 'handleBorrow');
     return;
   }
 }
@@ -372,7 +372,7 @@ export async function handleRepay({ event, context }: any) {
   await updateIndexerStatus(context, 'LendingManager:Repay', event);
   const { db } = context;
   const chainId = context.network.chainId;
-  const user_address = event.args.user;
+  const userAddress = getAddress(event.args.user);
   const token = getAddress(event.args.token);
   const amount = BigInt(event.args.amount);
   const interest = BigInt(event.args.interest || 0);
@@ -385,25 +385,25 @@ export async function handleRepay({ event, context }: any) {
     blockNumber: event.block.number,
     rawUser: event.args.user,
     rawUserType: typeof event.args.user,
-    extractedUser: user,
-    extractedUserType: typeof user,
+    extractedUser: userAddress,
+    extractedUserType: typeof userAddress,
     token,
     amount: amount.toString(),
     interest: interest.toString(),
-    isValidAddress: user && typeof user === 'string' && user.startsWith('0x') && user.length === 42,
+    isValidAddress: userAddress && typeof userAddress === 'string' && userAddress.startsWith('0x') && userAddress.length === 42,
   };
   logger.info('[LENDING-DEBUG] Repay event extracted values', LogLabel.EVENT_HANDLER, 'handleRepay', debugInfo);
   console.log('[LENDING-DEBUG] Repay event:', {
     txHash,
     blockNumber: event.block.number,
     eventArgs: JSON.stringify({
-      user_address: event.args.user,
+      userAddress: event.args.user,
       userLength: typeof event.args.user === 'string' ? event.args.user.length : 'N/A',
       token: event.args.token,
       amount: event.args.amount?.toString(),
       interest: event.args.interest?.toString(),
     }),
-    extracted: { user, token, amount: amount.toString(), interest: interest.toString() },
+    extracted: { userAddress, token, amount: amount.toString(), interest: interest.toString() },
     ...debugInfo,
   });
 
@@ -412,7 +412,7 @@ export async function handleRepay({ event, context }: any) {
   await db.insert(lendingEvents).values({
     id: eventId,
     chainId,
-    user,
+    user_address: userAddress,
     action: "REPAY",
     token: token,
     amount: amount + interest,
@@ -422,13 +422,13 @@ export async function handleRepay({ event, context }: any) {
   });
 
   // Update user stats
-  await upsertUserLendingStats(db, chainId, user, "REPAY", amount, timestamp);
+  await upsertUserLendingStats(db, chainId, userAddress, "REPAY", amount, timestamp);
 
   // Update pool lending stats (decrement borrow on repay)
   await updatePoolLendingStats(db, chainId, token, BigInt(0), -amount, timestamp);
 
   // Update user balance
-  const balanceId = createBalanceId(chainId, token, user);
+  const balanceId = createBalanceId(chainId, token, userAddress);
   await db
     .update(balances, { id: balanceId })
     .set({
@@ -438,7 +438,7 @@ export async function handleRepay({ event, context }: any) {
 
   // Publish events if in sync
   await executeIfInSync(Number(event.block.number), async () => {
-    await publishLendingEvent("REPAY", user, token, amount.toString(), timestamp, {
+    await publishLendingEvent("REPAY", userAddress, token, amount.toString(), timestamp, {
       interestPaid: interest.toString(),
       healthFactor: "10000"
     });
@@ -450,7 +450,7 @@ export async function handleWithdraw({ event, context }: any) {
   await updateIndexerStatus(context, 'LendingManager:Withdraw', event);
   const { db } = context;
   const chainId = context.network.chainId;
-  const user_address = event.args.user;
+  const userAddress = getAddress(event.args.user);
   const token = getAddress(event.args.token);
   const amount = BigInt(event.args.amount);
   const yieldAmount = BigInt(event.args.yield || 0);
@@ -463,23 +463,23 @@ export async function handleWithdraw({ event, context }: any) {
     blockNumber: event.block.number,
     rawUser: event.args.user,
     rawUserType: typeof event.args.user,
-    extractedUser: user,
-    extractedUserType: typeof user,
+    extractedUser: userAddress,
+    extractedUserType: typeof userAddress,
     token,
     amount: amount.toString(),
     yieldAmount: yieldAmount.toString(),
-    isValidAddress: user && typeof user === 'string' && user.startsWith('0x') && user.length === 42,
+    isValidAddress: userAddress && typeof userAddress === 'string' && userAddress.startsWith('0x') && userAddress.length === 42,
   };
   logger.info('[LENDING-DEBUG] Withdraw event extracted values', LogLabel.EVENT_HANDLER, 'handleWithdraw', debugInfo);
   console.log('[LENDING-DEBUG] Withdraw event:', {
     eventArgs: JSON.stringify({
-      user_address: event.args.user,
+      userAddress: event.args.user,
       userLength: typeof event.args.user === 'string' ? event.args.user.length : 'N/A',
       token: event.args.token,
       amount: event.args.amount?.toString(),
       yield: event.args.yield?.toString(),
     }),
-    extracted: { user, token, amount: amount.toString(), yieldAmount: yieldAmount.toString() },
+    extracted: { userAddress, token, amount: amount.toString(), yieldAmount: yieldAmount.toString() },
     ...debugInfo,
   });
 
@@ -491,7 +491,7 @@ export async function handleWithdraw({ event, context }: any) {
   await db.insert(lendingEvents).values({
     id: eventId,
     chainId,
-    user,
+    user_address: userAddress,
     action: "WITHDRAW",
     token: token,
     amount,
@@ -501,10 +501,10 @@ export async function handleWithdraw({ event, context }: any) {
   });
 
   // Update user stats
-  await upsertUserLendingStats(db, chainId, user, "WITHDRAW", amount, timestamp);
+  await upsertUserLendingStats(db, chainId, userAddress, "WITHDRAW", amount, timestamp);
 
   // Update user balance
-  const balanceId = createBalanceId(chainId, token, user);
+  const balanceId = createBalanceId(chainId, token, userAddress);
   await db
     .update(balances, { id: balanceId })
     .set({
@@ -514,7 +514,7 @@ export async function handleWithdraw({ event, context }: any) {
 
   // Publish events if in sync
   await executeIfInSync(Number(event.block.number), async () => {
-    await publishLendingEvent("WITHDRAW", user, token, amount.toString(), timestamp, {
+    await publishLendingEvent("WITHDRAW", userAddress, token, amount.toString(), timestamp, {
       interestEarned: yieldAmount.toString()
     });
   }, 'handleWithdraw');
