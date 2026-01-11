@@ -50,7 +50,7 @@ export const orders = onchainTable(
 		poolId: t.hex().notNull(),
 		orderId: t.bigint().notNull(),
 		transactionId: t.text(),
-		user_address: t.text(), // FIX: Renamed from 'user' to avoid PostgreSQL keyword conflict
+		userAddress: t.text(),
 		side: t.varchar(),
 		timestamp: t.integer(),
 		price: t.bigint(),
@@ -70,12 +70,12 @@ export const orders = onchainTable(
 		poolChainStatusIdx: index().on(table.poolId, table.chainId, table.status),
 		poolStatusSideIdx: index().on(table.poolId, table.status, table.side),
 		depthOptimizedIdx: index().on(table.poolId, table.status, table.side, table.price),
-		userTimestampIdx: index().on(table.user_address, table.timestamp),
-		userStatusTimestampIdx: index().on(table.user_address, table.status, table.timestamp),
+		userTimestampIdx: index().on(table.userAddress, table.timestamp),
+		userStatusTimestampIdx: index().on(table.userAddress, table.status, table.timestamp),
 		poolIdx: index().on(table.poolId),
 		statusIdx: index().on(table.status),
 		timestampIdx: index().on(table.timestamp),
-		userIdx: index().on(table.user_address),
+		userIdx: index().on(table.userAddress),
 	})
 );
 
@@ -242,7 +242,7 @@ export const balances = onchainTable(
 	t => ({
 		id: t.text().primaryKey(),
 		chainId: t.integer().notNull(),
-		user_address: t.text(), // FIX: Renamed from 'user' to avoid PostgreSQL keyword conflict
+		userAddress: t.text(),
 		currency: t.hex(),
 		amount: t.bigint(),
 		lockedAmount: t.bigint(),
@@ -253,9 +253,9 @@ export const balances = onchainTable(
 	table => ({
 		currencyIdx: index().on(table.currency),
 		chainIdIdx: index().on(table.chainId),
-		userCurrencyIdx: index().on(table.user_address, table.currency),
-		userChainIdx: index().on(table.user_address, table.chainId),
-		userCurrencyChainIdx: index().on(table.user_address, table.currency, table.chainId),
+		userCurrencyIdx: index().on(table.userAddress, table.currency),
+		userChainIdx: index().on(table.userAddress, table.chainId),
+		userCurrencyChainIdx: index().on(table.userAddress, table.currency, table.chainId),
 		lastUpdatedIdx: index().on(table.lastUpdated),
 	})
 );
@@ -265,7 +265,7 @@ export const marketMakers = onchainTable(
 	t => ({
 		id: t.text().primaryKey(),
 		chainId: t.integer().notNull(),
-		user_address: t.text(), // FIX: Renamed from 'user' to avoid PostgreSQL keyword conflict
+		userAddress: t.text(),
 		poolId: t.hex().notNull(),
 		amount: t.bigint(),
 		lockedAmount: t.bigint(),
@@ -273,9 +273,9 @@ export const marketMakers = onchainTable(
 	}),
 	table => ({
 		chainIdIdx: index().on(table.chainId),
-		userIdx: index().on(table.user_address),
+		userIdx: index().on(table.userAddress),
 		poolIdx: index().on(table.poolId),
-		userPoolIdx: index().on(table.user_address, table.poolId),
+		userPoolIdx: index().on(table.userAddress, table.poolId),
 		expiryIdx: index().on(table.expiry),
 	})
 );
@@ -285,7 +285,7 @@ export const velockPositions = onchainTable(
 	t => ({
 		id: t.text().primaryKey(),
 		chainId: t.integer().notNull(),
-		user_address: t.text(), // FIX: Renamed from 'user' to avoid PostgreSQL keyword conflict
+		userAddress: t.text(),
 		poolId: t.hex().notNull(),
 		amount: t.bigint(),
 		lockedAmount: t.bigint(),
@@ -293,9 +293,9 @@ export const velockPositions = onchainTable(
 	}),
 	table => ({
 		chainIdIdx: index().on(table.chainId),
-		userIdx: index().on(table.user_address),
+		userIdx: index().on(table.userAddress),
 		poolIdx: index().on(table.poolId),
-		userPoolIdx: index().on(table.user_address, table.poolId),
+		userPoolIdx: index().on(table.userAddress, table.poolId),
 		expiryIdx: index().on(table.expiry),
 	})
 );
@@ -305,7 +305,7 @@ export const votes = onchainTable(
 	t => ({
 		id: t.text().primaryKey(),
 		chainId: t.integer().notNull(),
-		user_address: t.text(), // FIX: Renamed from 'user' to avoid PostgreSQL keyword conflict
+		userAddress: t.text(),
 		poolId: t.hex().notNull(),
 		amount: t.bigint(),
 		lockedAmount: t.bigint(),
@@ -314,9 +314,9 @@ export const votes = onchainTable(
 	}),
 	table => ({
 		chainIdIdx: index().on(table.chainId),
-		userIdx: index().on(table.user_address),
+		userIdx: index().on(table.userAddress),
 		poolIdx: index().on(table.poolId),
-		userPoolIdx: index().on(table.user_address, table.poolId),
+		userPoolIdx: index().on(table.userAddress, table.poolId),
 		timestampIdx: index().on(table.timestamp),
 		expiryIdx: index().on(table.expiry),
 	})
@@ -504,7 +504,7 @@ export const chainBalanceWithdrawals = onchainTable(
 	t => ({
 		id: t.text().primaryKey(),
 		chainId: t.integer().notNull(),
-		user_address: t.text().notNull(), // FIX: Renamed from 'user' to avoid PostgreSQL keyword conflict
+		userAddress: t.text().notNull(),
 		token: t.hex().notNull(),
 		amount: t.bigint().notNull(),
 		timestamp: t.integer().notNull(),
@@ -513,15 +513,15 @@ export const chainBalanceWithdrawals = onchainTable(
 		withdrawalType: t.varchar().notNull(),
 	}),
 	table => ({
-		userIdx: index().on(table.user_address),
+		userIdx: index().on(table.userAddress),
 		tokenIdx: index().on(table.token),
 		chainIdIdx: index().on(table.chainId),
 		timestampIdx: index().on(table.timestamp),
 		withdrawalTypeIdx: index().on(table.withdrawalType),
-		userTokenIdx: index().on(table.user_address, table.token),
-		userChainIdx: index().on(table.user_address, table.chainId),
+		userTokenIdx: index().on(table.userAddress, table.token),
+		userChainIdx: index().on(table.userAddress, table.chainId),
 		tokenChainIdx: index().on(table.token, table.chainId),
-		userTokenChainIdx: index().on(table.user_address, table.token, table.chainId),
+		userTokenChainIdx: index().on(table.userAddress, table.token, table.chainId),
 	})
 );
 
@@ -530,7 +530,7 @@ export const chainBalanceUnlocks = onchainTable(
 	t => ({
 		id: t.text().primaryKey(),
 		chainId: t.integer().notNull(),
-		user_address: t.text().notNull(), // FIX: Renamed from 'user' to avoid PostgreSQL keyword conflict
+		userAddress: t.text().notNull(),
 		token: t.hex().notNull(),
 		amount: t.bigint().notNull(),
 		timestamp: t.integer().notNull(),
@@ -538,14 +538,14 @@ export const chainBalanceUnlocks = onchainTable(
 		blockNumber: t.text().notNull(),
 	}),
 	table => ({
-		userIdx: index().on(table.user_address),
+		userIdx: index().on(table.userAddress),
 		tokenIdx: index().on(table.token),
 		chainIdIdx: index().on(table.chainId),
 		timestampIdx: index().on(table.timestamp),
-		userTokenIdx: index().on(table.user_address, table.token),
-		userChainIdx: index().on(table.user_address, table.chainId),
+		userTokenIdx: index().on(table.userAddress, table.token),
+		userChainIdx: index().on(table.userAddress, table.chainId),
 		tokenChainIdx: index().on(table.token, table.chainId),
-		userTokenChainIdx: index().on(table.user_address, table.token, table.chainId),
+		userTokenChainIdx: index().on(table.userAddress, table.token, table.chainId),
 	})
 );
 
@@ -577,21 +577,21 @@ export const chainBalanceStates = onchainTable(
 	t => ({
 		id: t.text().primaryKey(),
 		chainId: t.integer().notNull(),
-		user_address: t.text().notNull(), // FIX: Renamed from 'user' to avoid PostgreSQL keyword conflict
+		userAddress: t.text().notNull(),
 		token: t.hex().notNull(),
 		balance: t.bigint().notNull(),
 		unlockedBalance: t.bigint().notNull(),
 		lastUpdated: t.integer().notNull(),
 	}),
 	table => ({
-		userIdx: index().on(table.user_address),
+		userIdx: index().on(table.userAddress),
 		tokenIdx: index().on(table.token),
 		chainIdIdx: index().on(table.chainId),
 		lastUpdatedIdx: index().on(table.lastUpdated),
-		userTokenIdx: index().on(table.user_address, table.token),
-		userChainIdx: index().on(table.user_address, table.chainId),
+		userTokenIdx: index().on(table.userAddress, table.token),
+		userChainIdx: index().on(table.userAddress, table.chainId),
 		tokenChainIdx: index().on(table.token, table.chainId),
-		userTokenChainIdx: index().on(table.user_address, table.token, table.chainId),
+		userTokenChainIdx: index().on(table.userAddress, table.token, table.chainId),
 		balanceIdx: index().on(table.balance),
 		unlockedBalanceIdx: index().on(table.unlockedBalance),
 	})
@@ -657,7 +657,7 @@ export const deposits = onchainTable(
 	t => ({
 		id: t.text().primaryKey(),
 		chainId: t.integer().notNull(),
-		user_address: t.text().notNull(), // FIX: Renamed from 'user' to avoid PostgreSQL keyword conflict
+		userAddress: t.text().notNull(),
 		currency: t.hex().notNull(),
 		amount: t.bigint().notNull(),
 		timestamp: t.integer().notNull(),
@@ -665,14 +665,14 @@ export const deposits = onchainTable(
 		blockNumber: t.bigint().notNull(),
 	}),
 	table => ({
-		userIdx: index().on(table.user_address),
+		userIdx: index().on(table.userAddress),
 		currencyIdx: index().on(table.currency),
 		chainIdIdx: index().on(table.chainId),
 		timestampIdx: index().on(table.timestamp),
-		userCurrencyIdx: index().on(table.user_address, table.currency),
-		userChainIdx: index().on(table.user_address, table.chainId),
+		userCurrencyIdx: index().on(table.userAddress, table.currency),
+		userChainIdx: index().on(table.userAddress, table.chainId),
 		currencyChainIdx: index().on(table.currency, table.chainId),
-		userCurrencyChainIdx: index().on(table.user_address, table.currency, table.chainId),
+		userCurrencyChainIdx: index().on(table.userAddress, table.currency, table.chainId),
 		transactionIdx: index().on(table.transactionId),
 	})
 );
@@ -682,7 +682,7 @@ export const withdrawals = onchainTable(
 	t => ({
 		id: t.text().primaryKey(),
 		chainId: t.integer().notNull(),
-		user_address: t.text().notNull(), // FIX: Renamed from 'user' to avoid PostgreSQL keyword conflict
+		userAddress: t.text().notNull(),
 		currency: t.hex().notNull(),
 		amount: t.bigint().notNull(),
 		timestamp: t.integer().notNull(),
@@ -690,14 +690,14 @@ export const withdrawals = onchainTable(
 		blockNumber: t.bigint().notNull(),
 	}),
 	table => ({
-		userIdx: index().on(table.user_address),
+		userIdx: index().on(table.userAddress),
 		currencyIdx: index().on(table.currency),
 		chainIdIdx: index().on(table.chainId),
 		timestampIdx: index().on(table.timestamp),
-		userCurrencyIdx: index().on(table.user_address, table.currency),
-		userChainIdx: index().on(table.user_address, table.chainId),
+		userCurrencyIdx: index().on(table.userAddress, table.currency),
+		userChainIdx: index().on(table.userAddress, table.chainId),
 		currencyChainIdx: index().on(table.currency, table.chainId),
-		userCurrencyChainIdx: index().on(table.user_address, table.currency, table.chainId),
+		userCurrencyChainIdx: index().on(table.userAddress, table.currency, table.chainId),
 		transactionIdx: index().on(table.transactionId),
 	})
 );
@@ -707,7 +707,7 @@ export const lockEvents = onchainTable(
 	t => ({
 		id: t.text().primaryKey(),
 		chainId: t.integer().notNull(),
-		user_address: t.text().notNull(), // FIX: Renamed from 'user' to avoid PostgreSQL keyword conflict
+		userAddress: t.text().notNull(),
 		currency: t.hex().notNull(),
 		amount: t.bigint().notNull(),
 		timestamp: t.integer().notNull(),
@@ -715,14 +715,14 @@ export const lockEvents = onchainTable(
 		blockNumber: t.bigint().notNull(),
 	}),
 	table => ({
-		userIdx: index().on(table.user_address),
+		userIdx: index().on(table.userAddress),
 		currencyIdx: index().on(table.currency),
 		chainIdIdx: index().on(table.chainId),
 		timestampIdx: index().on(table.timestamp),
-		userCurrencyIdx: index().on(table.user_address, table.currency),
-		userChainIdx: index().on(table.user_address, table.chainId),
+		userCurrencyIdx: index().on(table.userAddress, table.currency),
+		userChainIdx: index().on(table.userAddress, table.chainId),
 		currencyChainIdx: index().on(table.currency, table.chainId),
-		userCurrencyChainIdx: index().on(table.user_address, table.currency, table.chainId),
+		userCurrencyChainIdx: index().on(table.userAddress, table.currency, table.chainId),
 		transactionIdx: index().on(table.transactionId),
 	})
 );
@@ -732,7 +732,7 @@ export const unlockEvents = onchainTable(
 	t => ({
 		id: t.text().primaryKey(),
 		chainId: t.integer().notNull(),
-		user_address: t.text().notNull(), // FIX: Renamed from 'user' to avoid PostgreSQL keyword conflict
+		userAddress: t.text().notNull(),
 		currency: t.hex().notNull(),
 		amount: t.bigint().notNull(),
 		timestamp: t.integer().notNull(),
@@ -740,14 +740,14 @@ export const unlockEvents = onchainTable(
 		blockNumber: t.bigint().notNull(),
 	}),
 	table => ({
-		userIdx: index().on(table.user_address),
+		userIdx: index().on(table.userAddress),
 		currencyIdx: index().on(table.currency),
 		chainIdIdx: index().on(table.chainId),
 		timestampIdx: index().on(table.timestamp),
-		userCurrencyIdx: index().on(table.user_address, table.currency),
-		userChainIdx: index().on(table.user_address, table.chainId),
+		userCurrencyIdx: index().on(table.userAddress, table.currency),
+		userChainIdx: index().on(table.userAddress, table.chainId),
 		currencyChainIdx: index().on(table.currency, table.chainId),
-		userCurrencyChainIdx: index().on(table.user_address, table.currency, table.chainId),
+		userCurrencyChainIdx: index().on(table.userAddress, table.currency, table.chainId),
 		transactionIdx: index().on(table.transactionId),
 	})
 );
@@ -762,7 +762,7 @@ export const lendingPositions = onchainTable(
 	t => ({
 		id: t.text().primaryKey(),
 		chainId: t.integer().notNull(),
-		user_address: t.text().notNull(), // CRITICAL FIX: Renamed from 'user' to avoid PostgreSQL keyword conflict
+		userAddress: t.text().notNull(), // CRITICAL FIX: Renamed from 'user' to avoid PostgreSQL keyword conflict
 		collateralToken: t.hex().notNull(),
 		debtToken: t.hex().notNull(),
 		collateralAmount: t.bigint().notNull(),
@@ -772,15 +772,15 @@ export const lendingPositions = onchainTable(
 		isActive: t.boolean().default(true),
 	}),
 	table => ({
-		userIdx: index().on(table.user_address),
+		userIdx: index().on(table.userAddress),
 		chainIdIdx: index().on(table.chainId),
 		collateralTokenIdx: index().on(table.collateralToken),
 		debtTokenIdx: index().on(table.debtToken),
-		userCollateralIdx: index().on(table.user_address, table.collateralToken),
-		userDebtIdx: index().on(table.user_address, table.debtToken),
+		userCollateralIdx: index().on(table.userAddress, table.collateralToken),
+		userDebtIdx: index().on(table.userAddress, table.debtToken),
 		isActiveIdx: index().on(table.isActive),
 		lastUpdatedIdx: index().on(table.lastUpdated),
-		userChainIdx: index().on(table.user_address, table.chainId),
+		userChainIdx: index().on(table.userAddress, table.chainId),
 	})
 );
 
@@ -790,7 +790,7 @@ export const lendingEvents = onchainTable(
 	t => ({
 		id: t.text().primaryKey(),
 		chainId: t.integer().notNull(),
-		user_address: t.text().notNull(), // CRITICAL FIX: Renamed from 'user' to avoid PostgreSQL reserved keyword conflict
+		userAddress: t.text().notNull(), // CRITICAL FIX: Renamed from 'user' to avoid PostgreSQL reserved keyword conflict
 		action: t.varchar().notNull(), // "SUPPLY", "BORROW", "REPAY", "WITHDRAW", "LIQUIDATE"
 		token: t.hex().notNull(),
 		amount: t.bigint().notNull(),
@@ -804,15 +804,15 @@ export const lendingEvents = onchainTable(
 		liquidatedAmount: t.bigint(), // For liquidation events
 	}),
 	table => ({
-		userIdx: index().on(table.user_address),
+		userIdx: index().on(table.userAddress),
 		chainIdIdx: index().on(table.chainId),
 		actionIdx: index().on(table.action),
 		tokenIdx: index().on(table.token),
 		timestampIdx: index().on(table.timestamp),
 		transactionIdx: index().on(table.transactionId),
-		userActionIdx: index().on(table.user_address, table.action),
+		userActionIdx: index().on(table.userAddress, table.action),
 		tokenActionIdx: index().on(table.token, table.action),
-		userTimestampIdx: index().on(table.user_address, table.timestamp),
+		userTimestampIdx: index().on(table.userAddress, table.timestamp),
 		healthFactorIdx: index().on(table.healthFactor),
 		liquidatorIdx: index().on(table.liquidator),
 	})
@@ -853,7 +853,7 @@ export const yieldAccruals = onchainTable(
 	t => ({
 		id: t.text().primaryKey(),
 		chainId: t.integer().notNull(),
-		user_address: t.text().notNull(), // FIX: Renamed from 'user' to avoid PostgreSQL keyword conflict
+		userAddress: t.text().notNull(),
 		token: t.hex().notNull(),
 		yieldType: t.varchar().notNull(), // "LENDING", "BORROWING"
 		accrualAmount: t.bigint().notNull(),
@@ -863,13 +863,13 @@ export const yieldAccruals = onchainTable(
 		cumulativeYield: t.bigint().notNull(), // Cumulative yield for this position
 	}),
 	table => ({
-		userIdx: index().on(table.user_address),
+		userIdx: index().on(table.userAddress),
 		chainIdIdx: index().on(table.chainId),
 		tokenIdx: index().on(table.token),
 		yieldTypeIdx: index().on(table.yieldType),
 		timestampIdx: index().on(table.timestamp),
-		userTokenIdx: index().on(table.user_address, table.token),
-		userYieldTypeIdx: index().on(table.user_address, table.yieldType),
+		userTokenIdx: index().on(table.userAddress, table.token),
+		userYieldTypeIdx: index().on(table.userAddress, table.yieldType),
 		tokenYieldTypeIdx: index().on(table.token, table.yieldType),
 		cumulativeYieldIdx: index().on(table.cumulativeYield),
 	})
@@ -990,7 +990,7 @@ export const userLendingStats = onchainTable(
 	t => ({
 		id: t.text().primaryKey(),
 		chainId: t.integer().notNull(),
-		user_address: t.text().notNull(), // FIX: Renamed from 'user' to avoid PostgreSQL keyword conflict
+		userAddress: t.text().notNull(),
 		totalSupplied: t.bigint().default(BigInt(0)),
 		totalBorrowed: t.bigint().default(BigInt(0)),
 		totalRepaid: t.bigint().default(BigInt(0)),
@@ -1005,9 +1005,9 @@ export const userLendingStats = onchainTable(
 		activePositions: t.integer().default(0),
 	}),
 	table => ({
-		userIdx: index().on(table.user_address),
+		userIdx: index().on(table.userAddress),
 		chainIdIdx: index().on(table.chainId),
-		userChainIdx: index().on(table.user_address, table.chainId),
+		userChainIdx: index().on(table.userAddress, table.chainId),
 		totalSuppliedIdx: index().on(table.totalSupplied),
 		totalBorrowedIdx: index().on(table.totalBorrowed),
 		activePositionsIdx: index().on(table.activePositions),
@@ -1050,7 +1050,7 @@ export const poolLendingStats = onchainTable(
 
 export const lendingPositionsRelations = relations(lendingPositions, ({ one, many }) => ({
 	user: one(users, {
-		fields: [lendingPositions.user_address, lendingPositions.chainId],
+		fields: [lendingPositions.userAddress, lendingPositions.chainId],
 		references: [users.address, users.chainId],
 	}),
 	collateralToken: one(currencies, {
@@ -1065,7 +1065,7 @@ export const lendingPositionsRelations = relations(lendingPositions, ({ one, man
 
 export const lendingEventsRelations = relations(lendingEvents, ({ one }) => ({
 	user: one(users, {
-		fields: [lendingEvents.user_address, lendingEvents.chainId],
+		fields: [lendingEvents.userAddress, lendingEvents.chainId],
 		references: [users.address, users.chainId],
 	}),
 	token: one(currencies, {
@@ -1102,7 +1102,7 @@ export const liquidationsRelations = relations(liquidations, ({ one }) => ({
 
 export const userLendingStatsRelations = relations(userLendingStats, ({ one }) => ({
 	user: one(users, {
-		fields: [userLendingStats.user_address, userLendingStats.chainId],
+		fields: [userLendingStats.userAddress, userLendingStats.chainId],
 		references: [users.address, users.chainId],
 	}),
 }));

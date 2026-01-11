@@ -96,7 +96,7 @@ async function recordLendingTransferEvents(
 		await db.insert(lendingEvents).values({
 			id: transferOutEventId,
 			chainId,
-			user: sender,
+			userAddress: sender,
 			action: "TRANSFER_OUT",
 			token: underlyingToken, // Use underlying token for consistency with other lending events
 			amount: amount, // Full amount transferred out
@@ -106,7 +106,7 @@ async function recordLendingTransferEvents(
 		}).onConflictDoUpdate({
 			id: transferOutEventId,
 			chainId,
-			user: sender,
+			userAddress: sender,
 			action: "TRANSFER_OUT",
 			token: underlyingToken,
 			amount: amount,
@@ -120,7 +120,7 @@ async function recordLendingTransferEvents(
 		await db.insert(lendingEvents).values({
 			id: transferInEventId,
 			chainId,
-			user: receiver,
+			userAddress: receiver,
 			action: "TRANSFER_IN",
 			token: underlyingToken, // Use underlying token for consistency
 			amount: netAmount, // Amount after fee
@@ -130,7 +130,7 @@ async function recordLendingTransferEvents(
 		}).onConflictDoUpdate({
 			id: transferInEventId,
 			chainId,
-			user: receiver,
+			userAddress: receiver,
 			action: "TRANSFER_IN",
 			token: underlyingToken,
 			amount: netAmount,
@@ -167,7 +167,7 @@ export async function handleDeposit({ event, context }: any) {
 	await updateIndexerStatus(context, 'BalanceManager:Deposit', event);
 	const { db } = context;
 	const chainId = context.network.chainId;
-	const user_address = event.args.user;
+	const userAddress = event.args.user;
 	const currency = getAddress(fromId(event.args.id));
 	const timestamp = Number(event.block.timestamp);
 
@@ -176,7 +176,7 @@ export async function handleDeposit({ event, context }: any) {
 	await db.insert(deposits).values({
 		id: depositId,
 		chainId: chainId,
-		user: user,
+		userAddress: userAddress,
 		currency: currency,
 		amount: BigInt(event.args.amount),
 		timestamp: timestamp,
@@ -185,14 +185,14 @@ export async function handleDeposit({ event, context }: any) {
 	});
 
 	// Track user
-	await upsertUserForDeposit(db, chainId, user, timestamp);
+	await upsertUserForDeposit(db, chainId, userAddress, timestamp);
 }
 
 export async function handleWithdrawal({ event, context }: any) {
 	await updateIndexerStatus(context, 'BalanceManager:Withdrawal', event);
 	const { db } = context;
 	const chainId = context.network.chainId;
-	const user_address = event.args.user;
+	const userAddress = event.args.user;
 	const currency = getAddress(fromId(event.args.id));
 	const timestamp = Number(event.block.timestamp);
 
@@ -201,7 +201,7 @@ export async function handleWithdrawal({ event, context }: any) {
 	await db.insert(withdrawals).values({
 		id: withdrawalId,
 		chainId: chainId,
-		user: user,
+		userAddress: userAddress,
 		currency: currency,
 		amount: BigInt(event.args.amount),
 		timestamp: timestamp,
@@ -210,7 +210,7 @@ export async function handleWithdrawal({ event, context }: any) {
 	});
 
 	// Track user activity
-	await upsertUserActivity(db, chainId, user, timestamp);
+	await upsertUserActivity(db, chainId, userAddress, timestamp);
 }
 
 export async function handleTransferFrom({ event, context }: any) {
@@ -277,7 +277,7 @@ export async function handleLock({ event, context }: any) {
 	await updateIndexerStatus(context, 'BalanceManager:Lock', event);
 	const { db } = context;
 	const chainId = context.network.chainId;
-	const user_address = event.args.user;
+	const userAddress = event.args.user;
 	const currency = getAddress(fromId(event.args.id));
 	const timestamp = Number(event.block.timestamp);
 
@@ -286,7 +286,7 @@ export async function handleLock({ event, context }: any) {
 	await db.insert(lockEvents).values({
 		id: lockEventId,
 		chainId: chainId,
-		user: user,
+		userAddress: userAddress,
 		currency: currency,
 		amount: BigInt(event.args.amount),
 		timestamp: timestamp,
@@ -295,14 +295,14 @@ export async function handleLock({ event, context }: any) {
 	});
 
 	// Track user activity
-	await upsertUserActivity(db, chainId, user, timestamp);
+	await upsertUserActivity(db, chainId, userAddress, timestamp);
 }
 
 export async function handleUnlock({ event, context }: any) {
 	await updateIndexerStatus(context, 'BalanceManager:Unlock', event);
 	const { db } = context;
 	const chainId = context.network.chainId;
-	const user_address = event.args.user;
+	const userAddress = event.args.user;
 	const currency = getAddress(fromId(event.args.id));
 	const timestamp = Number(event.block.timestamp);
 
@@ -311,7 +311,7 @@ export async function handleUnlock({ event, context }: any) {
 	await db.insert(unlockEvents).values({
 		id: unlockEventId,
 		chainId: chainId,
-		user: user,
+		userAddress: userAddress,
 		currency: currency,
 		amount: BigInt(event.args.amount),
 		timestamp: timestamp,
@@ -320,5 +320,5 @@ export async function handleUnlock({ event, context }: any) {
 	});
 
 	// Track user activity
-	await upsertUserActivity(db, chainId, user, timestamp);
+	await upsertUserActivity(db, chainId, userAddress, timestamp);
 }
