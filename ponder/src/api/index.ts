@@ -2551,19 +2551,40 @@ app.get("/api/lending/dashboard/:user", async c => {
 		const totalBorrowedRaw = borrows.reduce((sum, b) => sum + parseCurrency(b.currentDebt), 0);
 		const totalEarningsRaw = supplies.reduce((sum, s) => sum + parseCurrency(s.earnings), 0);
 
-		// Calculate weighted average APY
-		let weightedAPY = 0;
+		// Calculate total weighted supply earnings (amount × APY)
+		const totalWeightedSupplyRate = supplies.reduce((sum, supply) => {
+			const apyMatch = supply.apy.match(/([\d.]+)%/);
+			if (apyMatch) {
+				const apyValue = parseFloat(apyMatch[1]);
+				const supplyValue = parseCurrency(supply.currentValue);
+				return sum + apyValue * supplyValue;
+			}
+			return sum;
+		}, 0);
+
+		// Calculate weighted average supply APY
+		const weightedSupplyAPY = totalSuppliedRaw > 0 ? totalWeightedSupplyRate / totalSuppliedRaw : 0;
+
+		// Calculate total weighted borrow costs (amount × APY)
+		const totalWeightedBorrowRate = borrows.reduce((sum, borrow) => {
+			const apyMatch = borrow.apy.match(/([\d.]+)%/);
+			if (apyMatch) {
+				const apyValue = parseFloat(apyMatch[1]);
+				const borrowValue = parseCurrency(borrow.currentDebt);
+				return sum + apyValue * borrowValue;
+			}
+			return sum;
+		}, 0);
+
+		// Calculate weighted average borrow APY
+		const weightedBorrowAPY = totalBorrowedRaw > 0 ? totalWeightedBorrowRate / totalBorrowedRaw : 0;
+
+		// Calculate net APY = (supply earnings - borrow costs) / supplied capital
+		// NetAPY shows the net return on the user's supplied capital after borrow costs
+		// Formula: (Σ(supply_amount × supply_apy) - Σ(borrow_amount × borrow_apy)) / total_supplied
+		let netAPY = 0;
 		if (totalSuppliedRaw > 0) {
-			const totalWeightedRate = supplies.reduce((sum, supply) => {
-				const apyMatch = supply.apy.match(/([\d.]+)%/);
-				if (apyMatch) {
-					const apyValue = parseFloat(apyMatch[1]);
-					const supplyValue = parseCurrency(supply.currentValue);
-					return sum + apyValue * supplyValue;
-				}
-				return sum;
-			}, 0);
-			weightedAPY = totalWeightedRate / totalSuppliedRaw;
+			netAPY = (totalWeightedSupplyRate - totalWeightedBorrowRate) / totalSuppliedRaw;
 		}
 
 		// Calculate correct health factor based on real collateral and debt values
@@ -2646,7 +2667,7 @@ app.get("/api/lending/dashboard/:user", async c => {
 			summary: {
 				totalSupplied: totalSuppliedRaw.toFixed(2),
 				totalBorrowed: totalBorrowedRaw.toFixed(2),
-				netAPY: weightedAPY.toFixed(1),
+				netAPY: netAPY.toFixed(1),
 				totalEarnings: totalEarningsRaw.toFixed(2),
 				healthFactor,
 				borrowingPower: (totalCollateralValueRaw * 0.8).toFixed(2) // Simplified calculation
