@@ -620,7 +620,7 @@ export async function handleOrderCancelled({ event, context }: any) {
   logger.info('OrderCancelled event received', LogLabel.EVENT_HANDLER, 'handleOrderCancelled', {
     orderId: event.args.orderId,
     hashedOrderId,
-    user_address: event.args.user,
+    userAddress: event.args.user,
     status: event.args.status,
     poolAddress,
     txHash: event.transaction.hash,
@@ -641,7 +641,7 @@ export async function handleOrderCancelled({ event, context }: any) {
       logger.info('Order cancelled successfully', LogLabel.DATABASE, 'handleOrderCancelled', {
         hashedOrderId,
         orderId: event.args.orderId,
-        user_address: event.args.user,
+        userAddress: event.args.user,
         poolAddress,
         txHash: event.transaction.hash
       });

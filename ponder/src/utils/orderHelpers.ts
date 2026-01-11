@@ -289,7 +289,7 @@ export function createOrderData(
 	const orderData = {
 		id: createOrderId(chainId, args.orderId, poolId),
 		chainId,
-		user: args.user,
+		userAddress: args.user,
 		poolId,
 		orderId: args.orderId,
 		side,

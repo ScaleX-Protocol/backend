@@ -80,22 +80,22 @@ const sendToOtel = async (logEntry: {
       ],
     };
 
-    const response = await fetch(OTEL_LOGS_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(otelPayload),
-    });
+    // const response = await fetch(OTEL_LOGS_ENDPOINT, {
+    //   method: 'POST',
+    //   headers: {
+    //     'Content-Type': 'application/json',
+    //   },
+    //   body: JSON.stringify(otelPayload),
+    // });
 
-    // Log OTEL errors to console for debugging
-    if (!response.ok) {
-      const responseText = await response.text().catch(() => 'Unable to read response');
-      console.error(`[OTEL] Failed to send log to ${OTEL_LOGS_ENDPOINT}`);
-      console.error(`[OTEL] Status: ${response.status} ${response.statusText}`);
-      console.error(`[OTEL] Response: ${responseText}`);
-      console.error(`[OTEL] Payload: ${JSON.stringify(otelPayload, null, 2)}`);
-    }
+    // // Log OTEL errors to console for debugging
+    // if (!response.ok) {
+    //   const responseText = await response.text().catch(() => 'Unable to read response');
+    //   console.error(`[OTEL] Failed to send log to ${OTEL_LOGS_ENDPOINT}`);
+    //   console.error(`[OTEL] Status: ${response.status} ${response.statusText}`);
+    //   console.error(`[OTEL] Response: ${responseText}`);
+    //   console.error(`[OTEL] Payload: ${JSON.stringify(otelPayload, null, 2)}`);
+    // }
   } catch (error) {
     // Log OTEL connection errors for debugging
     console.error(`[OTEL] Connection error to ${OTEL_LOGS_ENDPOINT}`);

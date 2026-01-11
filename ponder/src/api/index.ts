@@ -852,7 +852,7 @@ app.get("/api/depth-orders", async c => {
 			}
 			bidsByPrice.get(price)!.push({
 				orderId: order.orderId.toString(),
-				user: order.user,
+				user: order.userAddress,
 				price: price,
 				quantity: order.quantity.toString(),
 				filled: order.filled.toString(),
@@ -861,7 +861,7 @@ app.get("/api/depth-orders", async c => {
 				type: order.type,
 				timestamp: Number(order.timestamp) * 1000,
 				side: order.side.toLowerCase(),
-				tag: getWalletNameByAddress(order.user)
+				tag: getWalletNameByAddress(order.userAddress)
 			});
 		});
 
@@ -873,7 +873,7 @@ app.get("/api/depth-orders", async c => {
 			}
 			asksByPrice.get(price)!.push({
 				orderId: order.orderId.toString(),
-				user: order.user,
+				user: order.userAddress,
 				price: price,
 				quantity: order.quantity.toString(),
 				filled: order.filled.toString(),
@@ -882,7 +882,7 @@ app.get("/api/depth-orders", async c => {
 				type: order.type,
 				timestamp: Number(order.timestamp) * 1000,
 				side: order.side.toLowerCase(),
-				tag: getWalletNameByAddress(order.user)
+				tag: getWalletNameByAddress(order.userAddress)
 			});
 		});
 
@@ -902,7 +902,7 @@ app.get("/api/depth-orders", async c => {
 		const allOrders = [...individualBids, ...individualAsks];
 
 		for (const order of allOrders) {
-			const walletTag = getWalletNameByAddress(order.user);
+			const walletTag = getWalletNameByAddress(order.userAddress);
 			walletSummary[walletTag] = (walletSummary[walletTag] || 0) + 1;
 		}
 
@@ -973,7 +973,7 @@ app.get("/api/trades", async c => {
 					.innerJoin(orders, eq(orderBookTrades.poolId, orders.poolId))
 					.where(and(
 						eq(orderBookTrades.poolId, poolId),
-						eq(orders.user, user.toLowerCase())
+						eq(orders.userAddress, user.toLowerCase())
 					))
 					.orderBy(desc(orderBookTrades.timestamp))
 					.limit(Math.min(limit, 100))
@@ -1185,7 +1185,7 @@ app.get("/api/allOrders", async c => {
 
 	try {
 		const baseQuery = db.select().from(orders);
-		let query = baseQuery.where(eq(orders.user, address as `0x${string}`));
+		let query = baseQuery.where(eq(orders.userAddress, address as `0x${string}`));
 
 		if (symbol) {
 			const queriedPools = await db.select().from(pools).where(eq(pools.coin, symbol)).orderBy(desc(pools.timestamp));
@@ -1196,7 +1196,7 @@ app.get("/api/allOrders", async c => {
 
 			const poolId = queriedPools[0]?.orderBook;
 			if (poolId) {
-				query = baseQuery.where(and(eq(orders.user, address as `0x${string}`), eq(orders.poolId, poolId)));
+				query = baseQuery.where(and(eq(orders.userAddress, address as `0x${string}`), eq(orders.poolId, poolId)));
 			}
 		}
 
@@ -1289,7 +1289,7 @@ app.get("/api/openOrders", async c => {
 		const baseQuery = db.select().from(orders);
 		let query = baseQuery.where(
 			and(
-				eq(orders.user, address as `0x${string}`),
+				eq(orders.userAddress, address as `0x${string}`),
 				or(eq(orders.status, "OPEN"), eq(orders.status, "PARTIALLY_FILLED"))
 			)
 		);
@@ -1305,7 +1305,7 @@ app.get("/api/openOrders", async c => {
 			if (poolId) {
 				query = baseQuery.where(
 					and(
-						eq(orders.user, address as `0x${string}`),
+						eq(orders.userAddress, address as `0x${string}`),
 						or(eq(orders.status, "OPEN"), eq(orders.status, "PARTIALLY_FILLED")),
 						eq(orders.poolId, poolId)
 					)
@@ -1717,11 +1717,11 @@ app.get("/api/account", async c => {
 	try {
 		// Fetch all balance events for the user from event tables
 		const [depositEvents, withdrawalEvents, lendingEventsData, lockEventsData, unlockEventsData] = await Promise.all([
-			db.select().from(deposits).where(eq(deposits.user, address as `0x${string}`)).execute(),
-			db.select().from(withdrawals).where(eq(withdrawals.user, address as `0x${string}`)).execute(),
-			db.select().from(lendingEvents).where(eq(lendingEvents.user, address as `0x${string}`)).execute(),
-			db.select().from(lockEvents).where(eq(lockEvents.user, address as `0x${string}`)).execute(),
-			db.select().from(unlockEvents).where(eq(unlockEvents.user, address as `0x${string}`)).execute(),
+			db.select().from(deposits).where(eq(deposits.userAddress, address as `0x${string}`)).execute(),
+			db.select().from(withdrawals).where(eq(withdrawals.userAddress, address as `0x${string}`)).execute(),
+			db.select().from(lendingEvents).where(eq(lendingEvents.userAddress, address as `0x${string}`)).execute(),
+			db.select().from(lockEvents).where(eq(lockEvents.userAddress, address as `0x${string}`)).execute(),
+			db.select().from(unlockEvents).where(eq(unlockEvents.userAddress, address as `0x${string}`)).execute(),
 		]);
 
 		// Calculate balances from events for each currency
@@ -1817,7 +1817,7 @@ app.get("/api/account", async c => {
 		const orderCount = await db
 			.select({ count: sql`count(*)` })
 			.from(orders)
-			.where(eq(orders.user, address as `0x${string}`))
+			.where(eq(orders.userAddress, address as `0x${string}`))
 			.execute();
 
 		const response = {
@@ -1857,7 +1857,7 @@ app.get("/api/lending/dashboard/:user", async c => {
 			.select()
 			.from(lendingEvents)
 			.where(and(
-				eq(lendingEvents.user, user as `0x${string}`),
+				eq(lendingEvents.userAddress, user as `0x${string}`),
 				eq(lendingEvents.chainId, targetChainId)
 			))
 			.execute();
@@ -1917,7 +1917,7 @@ app.get("/api/lending/dashboard/:user", async c => {
 			})
 				.from(lendingEvents)
 				.where(and(
-					eq(lendingEvents.user, user as `0x${string}`),
+					eq(lendingEvents.userAddress, user as `0x${string}`),
 					eq(lendingEvents.chainId, targetChainId)
 				))
 				.orderBy(desc(lendingEvents.timestamp))
@@ -1935,7 +1935,7 @@ app.get("/api/lending/dashboard/:user", async c => {
 			})
 				.from(lendingPositions)
 				.where(and(
-					eq(lendingPositions.user, user as `0x${string}`),
+					eq(lendingPositions.userAddress, user as `0x${string}`),
 					eq(lendingPositions.chainId, targetChainId),
 					eq(lendingPositions.isActive, true)
 				))
@@ -2962,7 +2962,7 @@ function calculatePositionsFromEvents(events: any[]): any[] {
 		if (balance.supplied > 0 || balance.borrowed > 0) {
 			positions.push({
 				id: `calculated-${tokenAddress}`,
-				user: events[0]?.user,
+				user: events[0]?.userAddress,
 				collateralToken: balance.supplied > 0 ? tokenAddress : null,
 				debtToken: balance.borrowed > 0 ? tokenAddress : null,
 				collateralAmount: balance.supplied,
