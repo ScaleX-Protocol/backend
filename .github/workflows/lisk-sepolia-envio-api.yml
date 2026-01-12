@@ -1,0 +1,143 @@
+name: Lisk Sepolia - Envio API Deployment
+
+on:
+  push:
+    branches: [ lisk-sepolia-api ]
+    paths:
+      - 'envio-api/**'
+      - 'docker-compose.envio-api.yml'
+      - '.github/workflows/lisk-sepolia-envio-api.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, scalex]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Set up Docker Compose
+      run: |
+        if ! command -v docker-compose &> /dev/null; then
+          echo "Installing Docker Compose..."
+          sudo curl -L "https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          sudo chmod +x /usr/local/bin/docker-compose
+        else
+          echo "Docker Compose already installed:"
+          docker-compose --version
+        fi
+
+    - name: Create .env file from secrets
+      env:
+        ENVIO_API_DATABASE_URL: ${{ secrets.ENVIO_API_DATABASE_URL }}
+        ENVIO_API_PORT: ${{ secrets.ENVIO_API_PORT }}
+        ENVIO_API_CORS_ORIGIN: ${{ secrets.ENVIO_API_CORS_ORIGIN }}
+        NODE_ENV: production
+      run: |
+        cat > ./envio-api/.env << EOL
+        ENVIO_API_DATABASE_URL=${ENVIO_API_DATABASE_URL}
+        ENVIO_API_PORT=${ENVIO_API_PORT:-3000}
+        ENVIO_API_CORS_ORIGIN=${ENVIO_API_CORS_ORIGIN:-*}
+        NODE_ENV=${NODE_ENV}
+        EOL
+
+    - name: Verify networks exist
+      run: |
+        # Check if the indexer network exists, create if it doesn't
+        if ! docker network ls | grep -q "indexer_scalex-network"; then
+          echo "Creating indexer_scalex-network..."
+          docker network create indexer_scalex-network
+        else
+          echo "indexer_scalex-network already exists"
+        fi
+
+        # Check if infrastructure network exists, create if it doesn't
+        if ! docker network ls | grep -q "infrastructure"; then
+          echo "Creating infrastructure network..."
+          docker network create infrastructure
+        else
+          echo "infrastructure network already exists"
+        fi
+
+    - name: Deploy Envio API service
+      env:
+        CHAIN_NAME: lisk-sepolia
+        ENVIO_HOST_NAME: lisk-sepolia-envio-api.scalex.money
+      run: |
+        echo "Deploying Lisk Sepolia Envio API service..."
+
+        # Set project name to avoid conflicts
+        export COMPOSE_PROJECT_NAME=lisk-sepolia-envio-api
+
+        echo "=== Building Lisk Sepolia Envio API service ==="
+        docker-compose -f docker-compose.envio-api.yml -p lisk-sepolia-envio-api build --no-cache || {
+          echo "Build failed, checking build logs..."
+          docker-compose -f docker-compose.envio-api.yml -p lisk-sepolia-envio-api build --no-cache --progress=plain
+          exit 1
+        }
+
+        # Stop existing Envio API service
+        docker-compose -f docker-compose.envio-api.yml -p lisk-sepolia-envio-api down --remove-orphans || true
+
+        # Start Envio API service
+        docker-compose -f docker-compose.envio-api.yml -p lisk-sepolia-envio-api up -d || {
+          echo "Envio API service start failed, checking logs..."
+          docker-compose -f docker-compose.envio-api.yml -p lisk-sepolia-envio-api logs
+          exit 1
+        }
+
+        # Wait for service to be healthy
+        sleep 30
+
+        # Check service status
+        docker-compose -f docker-compose.envio-api.yml -p lisk-sepolia-envio-api ps
+
+        echo "Lisk Sepolia Envio API deployment completed"
+
+    - name: Verify deployment
+      env:
+        CHAIN_NAME: lisk-sepolia
+        ENVIO_HOST_NAME: lisk-sepolia-envio-api.scalex.money
+      run: |
+        export COMPOSE_PROJECT_NAME=lisk-sepolia-envio-api
+
+        echo "==========================================="
+        echo "DEPLOYMENT VERIFICATION - LISK SEPOLIA ENVIO API"
+        echo "==========================================="
+
+        echo ""
+        echo "=== 1. ENVIO API CONTAINER STATUS CHECK ==="
+        docker-compose -f docker-compose.envio-api.yml -p lisk-sepolia-envio-api ps
+
+        echo ""
+        echo "=== 2. ENVIO API SERVICE HEALTH CHECK ==="
+        # Check if SCALEX Envio API is responding
+        for i in {1..12}; do
+          echo "Attempt $i/12: Testing SCALEX Envio API..."
+          if docker-compose -f docker-compose.envio-api.yml -p lisk-sepolia-envio-api exec -T scalex-envio-api curl -f http://localhost:3000/ 2>/dev/null; then
+            echo "Lisk Sepolia SCALEX Envio API is responding"
+            break
+          else
+            echo "SCALEX Envio API not ready, waiting 5 seconds..."
+            sleep 5
+          fi
+        done
+
+        echo ""
+        echo "=== 3. ENVIO API LOG ANALYSIS ==="
+        echo "--- SCALEX Envio API Logs (last 20 lines) ---"
+        docker-compose -f docker-compose.envio-api.yml -p lisk-sepolia-envio-api logs --tail=20 scalex-envio-api
+
+        echo ""
+        echo "==========================================="
+        echo "LISK SEPOLIA ENVIO API VERIFICATION COMPLETE"
+        echo "==========================================="
+
+    - name: Cleanup .env file
+      if: always()
+      run: |
+        rm -f ./envio-api/.env
