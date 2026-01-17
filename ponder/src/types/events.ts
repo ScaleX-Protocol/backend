@@ -17,6 +17,9 @@ export interface OrderPlacedEventArgs {
 	expiry: number;
 	isMarketOrder: boolean;
 	status: number;
+	autoRepay: boolean;
+	autoBorrow: boolean;
+	timeInForce: number;
 }
 
 export interface UpdateOrderEventArgs {

@@ -9,7 +9,7 @@ export const faucetRequests = pgTable('faucet_requests', {
   tokenAddress: varchar('token_address', { length: 42 }).notNull(),
   tokenSymbol: varchar('token_symbol', { length: 20 }).notNull(),
   tokenDecimals: integer('token_decimals').notNull(),
-  amount: bigint('amount', { mode: 'bigint' }).notNull(),
+  amount: numeric('amount').notNull(),
   amountFormatted: varchar('amount_formatted', { length: 50 }).notNull(),
   status: varchar('status', { length: 20 }).notNull(), // pending, completed, failed
   transactionHash: varchar('transaction_hash', { length: 66 }),

@@ -61,6 +61,8 @@ services:
       - PONDER_DATABASE_URL=postgresql://postgres:password@postgres:5432/ponder_core
       - REDIS_URL=redis://redis:6379
       - PONDER_PORT=42070
+    ports:
+      - "42070"  
     depends_on:
       - postgres
       - redis
@@ -69,6 +71,18 @@ services:
     restart: unless-stopped
     volumes:
       - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:42070/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - traefik.enable=true
+      - traefik.http.services.clob-indexer.loadbalancer.server.port=42070
+      - traefik.http.routers.clob-indexer.rule=Host(`base-sepolia-indexer.scalex.money`)
+      - traefik.http.routers.clob-indexer.entrypoints=websecure
+      - traefik.http.routers.clob-indexer.tls=true
 
   # WebSocket service
   websocket-service:
@@ -94,6 +108,8 @@ services:
     networks:
       - scalex-network
     restart: unless-stopped
+    labels:
+      - traefik.enable=true
 
   # Analytics service
   analytics-service:
@@ -122,6 +138,8 @@ services:
     networks:
       - scalex-network
     restart: unless-stopped
+    labels:
+      - traefik.enable=true
 
   # PostgreSQL database (Main indexer DB)
   postgres:

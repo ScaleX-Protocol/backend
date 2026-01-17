@@ -1,75 +1,92 @@
-import { createLogger } from '../utils/logger';
+import { log, LogLevel, LogLabel } from './logger';
 
 // Environment-aware logging levels
 const LOG_LEVELS = {
   SILENT: 0,
-  ERROR: 1, 
+  ERROR: 1,
   WARN: 2,
   INFO: 3,
   DEBUG: 4,
   TRACE: 5
 } as const;
 
-const currentLogLevel = process.env.NODE_ENV === 'production' 
-  ? LOG_LEVELS.INFO 
-  : process.env.LOG_LEVEL === 'debug' 
-    ? LOG_LEVELS.DEBUG 
+const currentLogLevel = process.env.NODE_ENV === 'production'
+  ? LOG_LEVELS.INFO
+  : process.env.LOG_LEVEL === 'debug'
+    ? LOG_LEVELS.DEBUG
     : LOG_LEVELS.INFO;
 
 export class SimpleLogger {
-  private logger: ReturnType<typeof createLogger>;
   private moduleName: string;
   private functionName: string;
-  
+
   constructor(module: string, functionName?: string) {
     this.moduleName = module;
-    this.functionName = functionName || '';
-    this.logger = createLogger(module, this.functionName);
+    this.functionName = functionName || 'unknown';
   }
 
   private shouldLog(level: keyof typeof LOG_LEVELS): boolean {
     return LOG_LEVELS[level] <= currentLogLevel;
   }
 
-  // Only log critical errors
+  // Map module name to LogLabel
+  private getLabel(): LogLabel {
+    const moduleLower = this.moduleName.toLowerCase();
+    if (moduleLower.includes('event') || moduleLower.includes('handler')) return LogLabel.EVENT_HANDLER;
+    if (moduleLower.includes('db') || moduleLower.includes('database')) return LogLabel.DATABASE;
+    if (moduleLower.includes('sync')) return LogLabel.SYNC;
+    if (moduleLower.includes('api')) return LogLabel.API;
+    if (moduleLower.includes('valid')) return LogLabel.VALIDATION;
+    return LogLabel.INDEXER;
+  }
+
+  // Log error - sends to console, file, and OTEL
   error(message: string, error?: Error, meta?: Record<string, any>) {
     if (this.shouldLog('ERROR')) {
-      this.logger.writeError(error || new Error(message), meta);
+      const data = {
+        ...meta,
+        ...(error && {
+          errorName: error.name,
+          errorMessage: error.message,
+          errorStack: error.stack?.substring(0, 500),
+        }),
+      };
+      log(LogLevel.ERROR, message, this.getLabel(), data, this.moduleName, this.functionName);
     }
   }
 
-  // Only log important warnings
+  // Log warning - sends to console, file, and OTEL
   warn(message: string, meta?: Record<string, any>) {
     if (this.shouldLog('WARN')) {
-      console.warn(`[${this.moduleName}:${this.functionName}] ${message}`, meta);
+      log(LogLevel.WARN, message, this.getLabel(), meta || {}, this.moduleName, this.functionName);
     }
   }
 
-  // Only log important business events
+  // Log info - sends to console, file, and OTEL
   info(message: string, meta?: Record<string, any>) {
     if (this.shouldLog('INFO')) {
-      console.info(`[${this.moduleName}:${this.functionName}] ${message}`, meta);
+      log(LogLevel.INFO, message, this.getLabel(), meta || {}, this.moduleName, this.functionName);
     }
   }
 
-  // Minimal debug logging for troubleshooting
+  // Log debug - sends to console, file, and OTEL
   debug(message: string, meta?: Record<string, any>) {
     if (this.shouldLog('DEBUG')) {
-      console.debug(`[${this.moduleName}:${this.functionName}] ${message}`, meta);
+      log(LogLevel.DEBUG, message, this.getLabel(), meta || {}, this.moduleName, this.functionName);
     }
   }
 
-  // Original methods for backward compatibility
+  // Backward compatibility methods
   log(event: any, step: string) {
-    return this.logger.log(event, step);
+    this.info(step, { event: typeof event === 'object' ? event : { value: event } });
   }
 
   logSimple(blockNumber: number | undefined, step: string) {
-    return this.logger.logSimple(blockNumber, step);
+    this.info(step, { blockNumber });
   }
 
   writeError(error: Error, functionParameters?: any, event?: any) {
-    return this.logger.writeError(error, functionParameters, event);
+    this.error(error.message, error, { functionParameters, event });
   }
 }
 

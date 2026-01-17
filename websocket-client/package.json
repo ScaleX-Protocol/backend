@@ -4,18 +4,22 @@
     "description": "WebSocket client to test the CLOB DEX WebSocket server functions",
     "type": "module",
     "scripts": {
-      "client": "bun run websocket-client.ts"
+        "client": "npx tsx websocket-client.ts",
+        "client-auto": "npx tsx websocket-client-non-interactive.ts"
     },
     "dependencies": {
-      "ws": "^8.14.2"
+        "dotenv": "^17.2.3",
+        "tsx": "^4.21.0",
+        "ws": "^8.14.2",
+        "wscat": "^6.1.0"
     },
     "devDependencies": {
-      "@types/node": "^20.8.2",
-      "@types/ws": "^8.5.5",
-      "typescript": "^5.2.2",
-      "bun-types": "latest"
+        "@types/node": "^20.8.2",
+        "@types/ws": "^8.5.5",
+        "bun-types": "latest",
+        "typescript": "^5.2.2"
     },
     "engines": {
-      "bun": ">=1.0.0"
+        "bun": ">=1.0.0"
     }
-  }
+}

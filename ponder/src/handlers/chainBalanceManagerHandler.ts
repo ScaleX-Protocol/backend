@@ -1,6 +1,7 @@
 import { getEventPublisher } from "@/events/index";
+import { updateIndexerStatus } from "@/utils/indexerStatus";
 import dotenv from "dotenv";
-import { createLogger, LogLabel, log, LogLevel, ServiceName } from "../utils/logger";
+import { createLogger, LogLabel, log, LogLevel } from "../utils/logger";
 import {
   chainBalanceDeposits,
   chainBalanceStates,
@@ -45,6 +46,7 @@ async function publishChainBalanceEvent(
 }
 
 export async function handleDeposit({ event, context }: any) {
+  await updateIndexerStatus(context, 'ChainBalanceManager:Deposit', event);
   try {
     const { depositor, recipient, token, amount } = event.args;
     const chainId = context.network.chainId;
@@ -52,15 +54,15 @@ export async function handleDeposit({ event, context }: any) {
     const timestamp = Number(event.block.timestamp);
 
     if (!db) {
-      log(LogLevel.ERROR, 'Database context is null or undefined', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'chainBalanceManagerHandler.ts', 'handleDeposit');
+      log(LogLevel.ERROR, 'Database context is null or undefined', LogLabel.VALIDATION, {}, 'chainBalanceManagerHandler.ts', 'handleDeposit');
       return;
     }
     if (!chainId) {
-      log(LogLevel.ERROR, 'Chain ID is missing from context', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'chainBalanceManagerHandler.ts', 'handleDeposit');
+      log(LogLevel.ERROR, 'Chain ID is missing from context', LogLabel.VALIDATION, {}, 'chainBalanceManagerHandler.ts', 'handleDeposit');
       return;
     }
     if (!event.transaction?.hash) {
-      log(LogLevel.ERROR, 'Transaction hash is missing', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'chainBalanceManagerHandler.ts', 'handleDeposit');
+      log(LogLevel.ERROR, 'Transaction hash is missing', LogLabel.VALIDATION, {}, 'chainBalanceManagerHandler.ts', 'handleDeposit');
       return;
     }
 
@@ -81,7 +83,7 @@ export async function handleDeposit({ event, context }: any) {
       });
     } catch (error) {
       logger.error('Deposit insertion failed', LogLabel.DATABASE, 'handleDeposit', { error: error instanceof Error ? error.message : String(error) });
-      log(LogLevel.ERROR, 'Failed to insert deposit', LogLabel.DATABASE, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleDeposit');
+      log(LogLevel.ERROR, 'Failed to insert deposit', LogLabel.DATABASE, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleDeposit');
       return;
     }
 
@@ -155,7 +157,7 @@ export async function handleDeposit({ event, context }: any) {
       }
     } catch (error) {
       logger.error('Balance state update failed', LogLabel.DATABASE, 'handleDeposit', { error: error instanceof Error ? error.message : String(error) });
-      log(LogLevel.ERROR, 'Failed to update balance state for deposit', LogLabel.DATABASE, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleDeposit');
+      log(LogLevel.ERROR, 'Failed to update balance state for deposit', LogLabel.DATABASE, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleDeposit');
       return;
     }
 
@@ -175,12 +177,13 @@ export async function handleDeposit({ event, context }: any) {
       logger.error('Failed to publish deposit event', LogLabel.EVENT_HANDLER, 'handleDeposit', { error: error instanceof Error ? error.message : String(error) });
     }
   } catch (error) {
-    log(LogLevel.ERROR, 'Deposit handler error', LogLabel.EVENT_HANDLER, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleDeposit');
+    log(LogLevel.ERROR, 'Deposit handler error', LogLabel.EVENT_HANDLER, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleDeposit');
     return;
   }
 }
 
 export async function handleWithdraw({ event, context }: any) {
+  await updateIndexerStatus(context, 'ChainBalanceManager:Withdraw', event);
   try {
     const { user, token, amount } = event.args;
     const chainId = context.network.chainId;
@@ -189,15 +192,15 @@ export async function handleWithdraw({ event, context }: any) {
     const timestamp = Number(block.timestamp);
 
     if (!db) {
-      log(LogLevel.ERROR, 'Database context is null or undefined', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'chainBalanceManagerHandler.ts', 'handleWithdraw');
+      log(LogLevel.ERROR, 'Database context is null or undefined', LogLabel.VALIDATION, {}, 'chainBalanceManagerHandler.ts', 'handleWithdraw');
       return;
     }
     if (!chainId) {
-      log(LogLevel.ERROR, 'Chain ID is missing from context', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'chainBalanceManagerHandler.ts', 'handleWithdraw');
+      log(LogLevel.ERROR, 'Chain ID is missing from context', LogLabel.VALIDATION, {}, 'chainBalanceManagerHandler.ts', 'handleWithdraw');
       return;
     }
     if (!event.transaction?.hash) {
-      log(LogLevel.ERROR, 'Transaction hash is missing', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'chainBalanceManagerHandler.ts', 'handleWithdraw');
+      log(LogLevel.ERROR, 'Transaction hash is missing', LogLabel.VALIDATION, {}, 'chainBalanceManagerHandler.ts', 'handleWithdraw');
       return;
     }
 
@@ -218,7 +221,7 @@ export async function handleWithdraw({ event, context }: any) {
       });
     } catch (error) {
       logger.error('Withdrawal insertion failed', LogLabel.DATABASE, 'handleWithdraw', { error: error instanceof Error ? error.message : String(error) });
-      log(LogLevel.ERROR, 'Failed to insert withdrawal', LogLabel.DATABASE, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleWithdraw');
+      log(LogLevel.ERROR, 'Failed to insert withdrawal', LogLabel.DATABASE, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleWithdraw');
       return;
     }
 
@@ -240,7 +243,7 @@ export async function handleWithdraw({ event, context }: any) {
       }
     } catch (error) {
       logger.error('Balance state update failed', LogLabel.DATABASE, 'handleWithdraw', { error: error instanceof Error ? error.message : String(error) });
-      log(LogLevel.ERROR, 'Failed to update balance state for withdraw', LogLabel.DATABASE, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleWithdraw');
+      log(LogLevel.ERROR, 'Failed to update balance state for withdraw', LogLabel.DATABASE, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleWithdraw');
       return;
     }
 
@@ -260,12 +263,13 @@ export async function handleWithdraw({ event, context }: any) {
       logger.error('Failed to publish withdraw event', LogLabel.EVENT_HANDLER, 'handleWithdraw', { error: error instanceof Error ? error.message : String(error) });
     }
   } catch (error) {
-    log(LogLevel.ERROR, 'Withdraw handler error', LogLabel.EVENT_HANDLER, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleWithdraw');
+    log(LogLevel.ERROR, 'Withdraw handler error', LogLabel.EVENT_HANDLER, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleWithdraw');
     return;
   }
 }
 
 export async function handleUnlock({ event, context }: any) {
+  await updateIndexerStatus(context, 'ChainBalanceManager:Unlock', event);
   try {
     const { user, token, amount } = event.args;
     const chainId = context.network.chainId;
@@ -274,15 +278,15 @@ export async function handleUnlock({ event, context }: any) {
     const timestamp = Number(block.timestamp);
 
     if (!db) {
-      log(LogLevel.ERROR, 'Database context is null or undefined', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'chainBalanceManagerHandler.ts', 'handleUnlock');
+      log(LogLevel.ERROR, 'Database context is null or undefined', LogLabel.VALIDATION, {}, 'chainBalanceManagerHandler.ts', 'handleUnlock');
       return;
     }
     if (!chainId) {
-      log(LogLevel.ERROR, 'Chain ID is missing from context', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'chainBalanceManagerHandler.ts', 'handleUnlock');
+      log(LogLevel.ERROR, 'Chain ID is missing from context', LogLabel.VALIDATION, {}, 'chainBalanceManagerHandler.ts', 'handleUnlock');
       return;
     }
     if (!event.transaction?.hash) {
-      log(LogLevel.ERROR, 'Transaction hash is missing', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'chainBalanceManagerHandler.ts', 'handleUnlock');
+      log(LogLevel.ERROR, 'Transaction hash is missing', LogLabel.VALIDATION, {}, 'chainBalanceManagerHandler.ts', 'handleUnlock');
       return;
     }
 
@@ -302,7 +306,7 @@ export async function handleUnlock({ event, context }: any) {
       });
     } catch (error) {
       logger.error('Unlock insertion failed', LogLabel.DATABASE, 'handleUnlock', { error: error instanceof Error ? error.message : String(error) });
-      log(LogLevel.ERROR, 'Failed to insert unlock', LogLabel.DATABASE, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleUnlock');
+      log(LogLevel.ERROR, 'Failed to insert unlock', LogLabel.DATABASE, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleUnlock');
       return;
     }
 
@@ -325,7 +329,7 @@ export async function handleUnlock({ event, context }: any) {
       }
     } catch (error) {
       logger.error('Balance state update failed', LogLabel.DATABASE, 'handleUnlock', { error: error instanceof Error ? error.message : String(error) });
-      log(LogLevel.ERROR, 'Failed to update balance state for unlock', LogLabel.DATABASE, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleUnlock');
+      log(LogLevel.ERROR, 'Failed to update balance state for unlock', LogLabel.DATABASE, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleUnlock');
       return;
     }
 
@@ -345,12 +349,13 @@ export async function handleUnlock({ event, context }: any) {
       logger.error('Failed to publish unlock event', LogLabel.EVENT_HANDLER, 'handleUnlock', { error: error instanceof Error ? error.message : String(error) });
     }
   } catch (error) {
-    log(LogLevel.ERROR, 'Unlock handler error', LogLabel.EVENT_HANDLER, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleUnlock');
+    log(LogLevel.ERROR, 'Unlock handler error', LogLabel.EVENT_HANDLER, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleUnlock');
     return;
   }
 }
 
 export async function handleClaim({ event, context }: any) {
+  await updateIndexerStatus(context, 'ChainBalanceManager:Claim', event);
   try {
     const { user, token, amount } = event.args;
     const chainId = context.network.chainId;
@@ -359,15 +364,15 @@ export async function handleClaim({ event, context }: any) {
     const timestamp = Number(block.timestamp);
 
     if (!db) {
-      log(LogLevel.ERROR, 'Database context is null or undefined', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'chainBalanceManagerHandler.ts', 'handleClaim');
+      log(LogLevel.ERROR, 'Database context is null or undefined', LogLabel.VALIDATION, {}, 'chainBalanceManagerHandler.ts', 'handleClaim');
       return;
     }
     if (!chainId) {
-      log(LogLevel.ERROR, 'Chain ID is missing from context', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'chainBalanceManagerHandler.ts', 'handleClaim');
+      log(LogLevel.ERROR, 'Chain ID is missing from context', LogLabel.VALIDATION, {}, 'chainBalanceManagerHandler.ts', 'handleClaim');
       return;
     }
     if (!event.transaction?.hash) {
-      log(LogLevel.ERROR, 'Transaction hash is missing', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'chainBalanceManagerHandler.ts', 'handleClaim');
+      log(LogLevel.ERROR, 'Transaction hash is missing', LogLabel.VALIDATION, {}, 'chainBalanceManagerHandler.ts', 'handleClaim');
       return;
     }
 
@@ -388,7 +393,7 @@ export async function handleClaim({ event, context }: any) {
       });
     } catch (error) {
       logger.error('Claim insertion failed', LogLabel.DATABASE, 'handleClaim', { error: error instanceof Error ? error.message : String(error) });
-      log(LogLevel.ERROR, 'Failed to insert claim', LogLabel.DATABASE, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleClaim');
+      log(LogLevel.ERROR, 'Failed to insert claim', LogLabel.DATABASE, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleClaim');
       return;
     }
 
@@ -410,7 +415,7 @@ export async function handleClaim({ event, context }: any) {
       }
     } catch (error) {
       logger.error('Balance state update failed', LogLabel.DATABASE, 'handleClaim', { error: error instanceof Error ? error.message : String(error) });
-      log(LogLevel.ERROR, 'Failed to update balance state for claim', LogLabel.DATABASE, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleClaim');
+      log(LogLevel.ERROR, 'Failed to update balance state for claim', LogLabel.DATABASE, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleClaim');
       return;
     }
 
@@ -430,12 +435,13 @@ export async function handleClaim({ event, context }: any) {
       logger.error('Failed to publish claim event', LogLabel.EVENT_HANDLER, 'handleClaim', { error: error instanceof Error ? error.message : String(error) });
     }
   } catch (error) {
-    log(LogLevel.ERROR, 'Claim handler error', LogLabel.EVENT_HANDLER, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleClaim');
+    log(LogLevel.ERROR, 'Claim handler error', LogLabel.EVENT_HANDLER, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleClaim');
     return;
   }
 }
 
 export async function handleTokenWhitelisted({ event, context }: any) {
+  await updateIndexerStatus(context, 'ChainBalanceManager:TokenWhitelisted', event);
   try {
     const { token } = event.args;
     const chainId = context.network.chainId;
@@ -443,15 +449,15 @@ export async function handleTokenWhitelisted({ event, context }: any) {
     const timestamp = Number(event.block.timestamp);
 
     if (!db) {
-      log(LogLevel.ERROR, 'Database context is null or undefined', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'chainBalanceManagerHandler.ts', 'handleTokenWhitelisted');
+      log(LogLevel.ERROR, 'Database context is null or undefined', LogLabel.VALIDATION, {}, 'chainBalanceManagerHandler.ts', 'handleTokenWhitelisted');
       return;
     }
     if (!chainId) {
-      log(LogLevel.ERROR, 'Chain ID is missing from context', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'chainBalanceManagerHandler.ts', 'handleTokenWhitelisted');
+      log(LogLevel.ERROR, 'Chain ID is missing from context', LogLabel.VALIDATION, {}, 'chainBalanceManagerHandler.ts', 'handleTokenWhitelisted');
       return;
     }
     if (!event.transaction?.hash) {
-      log(LogLevel.ERROR, 'Transaction hash is missing', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'chainBalanceManagerHandler.ts', 'handleTokenWhitelisted');
+      log(LogLevel.ERROR, 'Transaction hash is missing', LogLabel.VALIDATION, {}, 'chainBalanceManagerHandler.ts', 'handleTokenWhitelisted');
       return;
     }
 
@@ -470,16 +476,17 @@ export async function handleTokenWhitelisted({ event, context }: any) {
       });
     } catch (error) {
       logger.error('Token whitelist insertion failed', LogLabel.DATABASE, 'handleTokenWhitelisted', { error: error instanceof Error ? error.message : String(error) });
-      log(LogLevel.ERROR, 'Failed to insert token whitelist', LogLabel.DATABASE, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleTokenWhitelisted');
+      log(LogLevel.ERROR, 'Failed to insert token whitelist', LogLabel.DATABASE, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleTokenWhitelisted');
       return;
     }
   } catch (error) {
-    log(LogLevel.ERROR, 'TokenWhitelisted handler error', LogLabel.EVENT_HANDLER, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleTokenWhitelisted');
+    log(LogLevel.ERROR, 'TokenWhitelisted handler error', LogLabel.EVENT_HANDLER, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleTokenWhitelisted');
     return;
   }
 }
 
 export async function handleTokenRemoved({ event, context }: any) {
+  await updateIndexerStatus(context, 'ChainBalanceManager:TokenRemoved', event);
   try {
     const { token } = event.args;
     const chainId = context.network.chainId;
@@ -487,15 +494,15 @@ export async function handleTokenRemoved({ event, context }: any) {
     const timestamp = Number(event.block.timestamp);
 
     if (!db) {
-      log(LogLevel.ERROR, 'Database context is null or undefined', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'chainBalanceManagerHandler.ts', 'handleTokenRemoved');
+      log(LogLevel.ERROR, 'Database context is null or undefined', LogLabel.VALIDATION, {}, 'chainBalanceManagerHandler.ts', 'handleTokenRemoved');
       return;
     }
     if (!chainId) {
-      log(LogLevel.ERROR, 'Chain ID is missing from context', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'chainBalanceManagerHandler.ts', 'handleTokenRemoved');
+      log(LogLevel.ERROR, 'Chain ID is missing from context', LogLabel.VALIDATION, {}, 'chainBalanceManagerHandler.ts', 'handleTokenRemoved');
       return;
     }
     if (!event.transaction?.hash) {
-      log(LogLevel.ERROR, 'Transaction hash is missing', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'chainBalanceManagerHandler.ts', 'handleTokenRemoved');
+      log(LogLevel.ERROR, 'Transaction hash is missing', LogLabel.VALIDATION, {}, 'chainBalanceManagerHandler.ts', 'handleTokenRemoved');
       return;
     }
 
@@ -514,35 +521,37 @@ export async function handleTokenRemoved({ event, context }: any) {
       });
     } catch (error) {
       logger.error('Token removal insertion failed', LogLabel.DATABASE, 'handleTokenRemoved', { error: error instanceof Error ? error.message : String(error) });
-      log(LogLevel.ERROR, 'Failed to insert token removal', LogLabel.DATABASE, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleTokenRemoved');
+      log(LogLevel.ERROR, 'Failed to insert token removal', LogLabel.DATABASE, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleTokenRemoved');
       return;
     }
   } catch (error) {
-    log(LogLevel.ERROR, 'TokenRemoved handler error', LogLabel.EVENT_HANDLER, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleTokenRemoved');
+    log(LogLevel.ERROR, 'TokenRemoved handler error', LogLabel.EVENT_HANDLER, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleTokenRemoved');
     return;
   }
 }
 
 export async function handleOwnershipTransferred({ event, context }: any) {
+  await updateIndexerStatus(context, 'ChainBalanceManager:OwnershipTransferred', event);
   try {
     const { previousOwner, newOwner } = event.args;
     const chainId = context.network.chainId;
 
     logger.info(`ChainBalanceManager ownership transferred on chain ${chainId}: ${previousOwner} -> ${newOwner} at block ${event.block.number}`, LogLabel.SYSTEM, 'handleOwnershipTransferred', { chainId, previousOwner, newOwner, blockNumber: event.block.number });
   } catch (error) {
-    log(LogLevel.ERROR, 'OwnershipTransferred handler error', LogLabel.EVENT_HANDLER, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleOwnershipTransferred');
+    log(LogLevel.ERROR, 'OwnershipTransferred handler error', LogLabel.EVENT_HANDLER, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleOwnershipTransferred');
     return;
   }
 }
 
 export async function handleInitialized({ event, context }: any) {
+  await updateIndexerStatus(context, 'ChainBalanceManager:Initialized', event);
   try {
     const { version } = event.args;
     const chainId = context.network.chainId;
 
     logger.info(`ChainBalanceManager initialized on chain ${chainId} with version ${version} at block ${event.block.number}`, LogLabel.SYSTEM, 'handleInitialized', { chainId, version, blockNumber: event.block.number });
   } catch (error) {
-    log(LogLevel.ERROR, 'Initialized handler error', LogLabel.EVENT_HANDLER, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleInitialized');
+    log(LogLevel.ERROR, 'Initialized handler error', LogLabel.EVENT_HANDLER, { error: error instanceof Error ? error.message : String(error) }, 'chainBalanceManagerHandler.ts', 'handleInitialized');
     return;
   }
 }

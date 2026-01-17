@@ -64,6 +64,7 @@ export const PonderEvents = {
 	LENDING_MANAGER_LIQUIDATION: ponderEvent("LendingManager:Liquidated"),
 	LENDING_MANAGER_BALANCE_MANAGER_SET: ponderEvent("LendingManager:BalanceManagerSet"),
 	LENDING_MANAGER_ASSET_CONFIGURED: ponderEvent("LendingManager:AssetConfigured"),
+	LENDING_MANAGER_INTEREST_RATE_PARAMS_SET: ponderEvent("LendingManager:InterestRateParamsSet"),
 
 	// Oracle Events
 	ORACLE_PRICE_UPDATED: ponderEvent("Oracle:PriceUpdated"),
@@ -81,6 +82,9 @@ export interface OrderPlacedEventArgs {
 	isMarketOrder: boolean;
 	status: number;
 	expiry: string;
+	autoRepay: boolean;
+	autoBorrow: boolean;
+	timeInForce: number;
 }
 
 /**

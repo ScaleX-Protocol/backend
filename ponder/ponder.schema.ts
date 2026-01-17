@@ -1,5 +1,24 @@
 import { index, onchainTable, relations } from "ponder";
 
+// Track indexer sync status - single row per chain with recent events array
+export const indexerStatus = onchainTable(
+	"indexer_status",
+	t => ({
+		id: t.integer().primaryKey(), // chainId as primary key
+		latestBlockNumber: t.bigint().notNull(),
+		latestBlockTimestamp: t.integer().notNull(),
+		latestEventName: t.varchar(),
+		updatedAt: t.integer().notNull(),
+		// JSON array of recent events: [{blockNumber, blockTimestamp, eventName, createdAt}]
+		recentEvents: t.json().$type<Array<{
+			blockNumber: string;
+			blockTimestamp: number;
+			eventName: string;
+			createdAt: number;
+		}>>(),
+	})
+);
+
 export const pools = onchainTable(
 	"pools",
 	t => ({
@@ -31,7 +50,7 @@ export const orders = onchainTable(
 		poolId: t.hex().notNull(),
 		orderId: t.bigint().notNull(),
 		transactionId: t.text(),
-		user: t.hex(),
+		userAddress: t.text(),
 		side: t.varchar(),
 		timestamp: t.integer(),
 		price: t.bigint(),
@@ -40,18 +59,23 @@ export const orders = onchainTable(
 		type: t.varchar(),
 		status: t.varchar(),
 		expiry: t.integer(),
+		autoRepay: t.boolean(),
+		autoBorrow: t.boolean(),
+		timeInForce: t.varchar(),
+		quoteQuantity: t.bigint(),
+		executedQuoteQuantity: t.bigint(),
 	}),
 	(table: any) => ({
 		orderIdChainIdx: index().on(table.orderId, table.chainId),
 		poolChainStatusIdx: index().on(table.poolId, table.chainId, table.status),
 		poolStatusSideIdx: index().on(table.poolId, table.status, table.side),
 		depthOptimizedIdx: index().on(table.poolId, table.status, table.side, table.price),
-		userTimestampIdx: index().on(table.user, table.timestamp),
-		userStatusTimestampIdx: index().on(table.user, table.status, table.timestamp),
+		userTimestampIdx: index().on(table.userAddress, table.timestamp),
+		userStatusTimestampIdx: index().on(table.userAddress, table.status, table.timestamp),
 		poolIdx: index().on(table.poolId),
 		statusIdx: index().on(table.status),
 		timestampIdx: index().on(table.timestamp),
-		userIdx: index().on(table.user),
+		userIdx: index().on(table.userAddress),
 	})
 );
 
@@ -218,18 +242,20 @@ export const balances = onchainTable(
 	t => ({
 		id: t.text().primaryKey(),
 		chainId: t.integer().notNull(),
-		user: t.hex(),
+		userAddress: t.text(),
 		currency: t.hex(),
 		amount: t.bigint(),
 		lockedAmount: t.bigint(),
+		syntheticBalance: t.bigint(),
+		collateralAmount: t.bigint(),
 		lastUpdated: t.integer(),
 	}),
 	table => ({
 		currencyIdx: index().on(table.currency),
 		chainIdIdx: index().on(table.chainId),
-		userCurrencyIdx: index().on(table.user, table.currency),
-		userChainIdx: index().on(table.user, table.chainId),
-		userCurrencyChainIdx: index().on(table.user, table.currency, table.chainId),
+		userCurrencyIdx: index().on(table.userAddress, table.currency),
+		userChainIdx: index().on(table.userAddress, table.chainId),
+		userCurrencyChainIdx: index().on(table.userAddress, table.currency, table.chainId),
 		lastUpdatedIdx: index().on(table.lastUpdated),
 	})
 );
@@ -239,7 +265,7 @@ export const marketMakers = onchainTable(
 	t => ({
 		id: t.text().primaryKey(),
 		chainId: t.integer().notNull(),
-		user: t.hex(),
+		userAddress: t.text(),
 		poolId: t.hex().notNull(),
 		amount: t.bigint(),
 		lockedAmount: t.bigint(),
@@ -247,9 +273,9 @@ export const marketMakers = onchainTable(
 	}),
 	table => ({
 		chainIdIdx: index().on(table.chainId),
-		userIdx: index().on(table.user),
+		userIdx: index().on(table.userAddress),
 		poolIdx: index().on(table.poolId),
-		userPoolIdx: index().on(table.user, table.poolId),
+		userPoolIdx: index().on(table.userAddress, table.poolId),
 		expiryIdx: index().on(table.expiry),
 	})
 );
@@ -259,7 +285,7 @@ export const velockPositions = onchainTable(
 	t => ({
 		id: t.text().primaryKey(),
 		chainId: t.integer().notNull(),
-		user: t.hex(),
+		userAddress: t.text(),
 		poolId: t.hex().notNull(),
 		amount: t.bigint(),
 		lockedAmount: t.bigint(),
@@ -267,9 +293,9 @@ export const velockPositions = onchainTable(
 	}),
 	table => ({
 		chainIdIdx: index().on(table.chainId),
-		userIdx: index().on(table.user),
+		userIdx: index().on(table.userAddress),
 		poolIdx: index().on(table.poolId),
-		userPoolIdx: index().on(table.user, table.poolId),
+		userPoolIdx: index().on(table.userAddress, table.poolId),
 		expiryIdx: index().on(table.expiry),
 	})
 );
@@ -279,7 +305,7 @@ export const votes = onchainTable(
 	t => ({
 		id: t.text().primaryKey(),
 		chainId: t.integer().notNull(),
-		user: t.hex(),
+		userAddress: t.text(),
 		poolId: t.hex().notNull(),
 		amount: t.bigint(),
 		lockedAmount: t.bigint(),
@@ -288,9 +314,9 @@ export const votes = onchainTable(
 	}),
 	table => ({
 		chainIdIdx: index().on(table.chainId),
-		userIdx: index().on(table.user),
+		userIdx: index().on(table.userAddress),
 		poolIdx: index().on(table.poolId),
-		userPoolIdx: index().on(table.user, table.poolId),
+		userPoolIdx: index().on(table.userAddress, table.poolId),
 		timestampIdx: index().on(table.timestamp),
 		expiryIdx: index().on(table.expiry),
 	})
@@ -341,84 +367,6 @@ export const balancesCurrenciesRelations = relations(balances, ({ one }) => ({
 	}),
 }));
 
-// Legacy onchain faucet tables (for blockchain event tracking)
-export const faucetRequests = onchainTable(
-	"faucet_requests",
-	t => ({
-		id: t.text().primaryKey(),
-		chainId: t.integer().notNull(),
-		requester: t.hex().notNull(),
-		receiver: t.hex().notNull(),
-		token: t.hex().notNull(),
-		amount: t.bigint(),
-		timestamp: t.integer(),
-		transactionId: t.text(),
-		blockNumber: t.text(),
-	}),
-	table => ({
-		requesterIdx: index().on(table.requester),
-		tokenIdx: index().on(table.token),
-		chainIdIdx: index().on(table.chainId),
-		timestampIdx: index().on(table.timestamp),
-	})
-);
-
-export const faucetDeposits = onchainTable(
-	"faucet_deposits",
-	t => ({
-		id: t.text().primaryKey(),
-		chainId: t.integer().notNull(),
-		depositor: t.hex().notNull(),
-		token: t.hex().notNull(),
-		amount: t.bigint(),
-		timestamp: t.integer(),
-		transactionId: t.text(),
-		blockNumber: t.text(),
-	}),
-	table => ({
-		depositorIdx: index().on(table.depositor),
-		tokenIdx: index().on(table.token),
-		chainIdIdx: index().on(table.chainId),
-		timestampIdx: index().on(table.timestamp),
-	})
-);
-
-// API-based faucet request tracking (new improved schema)
-export const faucetApiRequests = onchainTable(
-	"faucet_api_requests",
-	t => ({
-		id: t.text().primaryKey(), // Format: {chainId}-{transactionHash}-{timestamp}
-		chainId: t.integer().notNull(),
-		requesterAddress: t.hex().notNull(), // Address requesting tokens
-		receiverAddress: t.hex().notNull(), // Address receiving tokens (usually same as requester)
-		tokenAddress: t.hex().notNull(), // Token contract address
-		tokenSymbol: t.varchar().notNull(), // Token symbol from blockchain
-		tokenDecimals: t.integer().notNull(), // Token decimals from blockchain
-		amount: t.bigint().notNull(), // Amount requested (in smallest unit)
-		amountFormatted: t.varchar().notNull(), // Human-readable amount
-		status: t.varchar().notNull(), // "pending", "completed", "failed"
-		transactionHash: t.text(), // Transaction hash if completed
-		gasUsed: t.bigint(), // Gas used for the transaction
-		gasPrice: t.bigint(), // Gas price used
-		errorMessage: t.text(), // Error message if failed
-		requestTimestamp: t.integer().notNull(), // When the API request was made (as Unix timestamp)
-		completedTimestamp: t.integer(), // When the transaction was confirmed (as Unix timestamp)
-		ipAddress: t.text(), // Client IP address for rate limiting
-		userAgent: t.text(), // User agent string
-	}),
-	(table: any) => ({
-		requesterAddressIdx: index().on(table.requesterAddress),
-		tokenAddressIdx: index().on(table.tokenAddress),
-		chainIdIdx: index().on(table.chainId),
-		statusIdx: index().on(table.status),
-		requestTimestampIdx: index().on(table.requestTimestamp),
-		ipAddressIdx: index().on(table.ipAddress),
-		transactionHashIdx: index().on(table.transactionHash),
-		requesterChainIdx: index().on(table.requesterAddress, table.chainId),
-		requesterStatusIdx: index().on(table.requesterAddress, table.status),
-		chainStatusIdx: index().on(table.chainId, table.status),
-	})
-);
 
 export const crossChainTransfers = onchainTable(
 	"cross_chain_transfers",
@@ -556,7 +504,7 @@ export const chainBalanceWithdrawals = onchainTable(
 	t => ({
 		id: t.text().primaryKey(),
 		chainId: t.integer().notNull(),
-		user: t.hex().notNull(),
+		userAddress: t.text().notNull(),
 		token: t.hex().notNull(),
 		amount: t.bigint().notNull(),
 		timestamp: t.integer().notNull(),
@@ -565,15 +513,15 @@ export const chainBalanceWithdrawals = onchainTable(
 		withdrawalType: t.varchar().notNull(),
 	}),
 	table => ({
-		userIdx: index().on(table.user),
+		userIdx: index().on(table.userAddress),
 		tokenIdx: index().on(table.token),
 		chainIdIdx: index().on(table.chainId),
 		timestampIdx: index().on(table.timestamp),
 		withdrawalTypeIdx: index().on(table.withdrawalType),
-		userTokenIdx: index().on(table.user, table.token),
-		userChainIdx: index().on(table.user, table.chainId),
+		userTokenIdx: index().on(table.userAddress, table.token),
+		userChainIdx: index().on(table.userAddress, table.chainId),
 		tokenChainIdx: index().on(table.token, table.chainId),
-		userTokenChainIdx: index().on(table.user, table.token, table.chainId),
+		userTokenChainIdx: index().on(table.userAddress, table.token, table.chainId),
 	})
 );
 
@@ -582,7 +530,7 @@ export const chainBalanceUnlocks = onchainTable(
 	t => ({
 		id: t.text().primaryKey(),
 		chainId: t.integer().notNull(),
-		user: t.hex().notNull(),
+		userAddress: t.text().notNull(),
 		token: t.hex().notNull(),
 		amount: t.bigint().notNull(),
 		timestamp: t.integer().notNull(),
@@ -590,14 +538,14 @@ export const chainBalanceUnlocks = onchainTable(
 		blockNumber: t.text().notNull(),
 	}),
 	table => ({
-		userIdx: index().on(table.user),
+		userIdx: index().on(table.userAddress),
 		tokenIdx: index().on(table.token),
 		chainIdIdx: index().on(table.chainId),
 		timestampIdx: index().on(table.timestamp),
-		userTokenIdx: index().on(table.user, table.token),
-		userChainIdx: index().on(table.user, table.chainId),
+		userTokenIdx: index().on(table.userAddress, table.token),
+		userChainIdx: index().on(table.userAddress, table.chainId),
 		tokenChainIdx: index().on(table.token, table.chainId),
-		userTokenChainIdx: index().on(table.user, table.token, table.chainId),
+		userTokenChainIdx: index().on(table.userAddress, table.token, table.chainId),
 	})
 );
 
@@ -629,21 +577,21 @@ export const chainBalanceStates = onchainTable(
 	t => ({
 		id: t.text().primaryKey(),
 		chainId: t.integer().notNull(),
-		user: t.hex().notNull(),
+		userAddress: t.text().notNull(),
 		token: t.hex().notNull(),
 		balance: t.bigint().notNull(),
 		unlockedBalance: t.bigint().notNull(),
 		lastUpdated: t.integer().notNull(),
 	}),
 	table => ({
-		userIdx: index().on(table.user),
+		userIdx: index().on(table.userAddress),
 		tokenIdx: index().on(table.token),
 		chainIdIdx: index().on(table.chainId),
 		lastUpdatedIdx: index().on(table.lastUpdated),
-		userTokenIdx: index().on(table.user, table.token),
-		userChainIdx: index().on(table.user, table.chainId),
+		userTokenIdx: index().on(table.userAddress, table.token),
+		userChainIdx: index().on(table.userAddress, table.chainId),
 		tokenChainIdx: index().on(table.token, table.chainId),
-		userTokenChainIdx: index().on(table.user, table.token, table.chainId),
+		userTokenChainIdx: index().on(table.userAddress, table.token, table.chainId),
 		balanceIdx: index().on(table.balance),
 		unlockedBalanceIdx: index().on(table.unlockedBalance),
 	})
@@ -709,7 +657,7 @@ export const deposits = onchainTable(
 	t => ({
 		id: t.text().primaryKey(),
 		chainId: t.integer().notNull(),
-		user: t.hex().notNull(),
+		userAddress: t.text().notNull(),
 		currency: t.hex().notNull(),
 		amount: t.bigint().notNull(),
 		timestamp: t.integer().notNull(),
@@ -717,14 +665,14 @@ export const deposits = onchainTable(
 		blockNumber: t.bigint().notNull(),
 	}),
 	table => ({
-		userIdx: index().on(table.user),
+		userIdx: index().on(table.userAddress),
 		currencyIdx: index().on(table.currency),
 		chainIdIdx: index().on(table.chainId),
 		timestampIdx: index().on(table.timestamp),
-		userCurrencyIdx: index().on(table.user, table.currency),
-		userChainIdx: index().on(table.user, table.chainId),
+		userCurrencyIdx: index().on(table.userAddress, table.currency),
+		userChainIdx: index().on(table.userAddress, table.chainId),
 		currencyChainIdx: index().on(table.currency, table.chainId),
-		userCurrencyChainIdx: index().on(table.user, table.currency, table.chainId),
+		userCurrencyChainIdx: index().on(table.userAddress, table.currency, table.chainId),
 		transactionIdx: index().on(table.transactionId),
 	})
 );
@@ -734,7 +682,7 @@ export const withdrawals = onchainTable(
 	t => ({
 		id: t.text().primaryKey(),
 		chainId: t.integer().notNull(),
-		user: t.hex().notNull(),
+		userAddress: t.text().notNull(),
 		currency: t.hex().notNull(),
 		amount: t.bigint().notNull(),
 		timestamp: t.integer().notNull(),
@@ -742,14 +690,64 @@ export const withdrawals = onchainTable(
 		blockNumber: t.bigint().notNull(),
 	}),
 	table => ({
-		userIdx: index().on(table.user),
+		userIdx: index().on(table.userAddress),
 		currencyIdx: index().on(table.currency),
 		chainIdIdx: index().on(table.chainId),
 		timestampIdx: index().on(table.timestamp),
-		userCurrencyIdx: index().on(table.user, table.currency),
-		userChainIdx: index().on(table.user, table.chainId),
+		userCurrencyIdx: index().on(table.userAddress, table.currency),
+		userChainIdx: index().on(table.userAddress, table.chainId),
 		currencyChainIdx: index().on(table.currency, table.chainId),
-		userCurrencyChainIdx: index().on(table.user, table.currency, table.chainId),
+		userCurrencyChainIdx: index().on(table.userAddress, table.currency, table.chainId),
+		transactionIdx: index().on(table.transactionId),
+	})
+);
+
+export const lockEvents = onchainTable(
+	"lock_events",
+	t => ({
+		id: t.text().primaryKey(),
+		chainId: t.integer().notNull(),
+		userAddress: t.text().notNull(),
+		currency: t.hex().notNull(),
+		amount: t.bigint().notNull(),
+		timestamp: t.integer().notNull(),
+		transactionId: t.text().notNull(),
+		blockNumber: t.bigint().notNull(),
+	}),
+	table => ({
+		userIdx: index().on(table.userAddress),
+		currencyIdx: index().on(table.currency),
+		chainIdIdx: index().on(table.chainId),
+		timestampIdx: index().on(table.timestamp),
+		userCurrencyIdx: index().on(table.userAddress, table.currency),
+		userChainIdx: index().on(table.userAddress, table.chainId),
+		currencyChainIdx: index().on(table.currency, table.chainId),
+		userCurrencyChainIdx: index().on(table.userAddress, table.currency, table.chainId),
+		transactionIdx: index().on(table.transactionId),
+	})
+);
+
+export const unlockEvents = onchainTable(
+	"unlock_events",
+	t => ({
+		id: t.text().primaryKey(),
+		chainId: t.integer().notNull(),
+		userAddress: t.text().notNull(),
+		currency: t.hex().notNull(),
+		amount: t.bigint().notNull(),
+		timestamp: t.integer().notNull(),
+		transactionId: t.text().notNull(),
+		blockNumber: t.bigint().notNull(),
+	}),
+	table => ({
+		userIdx: index().on(table.userAddress),
+		currencyIdx: index().on(table.currency),
+		chainIdIdx: index().on(table.chainId),
+		timestampIdx: index().on(table.timestamp),
+		userCurrencyIdx: index().on(table.userAddress, table.currency),
+		userChainIdx: index().on(table.userAddress, table.chainId),
+		currencyChainIdx: index().on(table.currency, table.chainId),
+		userCurrencyChainIdx: index().on(table.userAddress, table.currency, table.chainId),
 		transactionIdx: index().on(table.transactionId),
 	})
 );
@@ -764,7 +762,7 @@ export const lendingPositions = onchainTable(
 	t => ({
 		id: t.text().primaryKey(),
 		chainId: t.integer().notNull(),
-		user: t.hex().notNull(),
+		userAddress: t.text().notNull(), // CRITICAL FIX: Renamed from 'user' to avoid PostgreSQL keyword conflict
 		collateralToken: t.hex().notNull(),
 		debtToken: t.hex().notNull(),
 		collateralAmount: t.bigint().notNull(),
@@ -774,15 +772,15 @@ export const lendingPositions = onchainTable(
 		isActive: t.boolean().default(true),
 	}),
 	table => ({
-		userIdx: index().on(table.user),
+		userIdx: index().on(table.userAddress),
 		chainIdIdx: index().on(table.chainId),
 		collateralTokenIdx: index().on(table.collateralToken),
 		debtTokenIdx: index().on(table.debtToken),
-		userCollateralIdx: index().on(table.user, table.collateralToken),
-		userDebtIdx: index().on(table.user, table.debtToken),
+		userCollateralIdx: index().on(table.userAddress, table.collateralToken),
+		userDebtIdx: index().on(table.userAddress, table.debtToken),
 		isActiveIdx: index().on(table.isActive),
 		lastUpdatedIdx: index().on(table.lastUpdated),
-		userChainIdx: index().on(table.user, table.chainId),
+		userChainIdx: index().on(table.userAddress, table.chainId),
 	})
 );
 
@@ -792,7 +790,7 @@ export const lendingEvents = onchainTable(
 	t => ({
 		id: t.text().primaryKey(),
 		chainId: t.integer().notNull(),
-		user: t.hex().notNull(),
+		userAddress: t.text().notNull(), // CRITICAL FIX: Renamed from 'user' to avoid PostgreSQL reserved keyword conflict
 		action: t.varchar().notNull(), // "SUPPLY", "BORROW", "REPAY", "WITHDRAW", "LIQUIDATE"
 		token: t.hex().notNull(),
 		amount: t.bigint().notNull(),
@@ -806,15 +804,15 @@ export const lendingEvents = onchainTable(
 		liquidatedAmount: t.bigint(), // For liquidation events
 	}),
 	table => ({
-		userIdx: index().on(table.user),
+		userIdx: index().on(table.userAddress),
 		chainIdIdx: index().on(table.chainId),
 		actionIdx: index().on(table.action),
 		tokenIdx: index().on(table.token),
 		timestampIdx: index().on(table.timestamp),
 		transactionIdx: index().on(table.transactionId),
-		userActionIdx: index().on(table.user, table.action),
+		userActionIdx: index().on(table.userAddress, table.action),
 		tokenActionIdx: index().on(table.token, table.action),
-		userTimestampIdx: index().on(table.user, table.timestamp),
+		userTimestampIdx: index().on(table.userAddress, table.timestamp),
 		healthFactorIdx: index().on(table.healthFactor),
 		liquidatorIdx: index().on(table.liquidator),
 	})
@@ -855,7 +853,7 @@ export const yieldAccruals = onchainTable(
 	t => ({
 		id: t.text().primaryKey(),
 		chainId: t.integer().notNull(),
-		user: t.hex().notNull(),
+		userAddress: t.text().notNull(),
 		token: t.hex().notNull(),
 		yieldType: t.varchar().notNull(), // "LENDING", "BORROWING"
 		accrualAmount: t.bigint().notNull(),
@@ -865,13 +863,13 @@ export const yieldAccruals = onchainTable(
 		cumulativeYield: t.bigint().notNull(), // Cumulative yield for this position
 	}),
 	table => ({
-		userIdx: index().on(table.user),
+		userIdx: index().on(table.userAddress),
 		chainIdIdx: index().on(table.chainId),
 		tokenIdx: index().on(table.token),
 		yieldTypeIdx: index().on(table.yieldType),
 		timestampIdx: index().on(table.timestamp),
-		userTokenIdx: index().on(table.user, table.token),
-		userYieldTypeIdx: index().on(table.user, table.yieldType),
+		userTokenIdx: index().on(table.userAddress, table.token),
+		userYieldTypeIdx: index().on(table.userAddress, table.yieldType),
 		tokenYieldTypeIdx: index().on(table.token, table.yieldType),
 		cumulativeYieldIdx: index().on(table.cumulativeYield),
 	})
@@ -961,13 +959,38 @@ export const assetConfigurations = onchainTable(
 	})
 );
 
+// Interest rate parameters for lending (per token, matching smart contract)
+export const interestRateParameters = onchainTable(
+	"interest_rate_parameters",
+	t => ({
+		id: t.text().primaryKey(),
+		chainId: t.integer().notNull(),
+		token: t.hex().notNull(),
+		baseRate: t.integer().notNull(), // in basis points (e.g., 200 = 2%)
+		optimalUtilization: t.integer().notNull(), // in basis points (e.g., 8000 = 80%)
+		rateSlope1: t.integer().notNull(), // in basis points (e.g., 1000 = 10%)
+		rateSlope2: t.integer().notNull(), // in basis points (e.g., 5000 = 50%)
+		timestamp: t.integer().notNull(),
+		blockNumber: t.bigint().notNull(),
+		isActive: t.boolean().default(true),
+	}),
+	table => ({
+		tokenIdx: index().on(table.token),
+		chainIdIdx: index().on(table.chainId),
+		isActiveIdx: index().on(table.isActive),
+		tokenChainIdx: index().on(table.token, table.chainId),
+		tokenActiveIdx: index().on(table.token, table.isActive),
+		timestampIdx: index().on(table.timestamp),
+	})
+);
+
 // Enhanced user statistics with lending
 export const userLendingStats = onchainTable(
 	"user_lending_stats",
 	t => ({
 		id: t.text().primaryKey(),
 		chainId: t.integer().notNull(),
-		user: t.hex().notNull(),
+		userAddress: t.text().notNull(),
 		totalSupplied: t.bigint().default(BigInt(0)),
 		totalBorrowed: t.bigint().default(BigInt(0)),
 		totalRepaid: t.bigint().default(BigInt(0)),
@@ -982,9 +1005,9 @@ export const userLendingStats = onchainTable(
 		activePositions: t.integer().default(0),
 	}),
 	table => ({
-		userIdx: index().on(table.user),
+		userIdx: index().on(table.userAddress),
 		chainIdIdx: index().on(table.chainId),
-		userChainIdx: index().on(table.user, table.chainId),
+		userChainIdx: index().on(table.userAddress, table.chainId),
 		totalSuppliedIdx: index().on(table.totalSupplied),
 		totalBorrowedIdx: index().on(table.totalBorrowed),
 		activePositionsIdx: index().on(table.activePositions),
@@ -1027,7 +1050,7 @@ export const poolLendingStats = onchainTable(
 
 export const lendingPositionsRelations = relations(lendingPositions, ({ one, many }) => ({
 	user: one(users, {
-		fields: [lendingPositions.user, lendingPositions.chainId],
+		fields: [lendingPositions.userAddress, lendingPositions.chainId],
 		references: [users.address, users.chainId],
 	}),
 	collateralToken: one(currencies, {
@@ -1042,7 +1065,7 @@ export const lendingPositionsRelations = relations(lendingPositions, ({ one, man
 
 export const lendingEventsRelations = relations(lendingEvents, ({ one }) => ({
 	user: one(users, {
-		fields: [lendingEvents.user, lendingEvents.chainId],
+		fields: [lendingEvents.userAddress, lendingEvents.chainId],
 		references: [users.address, users.chainId],
 	}),
 	token: one(currencies, {
@@ -1079,7 +1102,7 @@ export const liquidationsRelations = relations(liquidations, ({ one }) => ({
 
 export const userLendingStatsRelations = relations(userLendingStats, ({ one }) => ({
 	user: one(users, {
-		fields: [userLendingStats.user, userLendingStats.chainId],
+		fields: [userLendingStats.userAddress, userLendingStats.chainId],
 		references: [users.address, users.chainId],
 	}),
 }));

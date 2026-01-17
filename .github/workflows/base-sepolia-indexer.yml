@@ -1,0 +1,269 @@
+name: 🚀 Base Sepolia - Indexer Deployment
+
+on:
+  push:
+    branches: [ base-sepolia-indexer ]
+    paths:
+      - 'ponder/**'
+      - 'docker-compose.indexer.yml'
+      - '.github/workflows/base-sepolia-indexer.yml'
+  workflow_dispatch:
+
+env:
+  CHAIN_NAME: base-sepolia
+  PONDER_DATABASE: ponder_base_sepolia
+  ANALYTICS_DATABASE: analytics_base_sepolia
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, scalex]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Set up Docker Compose
+      run: |
+        if ! command -v docker-compose &> /dev/null; then
+          echo "Installing Docker Compose..."
+          sudo curl -L "https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          sudo chmod +x /usr/local/bin/docker-compose
+        else
+          echo "Docker Compose already installed:"
+          docker-compose --version
+        fi
+
+    - name: Verify infrastructure network exists
+      run: |
+        # Check if the infrastructure network exists (created by monitoring-tools)
+        if ! docker network ls | grep -q "infrastructure"; then
+          echo "❌ Infrastructure network not found!"
+          echo "Please ensure monitoring-tools databases are deployed first."
+          echo "Run: cd /path/to/monitoring-tools && docker-compose -f docker-compose.databases.yaml up -d"
+          exit 1
+        else
+          echo "✅ Infrastructure network exists"
+        fi
+
+    - name: Verify shared infrastructure services
+      run: |
+        echo "=== Verifying shared infrastructure services ==="
+
+        # Check PostgreSQL
+        if docker exec postgres-database pg_isready -U postgres 2>/dev/null; then
+          echo "✅ PostgreSQL is ready"
+        else
+          echo "❌ PostgreSQL is not running. Please deploy monitoring-tools first."
+          exit 1
+        fi
+
+        # Check Redis
+        if docker exec redis redis-cli ping 2>/dev/null | grep -q "PONG"; then
+          echo "✅ Redis is ready"
+        else
+          echo "❌ Redis is not running. Please deploy monitoring-tools first."
+          exit 1
+        fi
+
+        # Check TimescaleDB
+        if docker exec timescaledb pg_isready -U postgres 2>/dev/null; then
+          echo "✅ TimescaleDB is ready"
+        else
+          echo "❌ TimescaleDB is not running. Please deploy monitoring-tools first."
+          exit 1
+        fi
+
+    - name: Deploy to production
+      env:
+        POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+        POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      run: |
+        echo "Deploying Base Sepolia indexer services..."
+
+        echo "=== Checking environment file ==="
+        if [ -f "./ponder/.env.base-sepolia" ]; then
+          echo "✅ Environment file exists: ./ponder/.env.base-sepolia"
+          echo "=== Environment file content (first 10 lines) ==="
+          head -10 ./ponder/.env.base-sepolia
+        else
+          echo "❌ Environment file not found: ./ponder/.env.base-sepolia"
+          echo "Available environment files:"
+          ls -la ./ponder/.env* || echo "No .env files found"
+          exit 1
+        fi
+
+        # Set project name to avoid conflicts with other chains
+        export COMPOSE_PROJECT_NAME=base-sepolia-indexer
+
+        echo "=== Building Base Sepolia services ==="
+        CHAIN_NAME=base-sepolia \
+        PONDER_DATABASE=ponder_base_sepolia \
+        ANALYTICS_DATABASE=analytics_base_sepolia \
+        POSTGRES_USER=${POSTGRES_USER:-postgres} \
+        POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password} \
+        INDEXER_ENV_FILE=./ponder/.env.base-sepolia \
+        docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer build --no-cache || {
+          echo "❌ Build failed, checking build logs..."
+          exit 1
+        }
+
+        echo "=== Stopping existing Base Sepolia services ==="
+        CHAIN_NAME=base-sepolia \
+        PONDER_DATABASE=ponder_base_sepolia \
+        ANALYTICS_DATABASE=analytics_base_sepolia \
+        POSTGRES_USER=${POSTGRES_USER:-postgres} \
+        POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password} \
+        INDEXER_ENV_FILE=./ponder/.env.base-sepolia \
+        docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer down --remove-orphans || true
+
+        echo "=== Starting Base Sepolia services ==="
+        CHAIN_NAME=base-sepolia \
+        PONDER_DATABASE=ponder_base_sepolia \
+        ANALYTICS_DATABASE=analytics_base_sepolia \
+        POSTGRES_USER=${POSTGRES_USER:-postgres} \
+        POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password} \
+        INDEXER_ENV_FILE=./ponder/.env.base-sepolia \
+        docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer up -d || {
+          echo "❌ Service start failed, checking logs..."
+          docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer logs
+          exit 1
+        }
+
+        echo "=== Checking initial service status ==="
+        sleep 30
+        docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer ps
+
+        echo "Base Sepolia indexer deployment completed"
+
+    - name: Verify deployment
+      env:
+        POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+        POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      run: |
+        echo "============================================"
+        echo "🔍 DEPLOYMENT VERIFICATION - BASE SEPOLIA"
+        echo "============================================"
+
+        echo ""
+        echo "=== 1. CONTAINER STATUS CHECK ==="
+        echo "Checking if Base Sepolia containers are running..."
+        docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer ps
+
+        echo ""
+        echo "=== 2. SHARED INFRASTRUCTURE CHECK ==="
+
+        # Check shared PostgreSQL
+        echo "--- Shared PostgreSQL ---"
+        if docker exec postgres-database pg_isready -U ${POSTGRES_USER:-postgres} -d ponder_base_sepolia; then
+          echo "✅ Shared PostgreSQL is ready (ponder_base_sepolia database)"
+        else
+          echo "❌ Shared PostgreSQL not ready"
+        fi
+
+        # Check shared Redis
+        echo "--- Shared Redis ---"
+        if docker exec redis redis-cli ping | grep -q "PONG"; then
+          echo "✅ Shared Redis is responding"
+        else
+          echo "❌ Shared Redis not responding"
+        fi
+
+        # Check shared TimescaleDB
+        echo "--- Shared TimescaleDB ---"
+        if docker exec timescaledb pg_isready -U ${POSTGRES_USER:-postgres} -d analytics_base_sepolia; then
+          echo "✅ Shared TimescaleDB is ready (analytics_base_sepolia database)"
+        else
+          echo "❌ Shared TimescaleDB not ready"
+        fi
+
+        echo ""
+        echo "=== 3. APPLICATION CONTAINERS CHECK ==="
+
+        # Check Indexer Container
+        echo "--- Indexer Container ---"
+        if docker ps --filter "name=base-sepolia-clob-indexer" --format "{{.Names}}" | grep -q "base-sepolia-clob-indexer"; then
+          echo "✅ Indexer container is running"
+        else
+          echo "❌ Indexer container is NOT running"
+        fi
+
+        # Check WebSocket Container
+        echo "--- WebSocket Container ---"
+        if docker ps --filter "name=base-sepolia-websocket" --format "{{.Names}}" | grep -q "base-sepolia-websocket"; then
+          echo "✅ WebSocket container is running"
+        else
+          echo "❌ WebSocket container is NOT running"
+        fi
+
+        # Check Analytics Container
+        echo "--- Analytics Container ---"
+        if docker ps --filter "name=base-sepolia-analytics" --format "{{.Names}}" | grep -q "base-sepolia-analytics"; then
+          echo "✅ Analytics container is running"
+        else
+          echo "❌ Analytics container is NOT running"
+        fi
+
+        echo ""
+        echo "=== 4. LOG ANALYSIS ==="
+
+        echo "--- Indexer Logs (last 25 lines) ---"
+        docker logs base-sepolia-clob-indexer --tail=25 2>&1 || echo "Could not get indexer logs"
+
+        echo ""
+        echo "--- WebSocket Logs (last 15 lines) ---"
+        docker logs base-sepolia-websocket --tail=15 2>&1 || echo "Could not get websocket logs"
+
+        echo ""
+        echo "--- Analytics Logs (last 15 lines) ---"
+        docker logs base-sepolia-analytics --tail=15 2>&1 || echo "Could not get analytics logs"
+
+        echo ""
+        echo "=== 5. WAITING FOR SERVICES TO FULLY START (90 seconds) ==="
+        echo "Giving services more time to initialize..."
+        sleep 90
+
+        echo ""
+        echo "=== 6. APPLICATION HEALTH CHECKS ==="
+
+        # Test indexer service
+        for i in {1..12}; do
+          echo "Attempt $i/12: Testing indexer health..."
+          if docker exec base-sepolia-clob-indexer curl -f http://localhost:42070/ 2>/dev/null; then
+            echo "✅ Indexer health check passed"
+            break
+          else
+            echo "Indexer not ready, waiting 10 seconds..."
+            sleep 10
+          fi
+        done
+
+        # Test websocket service (non-critical)
+        WEBSOCKET_SUCCESS=false
+        for i in {1..3}; do
+          echo "Attempt $i/3: Testing websocket health..."
+          if docker exec base-sepolia-websocket curl -f http://localhost:42080/ 2>/dev/null; then
+            echo "✅ WebSocket health check passed"
+            WEBSOCKET_SUCCESS=true
+            break
+          else
+            echo "WebSocket not ready, waiting 5 seconds..."
+            sleep 5
+          fi
+        done
+
+        if [ "$WEBSOCKET_SUCCESS" = false ]; then
+          echo "⚠️ WebSocket health check failed (non-critical service)"
+        fi
+
+        echo ""
+        echo "=== 7. FINAL STATUS SUMMARY ==="
+        echo "All container statuses:"
+        docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer ps
+
+        echo ""
+        echo "============================================"
+        echo "🎯 BASE SEPOLIA DEPLOYMENT VERIFICATION COMPLETE"
+        echo "============================================"

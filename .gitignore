@@ -1,3 +1,18 @@
 .claude
 logs
 generated
+
+# Ignore node_modules in all subdirectories
+node_modules/
+**/node_modules/
+
+# Ignore lock files
+pnpm-lock.yaml
+**/pnpm-lock.yaml
+package-lock.json
+**/package-lock.json
+yarn.lock
+**/yarn.lock
+
+# bv (beads viewer) local config and caches
+.bv/

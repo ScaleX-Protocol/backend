@@ -56,7 +56,7 @@ module.exports = {
       listen_timeout: 8000
     },
     
-    // Side chain websocket service (if needed)
+    // Side chain websocket service
     {
       name: 'scalex-websocket-side',
       script: 'dist/index.js',

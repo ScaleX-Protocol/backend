@@ -58,6 +58,21 @@ export function getType(isMarketOrder: boolean) {
 	return isMarketOrder ? OrderType.MARKET : OrderType.LIMIT;
 }
 
+export function getTimeInForce(timeInForce: number): string {
+	switch (timeInForce) {
+		case 0:
+			return "GTC";
+		case 1:
+			return "IOC";
+		case 2:
+			return "FOK";
+		case 3:
+			return "PO";
+		default:
+			return "GTC";
+	}
+}
+
 export async function insertTrade(
 	db: any,
 	chainId: number,
@@ -190,9 +205,23 @@ export async function insertOrderBookTrades(
 }
 
 export async function updatePoolVolume(db: any, poolId: string, quantity: bigint, price: bigint, timestamp: number) {
+	const existingPool = await db.find(pools, {
+		id: poolId
+	});
+
+	if (!existingPool) {
+		logger.warn('Pool not found for volume update', LogLabel.VALIDATION, 'updatePoolVolume', {
+			poolId,
+			quantity: quantity.toString(),
+			price: price.toString(),
+			timestamp
+		});
+		return false;
+	}
+
 	await db.update(pools, { id: poolId }).set((row: any) => {
 		const baseDecimals = BigInt(row.baseDecimals);
-		const quoteVolume = (quantity * price) / 10n ** baseDecimals;
+		const quoteVolume = (quantity * price) / BigInt(10) ** BigInt(baseDecimals);
 		return {
 			price,
 			volume: BigInt(row.volume) + quantity,
@@ -213,6 +242,16 @@ export async function updateCandlestickBuckets(
 ) {
 	const isTakerBuy = !args.side;
 	const pool = await db.find(pools, { id: poolId });
+
+	if (!pool) {
+		logger.warn('Pool not found for candlestick update', LogLabel.VALIDATION, 'updateCandlestickBuckets', {
+			poolId,
+			quantity: quantity.toString(),
+			price: price.toString(),
+			timestamp: Number(event.block.timestamp)
+		});
+		return false;
+	}
 
 	const bucketIntervals = [
 		{ table: minuteBuckets, seconds: TIME_INTERVALS.minute },
@@ -244,12 +283,13 @@ export function createOrderData(
 	args: OrderPlacedEventArgs,
 	poolId: string,
 	side: string,
-	timestamp: number
+	timestamp: number,
+	txHash: string,
 ) {
 	const orderData = {
 		id: createOrderId(chainId, args.orderId, poolId),
 		chainId,
-		user: args.user,
+		userAddress: args.user,
 		poolId,
 		orderId: args.orderId,
 		side,
@@ -261,6 +301,12 @@ export function createOrderData(
 		type: getType(args.isMarketOrder),
 		status: ORDER_STATUS[Number(args.status)],
 		expiry: Number(args.expiry),
+		autoRepay: args.autoRepay ?? false,
+		autoBorrow: args.autoBorrow ?? false,
+		timeInForce: getTimeInForce(args.timeInForce),
+		quoteQuantity: args.price * args.quantity,
+		executedQuoteQuantity: BigInt(0),
+		transactionId: txHash,
 	};
 	return orderData;
 }
@@ -310,15 +356,29 @@ export async function updateOrder(
 	}
 
 	try {
+		const updateData: any = {
+			status: ORDER_STATUS[Number(event.args.status)],
+			timestamp: timestamp,
+		};
+
+		// For market orders, also update filled quantity and executed quote quantity
+		if (existingOrder.type === 'Market') {
+			updateData.filled = BigInt(event.args.filled);
+
+			// Calculate executed quote quantity for market orders
+			if (existingOrder.price && BigInt(event.args.filled) > 0) {
+				updateData.executedQuoteQuantity = existingOrder.price * BigInt(event.args.filled);
+			} else if (BigInt(event.args.filled) === 0) {
+				updateData.executedQuoteQuantity = BigInt(0);
+			}
+		}
+
 		await db
 			.update(orders, {
 				id: hashedOrderId,
 				chainId: chainId,
 			})
-			.set({
-				status: ORDER_STATUS[Number(event.args.status)],
-				timestamp: timestamp,
-			});
+			.set(updateData);
 		return true; // Indicate successful update
 	} catch (error) {
 		logger.error('Failed to update order status', LogLabel.DATABASE, 'updateOrder', {
@@ -336,7 +396,8 @@ export async function updateOrderQuantity(
 	db: any,
 	chainId: number,
 	hashedOrderId: string,
-	filledQuantity: bigint
+	filledQuantity: bigint,
+	executionPrice?: bigint
 ) {
 	// First check if the order exists
 	const existingOrder = await db.find(orders, {
@@ -354,14 +415,67 @@ export async function updateOrderQuantity(
 	}
 
 	try {
+		const oldQuantity = BigInt(existingOrder.quantity);
+		const oldPrice = BigInt(existingOrder.price);
+		const newFilledQuantity = existingOrder.filled + filledQuantity;
+
+		const updateData: any = {
+			filled: newFilledQuantity,
+		};
+
+		// Check if both old quantity and filled quantity are zero, or both old price and execution price are zero
+		if ((oldQuantity === BigInt(0) && newFilledQuantity === BigInt(0)) ||
+			(oldPrice === BigInt(0) && (!executionPrice || executionPrice === BigInt(0)))) {
+			updateData.status = "EXPIRED";
+			logger.info('Order has no quantity or price, updating status to EXPIRED', LogLabel.DATABASE, 'updateOrderQuantity', {
+				hashedOrderId,
+				oldQuantity: oldQuantity.toString(),
+				newFilledQuantity: newFilledQuantity.toString(),
+				oldPrice: oldPrice.toString(),
+				executionPrice: executionPrice?.toString() || 'undefined'
+			});
+		}
+
+		// Update price for market orders with actual execution price
+		if (existingOrder.type === 'Market' && executionPrice) {
+			const executedQuoteValue = executionPrice * filledQuantity;
+			const totalQuoteValue = BigInt(existingOrder.executedQuoteQuantity || 0) + executedQuoteValue;
+			const weightedAveragePrice = newFilledQuantity > BigInt(0) ? totalQuoteValue / newFilledQuantity : BigInt(0);
+
+			updateData.price = weightedAveragePrice;
+			updateData.orderValue = weightedAveragePrice * oldQuantity;
+			updateData.executedQuoteQuantity = totalQuoteValue;
+		} else {
+			// For limit orders, also update executed quote quantity
+			if (executionPrice) {
+				const executedQuoteValue = executionPrice * filledQuantity;
+				updateData.executedQuoteQuantity = (existingOrder.executedQuoteQuantity || BigInt(0)) + executedQuoteValue;
+			}
+		}
+
+		// Auto-update status based on filled quantity
+		if (newFilledQuantity >= oldQuantity) {
+			updateData.status = "FILLED";
+			logger.info('Order fully filled, updating status to FILLED', LogLabel.DATABASE, 'updateOrderQuantity', {
+				hashedOrderId,
+				filled: newFilledQuantity.toString(),
+				quantity: oldQuantity.toString()
+			});
+		} else if (newFilledQuantity > BigInt(0) && !updateData.status) {
+			updateData.status = "PARTIALLY_FILLED";
+			logger.debug('Order partially filled, updating status to PARTIALLY_FILLED', LogLabel.DATABASE, 'updateOrderQuantity', {
+				hashedOrderId,
+				filled: newFilledQuantity.toString(),
+				quantity: oldQuantity.toString()
+			});
+		}
+
 		await db
 			.update(orders, {
 				id: hashedOrderId,
 				chainId: chainId,
 			})
-			.set({
-				filled: existingOrder.filled + filledQuantity,
-			});
+			.set(updateData);
 		return true; // Indicate successful update
 	} catch (error) {
 		logger.error('Failed to update order quantity', LogLabel.DATABASE, 'updateOrderQuantity', {

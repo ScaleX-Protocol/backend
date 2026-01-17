@@ -1,5 +1,6 @@
 import { getEventPublisher } from "@/events/index";
 import { OrderMatchedEventArgs, OrderPlacedEventArgs } from "@/types";
+import { updateIndexerStatus } from "@/utils/indexerStatus";
 import { createLogger, LogLabel, log, LogLevel, ServiceName } from "../utils/logger";
 import {
   createDepthData,
@@ -29,11 +30,12 @@ import { getDepth } from "@/utils/getDepth";
 import { getPoolTradingPair } from "@/utils/getPoolTradingPair";
 import { executeIfInSync } from "@/utils/syncState";
 import dotenv from "dotenv";
-import { and, eq } from "ponder";
+import { and, desc, eq } from "ponder";
 import {
   fiveMinuteBuckets,
   hourBuckets,
   minuteBuckets,
+  orderBookTrades,
   orders,
   thirtyMinuteBuckets,
   users
@@ -43,6 +45,32 @@ dotenv.config();
 
 // Create logger instance for this file
 const logger = createLogger('orderBookHandler.ts');
+
+async function getIndicativePrice(context: any, poolId: string, chainId: number): Promise<bigint> {
+  try {
+    const latestTrade = await context.db.sql
+      .select()
+      .from(orderBookTrades)
+      .where(
+        and(
+          eq(orderBookTrades.poolId, poolId as `0x${string}`),
+          eq(orderBookTrades.chainId, chainId)
+        )
+      )
+      .orderBy(desc(orderBookTrades.timestamp))
+      .limit(1)
+      .execute();
+
+    return latestTrade[0]?.price || BigInt(0);
+  } catch (error) {
+    log(LogLevel.ERROR, 'Failed to get indicative price', LogLabel.DATABASE, ServiceName.CORE_CHAIN, {
+      error: error instanceof Error ? error.message : String(error),
+      poolId,
+      chainId
+    }, 'orderBookHandler.ts', 'getIndicativePrice');
+    return BigInt(0);
+  }
+}
 
 async function upsertUserForOrder(db: any, chainId: number, user: string, timestamp: number, volume: bigint) {
   const userId = `${chainId}-${user}`;
@@ -181,30 +209,45 @@ async function publishKlineEvent(symbol: string, interval: string, klinePayload:
 export async function handleOrderPlaced({ event, context }: any) {
 
   try {
+    // Track indexer progress
+    await updateIndexerStatus(context, 'OrderBook:OrderPlaced', event);
 
     const args = event.args as OrderPlacedEventArgs;
 
     const db = context.db;
     const chainId = context.network.chainId;
     const txHash = event.transaction.hash;
+    const poolAddress = event.log.address!;
 
+    // Log event received
+    logger.info('OrderPlaced event received', LogLabel.EVENT_HANDLER, 'handleOrderPlaced', {
+      orderId: args.orderId,
+      user: args.user,
+      side: args.side,
+      price: args.price?.toString(),
+      quantity: args.quantity?.toString(),
+      isMarketOrder: args.isMarketOrder,
+      status: args.status,
+      poolAddress,
+      txHash,
+      blockNumber: event.block.number?.toString()
+    });
 
     if (!db) {
-      log(LogLevel.ERROR, 'Database context is null or undefined', LogLabel.DATABASE, ServiceName.CORE_CHAIN, {}, 'orderBookHandler.ts', 'handleOrderPlaced');
+      log(LogLevel.ERROR, 'Database context is null or undefined', LogLabel.DATABASE, {}, 'orderBookHandler.ts', 'handleOrderPlaced');
       return;
     }
     if (!chainId) {
-      log(LogLevel.ERROR, 'Chain ID is missing from context', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'orderBookHandler.ts', 'handleOrderPlaced');
+      log(LogLevel.ERROR, 'Chain ID is missing from context', LogLabel.VALIDATION, {}, 'orderBookHandler.ts', 'handleOrderPlaced');
       return;
     }
     if (!txHash) {
-      log(LogLevel.ERROR, 'Transaction hash is missing', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {}, 'orderBookHandler.ts', 'handleOrderPlaced');
+      log(LogLevel.ERROR, 'Transaction hash is missing', LogLabel.VALIDATION, {}, 'orderBookHandler.ts', 'handleOrderPlaced');
       return;
     }
 
     const filled = BigInt(0);
     const orderId = BigInt(args.orderId!);
-    const poolAddress = event.log.address!;
     const price = BigInt(args.price);
     const quantity = BigInt(args.quantity);
 
@@ -213,31 +256,55 @@ export async function handleOrderPlaced({ event, context }: any) {
     try {
       side = getSide(args.side);
     } catch (error) {
-      log(LogLevel.ERROR, 'Failed to convert side', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, { error: (error as Error).message }, 'orderBookHandler.ts', 'handleOrderPlaced');
+      log(LogLevel.ERROR, 'Failed to convert side', LogLabel.VALIDATION, { error: (error as Error).message }, 'orderBookHandler.ts', 'handleOrderPlaced');
       return;
     }
 
     try {
       status = ORDER_STATUS[Number(args.status)];
     } catch (error) {
-      log(LogLevel.ERROR, 'Failed to convert status', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, { error: (error as Error).message }, 'orderBookHandler.ts', 'handleOrderPlaced');
+      log(LogLevel.ERROR, 'Failed to convert status', LogLabel.VALIDATION, { error: (error as Error).message }, 'orderBookHandler.ts', 'handleOrderPlaced');
       return;
     }
 
     const timestamp = Number(event.block.timestamp);
 
+    // Calculate indicative price for market orders
+    let indicativePrice = BigInt(0);
+    if (args.isMarketOrder) {
+      indicativePrice = await getIndicativePrice(context, poolAddress, chainId);
+    }
+
     let orderData;
     try {
-      orderData = createOrderData(chainId, args, poolAddress, side, timestamp);
+      orderData = createOrderData(chainId, args, poolAddress, side, timestamp, txHash);
+
+      // Update price and quote quantity for market orders to use indicative price instead of 0
+      if (args.isMarketOrder && indicativePrice > BigInt(0)) {
+        orderData.price = indicativePrice;
+        orderData.orderValue = indicativePrice * BigInt(args.quantity);
+        orderData.quoteQuantity = indicativePrice * BigInt(args.quantity);
+      }
     } catch (error) {
-      log(LogLevel.ERROR, 'Failed to create order data', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, { error: (error as Error).message }, 'orderBookHandler.ts', 'handleOrderPlaced');
+      log(LogLevel.ERROR, 'Failed to create order data', LogLabel.VALIDATION, { error: (error as Error).message }, 'orderBookHandler.ts', 'handleOrderPlaced');
       return;
     }
 
     try {
       await insertOrder(db, orderData);
+      logger.info('Order inserted successfully', LogLabel.DATABASE, 'handleOrderPlaced', {
+        orderId: args.orderId,
+        hashedOrderId: orderData.id,
+        user: args.user,
+        side,
+        price: price.toString(),
+        quantity: quantity.toString(),
+        poolAddress,
+        chainId,
+        txHash
+      });
     } catch (error) {
-      log(LogLevel.ERROR, 'Order insertion failed', LogLabel.DATABASE, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'orderBookHandler.ts', 'handleOrderPlaced');
+      log(LogLevel.ERROR, 'Order insertion failed', LogLabel.DATABASE, { error: error instanceof Error ? error.message : String(error) }, 'orderBookHandler.ts', 'handleOrderPlaced');
       return;
     }
 
@@ -251,7 +318,7 @@ export async function handleOrderPlaced({ event, context }: any) {
     try {
       await upsertOrderHistory(db, historyData);
     } catch (error) {
-      log(LogLevel.ERROR, 'Order history upsert failed', LogLabel.DATABASE, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'orderBookHandler.ts', 'handleOrderPlaced');
+      log(LogLevel.ERROR, 'Order history upsert failed', LogLabel.DATABASE, { error: error instanceof Error ? error.message : String(error) }, 'orderBookHandler.ts', 'handleOrderPlaced');
       return;
     }
 
@@ -260,14 +327,14 @@ export async function handleOrderPlaced({ event, context }: any) {
     try {
       depthData = createDepthData(chainId, depthId, poolAddress, side, price, quantity, timestamp);
     } catch (error) {
-      log(LogLevel.ERROR, 'Depth data creation failed', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'orderBookHandler.ts', 'handleOrderPlaced');
+      log(LogLevel.ERROR, 'Depth data creation failed', LogLabel.VALIDATION, { error: error instanceof Error ? error.message : String(error) }, 'orderBookHandler.ts', 'handleOrderPlaced');
       return;
     }
 
     try {
       await insertOrderBookDepth(db, depthData);
     } catch (error) {
-      log(LogLevel.ERROR, 'Order book depth insertion failed', LogLabel.DATABASE, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'orderBookHandler.ts', 'handleOrderPlaced');
+      log(LogLevel.ERROR, 'Order book depth insertion failed', LogLabel.DATABASE, { error: error instanceof Error ? error.message : String(error) }, 'orderBookHandler.ts', 'handleOrderPlaced');
       return;
     }
 
@@ -276,14 +343,14 @@ export async function handleOrderPlaced({ event, context }: any) {
         let symbol;
         try {
           if (!event.log.address) {
-            log(LogLevel.ERROR, 'Event log address is invalid', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, { address: event.log.address, type: typeof event.log.address }, 'orderBookHandler.ts', 'handleOrderPlaced');
+            log(LogLevel.ERROR, 'Event log address is invalid', LogLabel.VALIDATION, { address: event.log.address, type: typeof event.log.address }, 'orderBookHandler.ts', 'handleOrderPlaced');
             return;
           }
 
 
           symbol = (await getPoolTradingPair(context, event.log.address, chainId, 'handleOrderPlaced', Number(event.block.number))).toUpperCase();
         } catch (error) {
-          log(LogLevel.ERROR, 'Failed to get trading pair', LogLabel.API, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'orderBookHandler.ts', 'handleOrderPlaced');
+          log(LogLevel.ERROR, 'Failed to get trading pair', LogLabel.API, { error: error instanceof Error ? error.message : String(error) }, 'orderBookHandler.ts', 'handleOrderPlaced');
           return;
         }
 
@@ -292,7 +359,7 @@ export async function handleOrderPlaced({ event, context }: any) {
         try {
           order = await context.db.find(orders, { id: id });
           if (!order) {
-            log(LogLevel.WARN, 'Order not found in executeIfInSync block - skipping event publishing', LogLabel.VALIDATION, ServiceName.CORE_CHAIN, {
+            log(LogLevel.WARN, 'Order not found in executeIfInSync block - skipping event publishing', LogLabel.VALIDATION, {
               orderId: id,
               chainId,
               rawOrderId: args.orderId,
@@ -301,8 +368,8 @@ export async function handleOrderPlaced({ event, context }: any) {
             return; // Return gracefully instead of throwing
           }
         } catch (error) {
-          log(LogLevel.ERROR, 'Failed to find order', LogLabel.DATABASE, ServiceName.CORE_CHAIN, { 
-            error: error instanceof Error ? error.message : String(error) 
+          log(LogLevel.ERROR, 'Failed to find order', LogLabel.DATABASE, {
+            error: error instanceof Error ? error.message : String(error)
           }, 'orderBookHandler.ts', 'handleOrderPlaced');
           return; // Return gracefully instead of throwing
         }
@@ -311,7 +378,7 @@ export async function handleOrderPlaced({ event, context }: any) {
           // Publish events
           await publishOrderEvent(order, symbol, timestamp, "new", BigInt(0), BigInt(0));
         } catch (error) {
-          log(LogLevel.ERROR, 'Failed to publish order event', LogLabel.EVENT_HANDLER, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'orderBookHandler.ts', 'handleOrderPlaced');
+          log(LogLevel.ERROR, 'Failed to publish order event', LogLabel.EVENT_HANDLER, { error: error instanceof Error ? error.message : String(error) }, 'orderBookHandler.ts', 'handleOrderPlaced');
           return;
         }
 
@@ -319,31 +386,33 @@ export async function handleOrderPlaced({ event, context }: any) {
         try {
           latestDepth = await getDepth(event.log.address!, context.db, chainId);
         } catch (error) {
-          log(LogLevel.ERROR, 'Failed to get depth', LogLabel.DATABASE, ServiceName.CORE_CHAIN, { error: (error as Error).message }, 'orderBookHandler.ts', 'handleOrderPlaced');
+          log(LogLevel.ERROR, 'Failed to get depth', LogLabel.DATABASE, { error: (error as Error).message }, 'orderBookHandler.ts', 'handleOrderPlaced');
           return;
         }
 
         try {
           await publishDepthEvent(symbol, latestDepth.bids as any, latestDepth.asks as any, timestamp);
         } catch (error) {
-          log(LogLevel.ERROR, 'Failed to publish depth event', LogLabel.EVENT_HANDLER, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'orderBookHandler.ts', 'handleOrderPlaced');
+          log(LogLevel.ERROR, 'Failed to publish depth event', LogLabel.EVENT_HANDLER, { error: error instanceof Error ? error.message : String(error) }, 'orderBookHandler.ts', 'handleOrderPlaced');
           return;
         }
 
       }, 'handleOrderPlaced');
     } catch (error) {
-      log(LogLevel.ERROR, 'executeIfInSync failed', LogLabel.EVENT_HANDLER, ServiceName.CORE_CHAIN, { error: (error as Error).message }, 'orderBookHandler.ts', 'handleOrderPlaced');
+      log(LogLevel.ERROR, 'executeIfInSync failed', LogLabel.EVENT_HANDLER, { error: (error as Error).message }, 'orderBookHandler.ts', 'handleOrderPlaced');
       return;
     }
 
 
   } catch (error) {
-    log(LogLevel.ERROR, 'Unhandled error in handleOrderPlaced', LogLabel.EVENT_HANDLER, ServiceName.CORE_CHAIN, { error: error instanceof Error ? error.message : String(error) }, 'orderBookHandler.ts', 'handleOrderPlaced');
+    log(LogLevel.ERROR, 'Unhandled error in handleOrderPlaced', LogLabel.EVENT_HANDLER, { error: error instanceof Error ? error.message : String(error) }, 'orderBookHandler.ts', 'handleOrderPlaced');
     return;
   }
 }
 
 export async function handleOrderMatched({ event, context }: any) {
+  // Track indexer progress
+  await updateIndexerStatus(context, 'OrderBook:OrderMatched', event);
 
   const args = event.args as OrderMatchedEventArgs;
   const db = context.db;
@@ -356,7 +425,29 @@ export async function handleOrderMatched({ event, context }: any) {
   const quantity = BigInt(args.executedQuantity);
   const timestamp = Number(args.timestamp);
 
-  await updatePoolVolume(db, poolId, quantity, price, timestamp);
+  // Log event received
+  logger.info('OrderMatched event received', LogLabel.EVENT_HANDLER, 'handleOrderMatched', {
+    buyOrderId: args.buyOrderId,
+    sellOrderId: args.sellOrderId,
+    user: args.user,
+    side: args.side,
+    executionPrice: args.executionPrice?.toString(),
+    executedQuantity: args.executedQuantity?.toString(),
+    poolAddress,
+    poolId,
+    txHash,
+    blockNumber: event.block.number?.toString()
+  });
+
+  const poolVolumeUpdated = await updatePoolVolume(db, poolId, quantity, price, timestamp);
+  if (poolVolumeUpdated === false) {
+    logger.warn('Pool volume update skipped - pool not found', LogLabel.VALIDATION, 'handleOrderMatched', {
+      poolId,
+      poolAddress,
+      chainId,
+      txHash
+    });
+  }
 
   // Track user trade volume
   const tradeVolume = price * quantity;
@@ -368,17 +459,69 @@ export async function handleOrderMatched({ event, context }: any) {
   const buyTradeId = createTradeId(chainId, txHash, args.user, OrderSide.BUY, args);
   const buyOrderId = createOrderId(chainId, BigInt(args.buyOrderId), poolAddress);
   await insertTrade(db, chainId, buyTradeId, buyOrderId, price, quantity, event);
-  await updateOrderQuantity(db, chainId, buyOrderId, quantity);
+  const buyOrderUpdated = await updateOrderQuantity(db, chainId, buyOrderId, quantity, price);
+  if (buyOrderUpdated === false) {
+    logger.warn('Buy order quantity update skipped - order not found', LogLabel.VALIDATION, 'handleOrderMatched', {
+      buyOrderId,
+      rawBuyOrderId: args.buyOrderId,
+      poolAddress,
+      chainId,
+      txHash
+    });
+  } else {
+    logger.debug('Buy order quantity updated', LogLabel.DATABASE, 'handleOrderMatched', {
+      buyOrderId,
+      rawBuyOrderId: args.buyOrderId,
+      quantity: quantity.toString(),
+      txHash
+    });
+  }
 
   const sellTradeId = createTradeId(chainId, txHash, args.user, OrderSide.SELL, args);
   const sellOrderId = createOrderId(chainId, BigInt(args.sellOrderId), poolAddress);
   await insertTrade(db, chainId, sellTradeId, sellOrderId, price, quantity, event);
-  await updateOrderQuantity(db, chainId, sellOrderId, quantity);
+  const sellOrderUpdated = await updateOrderQuantity(db, chainId, sellOrderId, quantity, price);
+  if (sellOrderUpdated === false) {
+    logger.warn('Sell order quantity update skipped - order not found', LogLabel.VALIDATION, 'handleOrderMatched', {
+      sellOrderId,
+      rawSellOrderId: args.sellOrderId,
+      poolAddress,
+      chainId,
+      txHash
+    });
+  } else {
+    logger.debug('Sell order quantity updated', LogLabel.DATABASE, 'handleOrderMatched', {
+      sellOrderId,
+      rawSellOrderId: args.sellOrderId,
+      quantity: quantity.toString(),
+      txHash
+    });
+  }
 
   await upsertOrderBookDepth(db, chainId, poolAddress, getSide(args.side), price, quantity, timestamp);
   await upsertOrderBookDepth(db, chainId, poolAddress, getOppositeSide(args.side), price, quantity, timestamp);
 
-  await updateCandlestickBuckets(db, chainId, poolId, price, quantity, event, args);
+  const candlestickUpdated = await updateCandlestickBuckets(db, chainId, poolId, price, quantity, event, args);
+  if (candlestickUpdated === false) {
+    logger.warn('Candlestick update skipped - pool not found', LogLabel.VALIDATION, 'handleOrderMatched', {
+      poolId,
+      poolAddress,
+      chainId,
+      txHash
+    });
+  }
+
+  // Log successful match processing
+  logger.info('OrderMatched processed successfully', LogLabel.EVENT_HANDLER, 'handleOrderMatched', {
+    buyOrderId,
+    sellOrderId,
+    rawBuyOrderId: args.buyOrderId,
+    rawSellOrderId: args.sellOrderId,
+    price: price.toString(),
+    quantity: quantity.toString(),
+    poolAddress,
+    txHash
+  });
 
   await executeIfInSync(Number(event.block.number), async () => {
     const symbol = (await getPoolTradingPair(context, event.log.address!, chainId, 'handleOrderMatched', Number(event.block.number))).toUpperCase();
@@ -463,14 +606,47 @@ export async function handleOrderMatched({ event, context }: any) {
 }
 
 export async function handleOrderCancelled({ event, context }: any) {
+  // Track indexer progress
+  await updateIndexerStatus(context, 'OrderBook:OrderCancelled', event);
+
   const db = context.db;
   const chainId = context.network.chainId;
+  const poolAddress = event.log.address!;
 
-  const hashedOrderId = createOrderId(chainId, BigInt(event.args.orderId!), event.log.address!);
+  const hashedOrderId = createOrderId(chainId, BigInt(event.args.orderId!), poolAddress);
   const timestamp = Number(event.args.timestamp);
 
+  // Log event received
+  logger.info('OrderCancelled event received', LogLabel.EVENT_HANDLER, 'handleOrderCancelled', {
+    orderId: event.args.orderId,
+    hashedOrderId,
+    userAddress: event.args.user,
+    status: event.args.status,
+    poolAddress,
+    txHash: event.transaction.hash,
+    blockNumber: event.block.number?.toString()
+  });
+
   try {
-    await updateOrder(db, chainId, hashedOrderId, event, timestamp);
+    const orderUpdateSuccess = await updateOrder(db, chainId, hashedOrderId, event, timestamp);
+    if (orderUpdateSuccess === false) {
+      logger.warn('Order cancellation update skipped - order not found', LogLabel.VALIDATION, 'handleOrderCancelled', {
+        hashedOrderId,
+        orderId: event.args.orderId,
+        poolAddress,
+        chainId,
+        txHash: event.transaction.hash
+      });
+    } else {
+      logger.info('Order cancelled successfully', LogLabel.DATABASE, 'handleOrderCancelled', {
+        hashedOrderId,
+        orderId: event.args.orderId,
+        userAddress: event.args.user,
+        poolAddress,
+        txHash: event.transaction.hash
+      });
+    }
+
     await upsertOrderBookDepthOnCancel(db, chainId, hashedOrderId, event, timestamp);
 
     // Track user activity for order cancellation
@@ -489,14 +665,28 @@ export async function handleOrderCancelled({ event, context }: any) {
       await publishDepthEvent(symbol, latestDepth.bids as any, latestDepth.asks as any, timestamp);
     }, 'handleOrderCancelled');
   } catch (e) {
-    log(LogLevel.ERROR, 'OrderCancelled error', LogLabel.EVENT_HANDLER, ServiceName.CORE_CHAIN, { error: e instanceof Error ? e.message : String(e) }, 'orderBookHandler.ts', 'handleOrderCancelled');
+    log(LogLevel.ERROR, 'OrderCancelled error', LogLabel.EVENT_HANDLER, { error: e instanceof Error ? e.message : String(e) }, 'orderBookHandler.ts', 'handleOrderCancelled');
     return;
   }
 }
 
 export async function handleUpdateOrder({ event, context }: any) {
+  // Track indexer progress
+  await updateIndexerStatus(context, 'OrderBook:UpdateOrder', event);
+
   const db = context.db;
   const chainId = context.network.chainId;
+  const poolAddress = event.log.address;
+
+  // Log event received first
+  logger.info('UpdateOrder event received', LogLabel.EVENT_HANDLER, 'handleUpdateOrder', {
+    orderId: event.args.orderId,
+    filled: event.args.filled?.toString(),
+    status: event.args.status,
+    poolAddress,
+    txHash: event.transaction.hash,
+    blockNumber: event.block.number?.toString()
+  });
 
   // Validate required event args exist
   if (event.args.orderId === undefined || event.args.filled === undefined || event.args.status === undefined || event.args.timestamp === undefined) {
@@ -505,17 +695,15 @@ export async function handleUpdateOrder({ event, context }: any) {
   }
 
   // Validate log address exists
-  if (!event.log.address) {
+  if (!poolAddress) {
     logger.error('UpdateOrder event missing log address', LogLabel.VALIDATION, 'handleUpdateOrder', { eventLog: event.log });
     return;
   }
 
   const filled = BigInt(event.args.filled);
   const orderId = BigInt(event.args.orderId);
-  const poolAddress = event.log.address;
   const status = ORDER_STATUS[Number(event.args.status)];
   const timestamp = Number(event.args.timestamp);
-
 
   const hashedOrderId = createOrderId(chainId, orderId, poolAddress);
   const orderHistoryId = createOrderHistoryId(chainId, event.transaction.hash, filled, poolAddress, orderId.toString());
@@ -540,10 +728,23 @@ export async function handleUpdateOrder({ event, context }: any) {
         hashedOrderId,
         chainId,
         orderId: event.args.orderId,
+        poolAddress,
+        txHash: event.transaction.hash,
         message: 'Order not found, possibly due to event processing order or missing CreateOrder event'
       });
       return;
     }
+
+    // Log successful update
+    logger.info('Order updated successfully', LogLabel.DATABASE, 'handleUpdateOrder', {
+      hashedOrderId,
+      orderId: event.args.orderId,
+      filled: filled.toString(),
+      status,
+      poolAddress,
+      chainId,
+      txHash: event.transaction.hash
+    });
 
     // Track user activity for order update (get user from order)
     const order = await db.find(orders, { id: hashedOrderId });
@@ -585,7 +786,7 @@ export async function handleUpdateOrder({ event, context }: any) {
       await publishDepthEvent(symbol, latestDepth.bids as any, latestDepth.asks as any, timestamp);
     }, 'handleUpdateOrder');
   } catch (e) {
-    log(LogLevel.ERROR, 'UpdateOrder error', LogLabel.EVENT_HANDLER, ServiceName.CORE_CHAIN, { error: e instanceof Error ? e.message : String(e) }, 'orderBookHandler.ts', 'handleUpdateOrder');
+    log(LogLevel.ERROR, 'UpdateOrder error', LogLabel.EVENT_HANDLER, { error: e instanceof Error ? e.message : String(e) }, 'orderBookHandler.ts', 'handleUpdateOrder');
     return;
   }
 

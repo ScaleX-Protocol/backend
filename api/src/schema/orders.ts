@@ -17,6 +17,11 @@ export const orders = pgTable(
     type: varchar('type'),
     status: varchar('status'),
     expiry: integer('expiry'),
+    autoRepay: varchar('auto_repay'),
+    autoBorrow: varchar('auto_borrow'),
+    timeInForce: varchar('time_in_force'),
+    quoteQuantity: bigint('quote_quantity', { mode: 'bigint' }),
+    executedQuoteQuantity: bigint('executed_quote_quantity', { mode: 'bigint' }),
   },
   (table) => ({
     orderIdChainIdx: index('orders_order_id_chain_idx').on(table.orderId, table.chainId),
