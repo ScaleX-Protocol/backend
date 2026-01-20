@@ -1,8 +1,7 @@
 import { getEventPublisher } from "@/events/index";
 import { createBalanceId, createLendingPositionId } from "@/utils";
-import { executeIfInSync } from "@/utils/syncState";
 import { updateIndexerStatus } from "@/utils/indexerStatus";
-import { createLogger, LogLabel, log, LogLevel, ServiceName } from "../utils/logger";
+import { executeIfInSync } from "@/utils/syncState";
 import { sql } from "ponder";
 import {
   assetConfigurations,
@@ -16,6 +15,7 @@ import {
   userLendingStats
 } from "ponder:schema";
 import { getAddress } from "viem";
+import { createLogger, log, LogLabel, LogLevel } from "../utils/logger";
 
 // Create logger instance for this file
 const logger = createLogger('lendingManagerHandler.ts');
@@ -24,13 +24,13 @@ const logger = createLogger('lendingManagerHandler.ts');
 async function upsertUserLendingStats(
   db: any,
   chainId: number,
-  user: string,
+  userAddress: string,
   action: string,
   amount: bigint,
   timestamp: number
 ) {
-  const userId = `${chainId}-${user}`;
-  const statsId = `${chainId}-${user}-lending`;
+  const userId = `${chainId}-${userAddress}`;
+  const statsId = `${chainId}-${userAddress}-lending`;
 
   const updateData: any = {
     lastLendingActivity: timestamp,
@@ -61,7 +61,7 @@ async function upsertUserLendingStats(
     .values({
       id: statsId,
       chainId,
-      user,
+      userAddress: userAddress,
       firstLendingActivity: timestamp,
       lastLendingActivity: timestamp,
       activePositions: 0,
@@ -102,14 +102,38 @@ export async function handleSupply({ event, context }: any) {
   const chainId = context.network.chainId;
 
 
-  const user = event.args.user;
+  const userAddress = getAddress(event.args.user);
   const token = getAddress(event.args.token);
   const amount = BigInt(event.args.amount);
   const timestamp = Number(event.block.timestamp);
   const txHash = event.transaction.hash;
 
+  // DEBUG: Log event args to diagnose user address issue
+  const debugInfo = {
+    txHash,
+    blockNumber: event.block.number,
+    rawUser: event.args.user,
+    rawUserType: typeof event.args.user,
+    extractedUser: userAddress,
+    extractedUserType: typeof userAddress,
+    token,
+    amount: amount.toString(),
+    isValidAddress: userAddress && typeof userAddress === 'string' && userAddress.startsWith('0x') && userAddress.length === 42,
+  };
+  logger.info('[LENDING-DEBUG] Supply event extracted values', LogLabel.EVENT_HANDLER, 'handleSupply', debugInfo);
+  console.log('[LENDING-DEBUG] Supply event:', {
+    eventArgs: JSON.stringify({
+      userAddress: event.args.user,
+      userLength: typeof event.args.user === 'string' ? event.args.user.length : 'N/A',
+      token: event.args.token,
+      amount: event.args.amount?.toString(),
+    }),
+    extracted: { userAddress, token, amount: amount.toString() },
+    ...debugInfo,
+  });
+
   // Create/update lending position
-  const positionId = createLendingPositionId(chainId, user, token, token);
+  const positionId = createLendingPositionId(chainId, userAddress, token, token);
 
   // Try to find existing position first
   const existingPosition = await context.db.find(lendingPositions, {
@@ -132,7 +156,7 @@ export async function handleSupply({ event, context }: any) {
       .values({
         id: positionId,
         chainId,
-        user,
+        userAddress: userAddress,
         collateralToken: token,
         debtToken: token,
         collateralAmount: amount,
@@ -145,19 +169,24 @@ export async function handleSupply({ event, context }: any) {
   // Record lending event
   const eventId = `${txHash}-supply-${timestamp}`;
 
-  await db.insert(lendingEvents).values({
+  const insertValues = {
     id: eventId,
     chainId,
-    user,
+    userAddress: userAddress,
     action: "SUPPLY",
     token,
     amount,
     timestamp,
     transactionId: txHash,
     blockNumber: BigInt(event.block.number),
-  }).onConflictDoUpdate((row: any) => ({
+  };
+  console.log('[LENDING-DB-INSERT] About to insert lending event:', JSON.stringify(insertValues, (key, value) =>
+    typeof value === 'bigint' ? value.toString() : value
+  ));
+
+  await db.insert(lendingEvents).values(insertValues).onConflictDoUpdate((row: any) => ({
     chainId,
-    user,
+    userAddress: userAddress,
     action: "SUPPLY",
     token,
     amount,
@@ -167,18 +196,18 @@ export async function handleSupply({ event, context }: any) {
   }));
 
   // Update user stats
-  await upsertUserLendingStats(db, chainId, user, "SUPPLY", amount, timestamp);
+  await upsertUserLendingStats(db, chainId, userAddress, "SUPPLY", amount, timestamp);
 
   // Update pool lending stats
   await updatePoolLendingStats(db, chainId, token, amount, BigInt(0), timestamp);
 
   // Update user balance to reflect real lending supply
-  const balanceId = createBalanceId(chainId, token, user);
+  const balanceId = createBalanceId(chainId, token, userAddress);
   await db
     .insert(balances)
     .values({
       id: balanceId,
-      user,
+      userAddress: userAddress,
       chainId,
       currency: token,
       amount: BigInt(0),
@@ -198,14 +227,14 @@ export async function handleSupply({ event, context }: any) {
 
   // Publish events if in sync
   await executeIfInSync(Number(event.block.number), async () => {
-    await publishLendingEvent("SUPPLY", user, token, amount.toString(), timestamp);
+    await publishLendingEvent("SUPPLY", userAddress, token, amount.toString(), timestamp);
 
     // Update balance event
     const balance = await db.find(balances, { id: balanceId });
     if (balance) {
       const eventPublisher = getEventPublisher();
       await eventPublisher.publishBalanceUpdate({
-        userId: balance.user,
+        userId: balance.userAddress,
         token: balance.currency,
         available: (balance.amount ?? BigInt(0)).toString(),
         locked: (balance.lockedAmount ?? BigInt(0)).toString(),
@@ -221,21 +250,45 @@ export async function handleBorrow({ event, context }: any) {
   const { db } = context;
   const chainId = context.network.chainId;
 
-  const user = event.args.user;
+  const userAddress = getAddress(event.args.user);
   const token = getAddress(event.args.token);
   const amount = BigInt(event.args.amount);
   const timestamp = Number(event.block.timestamp);
   const txHash = event.transaction.hash;
 
+  // DEBUG: Log event args to diagnose user address issue
+  const debugInfo = {
+    txHash,
+    blockNumber: event.block.number,
+    rawUser: event.args.user,
+    rawUserType: typeof event.args.user,
+    extractedUser: userAddress,
+    extractedUserType: typeof userAddress,
+    token,
+    amount: amount.toString(),
+    isValidAddress: userAddress && typeof userAddress === 'string' && userAddress.startsWith('0x') && userAddress.length === 42,
+  };
+  logger.info('[LENDING-DEBUG] Borrow event extracted values', LogLabel.EVENT_HANDLER, 'handleBorrow', debugInfo);
+  console.log('[LENDING-DEBUG] Borrow event:', {
+    eventArgs: JSON.stringify({
+      userAddress: event.args.user,
+      userLength: typeof event.args.user === 'string' ? event.args.user.length : 'N/A',
+      token: event.args.token,
+      amount: event.args.amount?.toString(),
+    }),
+    extracted: { userAddress, token, amount: amount.toString() },
+    ...debugInfo,
+  });
+
   try {
     // Update lending position
-    const positionId = createLendingPositionId(chainId, user, token, token);
+    const positionId = createLendingPositionId(chainId, userAddress, token, token);
     await db
       .insert(lendingPositions)
       .values({
         id: positionId,
         chainId,
-        user,
+        userAddress: userAddress,
         collateralToken: token,
         debtToken: token,
         collateralAmount: BigInt(0),
@@ -254,7 +307,7 @@ export async function handleBorrow({ event, context }: any) {
     await db.insert(lendingEvents).values({
       id: eventId,
       chainId,
-      user,
+      userAddress: userAddress,
       action: "BORROW",
       token: token,
       amount,
@@ -274,18 +327,18 @@ export async function handleBorrow({ event, context }: any) {
     }));
 
     // Update user stats
-    await upsertUserLendingStats(db, chainId, user, "BORROW", amount, timestamp);
+    await upsertUserLendingStats(db, chainId, userAddress, "BORROW", amount, timestamp);
 
     // Update pool lending stats
     await updatePoolLendingStats(db, chainId, token, BigInt(0), amount, timestamp);
 
     // Update user balance to reflect debt (negative balance indicates debt)
-    const balanceId = createBalanceId(chainId, token, user);
+    const balanceId = createBalanceId(chainId, token, userAddress);
     await db
       .insert(balances)
       .values({
         id: balanceId,
-        user,
+        userAddress: userAddress,
         chainId,
         currency: token,
         amount: BigInt(0),
@@ -299,13 +352,13 @@ export async function handleBorrow({ event, context }: any) {
 
     // // Publish events if in sync
     await executeIfInSync(Number(event.block.number), async () => {
-      await publishLendingEvent("BORROW", user, token, amount.toString(), timestamp, {
+      await publishLendingEvent("BORROW", userAddress, token, amount.toString(), timestamp, {
         healthFactor: "10000",
         interestRate: "0"
       });
     }, 'handleBorrow');
   } catch (error) {
-    log(LogLevel.ERROR, 'handleBorrow ERROR', LogLabel.EVENT_HANDLER, { error: error instanceof Error ? error.message : String(error), user, token, amount: amount.toString() }, 'lendingManagerHandler.ts', 'handleBorrow');
+    log(LogLevel.ERROR, 'handleBorrow ERROR', LogLabel.EVENT_HANDLER, { error: error instanceof Error ? error.message : String(error), userAddress, token, amount: amount.toString() }, 'lendingManagerHandler.ts', 'handleBorrow');
     return;
   }
 }
@@ -315,19 +368,45 @@ export async function handleRepay({ event, context }: any) {
   await updateIndexerStatus(context, 'LendingManager:Repay', event);
   const { db } = context;
   const chainId = context.network.chainId;
-  const user = event.args.user;
+  const userAddress = getAddress(event.args.user);
   const token = getAddress(event.args.token);
   const amount = BigInt(event.args.amount);
   const interest = BigInt(event.args.interest || 0);
   const timestamp = Number(event.block.timestamp);
   const txHash = event.transaction.hash;
 
+  // DEBUG: Log event args to diagnose user address issue
+  const debugInfo = {
+    txHash,
+    blockNumber: event.block.number,
+    rawUser: event.args.user,
+    rawUserType: typeof event.args.user,
+    extractedUser: userAddress,
+    extractedUserType: typeof userAddress,
+    token,
+    amount: amount.toString(),
+    interest: interest.toString(),
+    isValidAddress: userAddress && typeof userAddress === 'string' && userAddress.startsWith('0x') && userAddress.length === 42,
+  };
+  logger.info('[LENDING-DEBUG] Repay event extracted values', LogLabel.EVENT_HANDLER, 'handleRepay', debugInfo);
+  console.log('[LENDING-DEBUG] Repay event:', {
+    eventArgs: JSON.stringify({
+      userAddress: event.args.user,
+      userLength: typeof event.args.user === 'string' ? event.args.user.length : 'N/A',
+      token: event.args.token,
+      amount: event.args.amount?.toString(),
+      interest: event.args.interest?.toString(),
+    }),
+    extracted: { userAddress, token, amount: amount.toString(), interest: interest.toString() },
+    ...debugInfo,
+  });
+
   // Record repay event
   const eventId = `${txHash}-repay-${timestamp}`;
   await db.insert(lendingEvents).values({
     id: eventId,
     chainId,
-    user,
+    userAddress: userAddress,
     action: "REPAY",
     token: token,
     amount: amount + interest,
@@ -337,13 +416,13 @@ export async function handleRepay({ event, context }: any) {
   });
 
   // Update user stats
-  await upsertUserLendingStats(db, chainId, user, "REPAY", amount, timestamp);
+  await upsertUserLendingStats(db, chainId, userAddress, "REPAY", amount, timestamp);
 
   // Update pool lending stats (decrement borrow on repay)
   await updatePoolLendingStats(db, chainId, token, BigInt(0), -amount, timestamp);
 
   // Update user balance
-  const balanceId = createBalanceId(chainId, token, user);
+  const balanceId = createBalanceId(chainId, token, userAddress);
   await db
     .update(balances, { id: balanceId })
     .set({
@@ -353,7 +432,7 @@ export async function handleRepay({ event, context }: any) {
 
   // Publish events if in sync
   await executeIfInSync(Number(event.block.number), async () => {
-    await publishLendingEvent("REPAY", user, token, amount.toString(), timestamp, {
+    await publishLendingEvent("REPAY", userAddress, token, amount.toString(), timestamp, {
       interestPaid: interest.toString(),
       healthFactor: "10000"
     });
@@ -365,12 +444,38 @@ export async function handleWithdraw({ event, context }: any) {
   await updateIndexerStatus(context, 'LendingManager:Withdraw', event);
   const { db } = context;
   const chainId = context.network.chainId;
-  const user = event.args.user;
+  const userAddress = getAddress(event.args.user);
   const token = getAddress(event.args.token);
   const amount = BigInt(event.args.amount);
   const yieldAmount = BigInt(event.args.yield || 0);
   const timestamp = Number(event.block.timestamp);
   const txHash = event.transaction.hash;
+
+  // DEBUG: Log event args to diagnose user address issue
+  const debugInfo = {
+    txHash,
+    blockNumber: event.block.number,
+    rawUser: event.args.user,
+    rawUserType: typeof event.args.user,
+    extractedUser: userAddress,
+    extractedUserType: typeof userAddress,
+    token,
+    amount: amount.toString(),
+    yieldAmount: yieldAmount.toString(),
+    isValidAddress: userAddress && typeof userAddress === 'string' && userAddress.startsWith('0x') && userAddress.length === 42,
+  };
+  logger.info('[LENDING-DEBUG] Withdraw event extracted values', LogLabel.EVENT_HANDLER, 'handleWithdraw', debugInfo);
+  console.log('[LENDING-DEBUG] Withdraw event:', {
+    eventArgs: JSON.stringify({
+      userAddress: event.args.user,
+      userLength: typeof event.args.user === 'string' ? event.args.user.length : 'N/A',
+      token: event.args.token,
+      amount: event.args.amount?.toString(),
+      yield: event.args.yield?.toString(),
+    }),
+    extracted: { userAddress, token, amount: amount.toString(), yieldAmount: yieldAmount.toString() },
+    ...debugInfo,
+  });
 
   // Update pool lending stats (decrement supply on withdraw)
   await updatePoolLendingStats(db, chainId, token, -amount, BigInt(0), timestamp);
@@ -380,7 +485,7 @@ export async function handleWithdraw({ event, context }: any) {
   await db.insert(lendingEvents).values({
     id: eventId,
     chainId,
-    user,
+    userAddress: userAddress,
     action: "WITHDRAW",
     token: token,
     amount,
@@ -390,10 +495,10 @@ export async function handleWithdraw({ event, context }: any) {
   });
 
   // Update user stats
-  await upsertUserLendingStats(db, chainId, user, "WITHDRAW", amount, timestamp);
+  await upsertUserLendingStats(db, chainId, userAddress, "WITHDRAW", amount, timestamp);
 
   // Update user balance
-  const balanceId = createBalanceId(chainId, token, user);
+  const balanceId = createBalanceId(chainId, token, userAddress);
   await db
     .update(balances, { id: balanceId })
     .set({
@@ -403,7 +508,7 @@ export async function handleWithdraw({ event, context }: any) {
 
   // Publish events if in sync
   await executeIfInSync(Number(event.block.number), async () => {
-    await publishLendingEvent("WITHDRAW", user, token, amount.toString(), timestamp, {
+    await publishLendingEvent("WITHDRAW", userAddress, token, amount.toString(), timestamp, {
       interestEarned: yieldAmount.toString()
     });
   }, 'handleWithdraw');
@@ -414,8 +519,8 @@ export async function handleLiquidation({ event, context }: any) {
   await updateIndexerStatus(context, 'LendingManager:Liquidation', event);
   const { db } = context;
   const chainId = context.network.chainId;
-  const borrower = event.args.borrower;
-  const liquidator = event.args.liquidator;
+  const borrower = getAddress(event.args.borrower);
+  const liquidator = getAddress(event.args.liquidator);
   const collateralToken = getAddress(event.args.collateralToken);
   const debtToken = getAddress(event.args.debtToken);
   const debtToCover = BigInt(event.args.debtToCover);
@@ -447,7 +552,7 @@ export async function handleLiquidation({ event, context }: any) {
   await db.insert(lendingEvents).values({
     id: liquidatedEventId,
     chainId,
-    user: borrower,
+    userAddress: borrower,
     action: "LIQUIDATE",
     token: collateralToken,
     amount: liquidatedCollateral,
@@ -618,7 +723,7 @@ export async function handleInterestRateParamsSet({ event, context }: any) {
   // Update pool lending stats with new rate parameters
   await updatePoolLendingRates(db, chainId, token, timestamp);
 
-  logger.info(`Interest rate parameters updated for ${token}: Base=${baseRate/100}%, Optimal=${optimalUtilization/100}%, Slope1=${rateSlope1/100}%, Slope2=${rateSlope2/100}%`, LogLabel.EVENT_HANDLER, 'handleInterestRateParamsSet', {
+  logger.info(`Interest rate parameters updated for ${token}: Base=${baseRate / 100}%, Optimal=${optimalUtilization / 100}%, Slope1=${rateSlope1 / 100}%, Slope2=${rateSlope2 / 100}%`, LogLabel.EVENT_HANDLER, 'handleInterestRateParamsSet', {
     token,
     baseRate,
     optimalUtilization,
@@ -738,7 +843,7 @@ async function updatePoolLendingRates(db: any, chainId: number, token: string, t
         lastUpdated: timestamp,
       });
 
-    logger.info(`Pool rates updated for ${token}: BorrowAPY=${(borrowRate/100).toFixed(2)}%, SupplyAPY=${(supplyRate/100).toFixed(2)}%`, LogLabel.SYSTEM, 'updatePoolLendingRates', {
+    logger.info(`Pool rates updated for ${token}: BorrowAPY=${(borrowRate / 100).toFixed(2)}%, SupplyAPY=${(supplyRate / 100).toFixed(2)}%`, LogLabel.SYSTEM, 'updatePoolLendingRates', {
       token,
       baseRate,
       optimalUtilization,
@@ -819,7 +924,7 @@ async function updatePoolLendingStats(
           lastUpdated: timestamp,
         }));
 
-      logger.info(`Pool stats updated for ${token} without rates (parameters not configured): Supply=${newTotalSupply.toString()}, Borrow=${newTotalBorrow.toString()}, Utilization=${(utilizationRate/100).toFixed(2)}%`, LogLabel.SYSTEM, 'updatePoolLendingStats', {
+      logger.info(`Pool stats updated for ${token} without rates (parameters not configured): Supply=${newTotalSupply.toString()}, Borrow=${newTotalBorrow.toString()}, Utilization=${(utilizationRate / 100).toFixed(2)}%`, LogLabel.SYSTEM, 'updatePoolLendingStats', {
         token,
         supplyAmount: supplyAmount.toString(),
         borrowAmount: borrowAmount.toString(),
@@ -861,7 +966,7 @@ async function updatePoolLendingStats(
         lastUpdated: timestamp,
       }));
 
-    logger.info(`Pool stats updated for ${token}: Supply=${newTotalSupply.toString()}, Borrow=${newTotalBorrow.toString()}, Utilization=${(utilizationRate/100).toFixed(2)}%, BorrowAPY=${(borrowRate/100).toFixed(2)}%, SupplyAPY=${(supplyRate/100).toFixed(2)}%`, LogLabel.SYSTEM, 'updatePoolLendingStats', {
+    logger.info(`Pool stats updated for ${token}: Supply=${newTotalSupply.toString()}, Borrow=${newTotalBorrow.toString()}, Utilization=${(utilizationRate / 100).toFixed(2)}%, BorrowAPY=${(borrowRate / 100).toFixed(2)}%, SupplyAPY=${(supplyRate / 100).toFixed(2)}%`, LogLabel.SYSTEM, 'updatePoolLendingStats', {
       token,
       supplyAmount: supplyAmount.toString(),
       borrowAmount: borrowAmount.toString(),
@@ -912,7 +1017,7 @@ async function initializePoolLendingStats(
       initialBorrowRate = calculateBorrowRate(initialUtilization, baseRate, optimalUtilization, rateSlope1, rateSlope2);
       initialSupplyRate = calculateSupplyRate(initialBorrowRate, initialUtilization, reserveFactor);
 
-      logger.info(`Pool stats initialized for ${token} with per-token model: Base Rate=${baseRate/100}%, Optimal Util=${optimalUtilization/100}%, Slope1=${rateSlope1/100}%, Slope2=${rateSlope2/100}%`, LogLabel.SYSTEM, 'initializePoolLendingStats', {
+      logger.info(`Pool stats initialized for ${token} with per-token model: Base Rate=${baseRate / 100}%, Optimal Util=${optimalUtilization / 100}%, Slope1=${rateSlope1 / 100}%, Slope2=${rateSlope2 / 100}%`, LogLabel.SYSTEM, 'initializePoolLendingStats', {
         token,
         baseRate,
         optimalUtilization,
