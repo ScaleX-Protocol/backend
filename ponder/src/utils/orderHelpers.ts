@@ -497,7 +497,8 @@ export async function upsertOrderBookDepthOnCancel(
 ) {
 	const order = await db.find(orders, { id: hashedOrderId });
 	const price = BigInt(order.price);
-	const side = getSide(order.side);
+	// FIX: order.side is already a string ("Buy" or "Sell"), use it directly
+	const side = order.side;
 	await db
 		.insert(orderBookDepth)
 		.values({
@@ -511,7 +512,8 @@ export async function upsertOrderBookDepthOnCancel(
 			lastUpdated: timestamp,
 		})
 		.onConflictDoUpdate((row: any) => ({
-			quantity: row.quantity + BigInt(order.quantity),
+			// FIX: SUBTRACT quantity when order is cancelled, not ADD
+			quantity: row.quantity - BigInt(order.quantity),
 			orderCount: row.orderCount - 1,
 			lastUpdated: timestamp,
 		}));
