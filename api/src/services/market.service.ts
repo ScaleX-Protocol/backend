@@ -417,7 +417,7 @@ export class MarketService {
                 .orderBy(desc(dailyBuckets.openTime))
                 .limit(1)
                 .execute(),
-            
+
             db
                 .select()
                 .from(orderBookTrades)
@@ -425,20 +425,36 @@ export class MarketService {
                 .orderBy(desc(orderBookTrades.timestamp))
                 .limit(1)
                 .execute(),
-            
+
+            // FIX: Query orders table directly instead of stale orderBookDepth cache
             db
-                .select()
-                .from(orderBookDepth)
-                .where(and(eq(orderBookDepth.poolId, poolId), eq(orderBookDepth.side, "Buy")))
-                .orderBy(desc(orderBookDepth.price))
+                .select({ price: orders.price })
+                .from(orders)
+                .where(
+                    and(
+                        gt(orders.price, 0n),
+                        eq(orders.poolId, poolId),
+                        eq(orders.side, "Buy"),
+                        or(eq(orders.status, "OPEN"), eq(orders.status, "PARTIALLY_FILLED"))
+                    )
+                )
+                .orderBy(desc(orders.price))
                 .limit(1)
                 .execute(),
-            
+
+            // FIX: Query orders table directly instead of stale orderBookDepth cache
             db
-                .select()
-                .from(orderBookDepth)
-                .where(and(eq(orderBookDepth.poolId, poolId), eq(orderBookDepth.side, "Sell")))
-                .orderBy(asc(orderBookDepth.price))
+                .select({ price: orders.price })
+                .from(orders)
+                .where(
+                    and(
+                        gt(orders.price, 0n),
+                        eq(orders.poolId, poolId),
+                        eq(orders.side, "Sell"),
+                        or(eq(orders.status, "OPEN"), eq(orders.status, "PARTIALLY_FILLED"))
+                    )
+                )
+                .orderBy(asc(orders.price))
                 .limit(1)
                 .execute()
         ]);
