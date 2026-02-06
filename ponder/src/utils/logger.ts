@@ -162,7 +162,28 @@ export const log = (
     // Console output with emojis for visibility (matching mm-bot format)
     const emoji = level === LogLevel.ERROR ? '❌' : level === LogLevel.WARN ? '⚠️' : level === LogLevel.INFO ? 'ℹ️' : '🔍';
     const shortTimestamp = currentTimestamp.substring(11, 19); // Extract HH:MM:SS
-    const consoleMessage = `${emoji} [${level.toUpperCase()}] [${shortTimestamp}] [${SERVICE_NAME}/${label}] ${safeFilename}:${safeFunctionName}() - ${safeMessage}`;
+
+    // Format data object for console - only show if it has meaningful content
+    let dataStr = '';
+    if (safeData && Object.keys(safeData).length > 0 && safeData.value === undefined) {
+      try {
+        // Create a compact string of key data points
+        const compactData: any = {};
+        if (safeData.blockNumber) compactData.block = safeData.blockNumber;
+        if (safeData.txHash) compactData.tx = safeData.txHash?.substring(0, 10) + '...';
+        if (safeData.orderId) compactData.orderId = safeData.orderId?.toString();
+        if (safeData.chainId) compactData.chainId = safeData.chainId;
+        if (safeData.status) compactData.status = safeData.status;
+
+        if (Object.keys(compactData).length > 0) {
+          dataStr = ' ' + JSON.stringify(compactData);
+        }
+      } catch {
+        // Ignore JSON stringify errors
+      }
+    }
+
+    const consoleMessage = `${emoji} [${level.toUpperCase()}] [${shortTimestamp}] [${SERVICE_NAME}/${label}] ${safeFilename}:${safeFunctionName}() - ${safeMessage}${dataStr}`;
 
     try {
       switch (level) {
