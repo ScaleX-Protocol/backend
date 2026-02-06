@@ -170,7 +170,7 @@ export const log = (
         // Create a compact string of key data points
         const compactData: any = {};
         if (safeData.blockNumber) compactData.block = safeData.blockNumber;
-        if (safeData.txHash) compactData.tx = safeData.txHash?.substring(0, 10) + '...';
+        if (safeData.txHash) compactData.tx = safeData.txHash;
         if (safeData.orderId) compactData.orderId = safeData.orderId?.toString();
         if (safeData.chainId) compactData.chainId = safeData.chainId;
         if (safeData.status) compactData.status = safeData.status;
