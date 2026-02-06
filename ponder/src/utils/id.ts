@@ -1,8 +1,11 @@
 import { createHash } from "crypto";
 import { Address } from "viem";
 
-export function createOrderId(chainId: number, orderId: bigint, poolAddress: string): string {
-	return createHash("sha256").update(`${chainId}_${poolAddress}_${orderId}`).digest("hex");
+export function createOrderId(chainId: number, orderId: bigint, poolAddress: string, txHash?: string): string {
+	// IMPORTANT: txHash removed from hash to enable db.find() lookups in UpdateOrder/OrderMatched events
+	// Since Ponder doesn't support complex queries (db.select, db.sql, raw SQL), we need predictable IDs
+	// Trade-off: Order IDs may collide when on-chain IDs are reused - handled by status checks
+	return createHash("sha256").update(`${chainId}_${poolAddress.toLowerCase()}_${orderId}`).digest("hex");
 }
 
 export function createBucketId(chainId: number, poolAddress: string, openTime: number): string {
