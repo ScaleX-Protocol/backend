@@ -15,65 +15,72 @@ import { ORDER_STATUS, OrderSide, OrderType, TIME_INTERVALS } from "./constants"
 import { createBucketId, createOrderId } from "./id";
 import { OrderMatchedEventArgs, OrderPlacedEventArgs } from "@/types";
 import { createLogger, LogLabel } from "./logger";
-import { eq, and, or } from "ponder";
 
 // Create logger instance for this file
 const logger = createLogger('orderHelpers.ts');
 
 /**
  * Find an active order by its on-chain order ID.
- * Since on-chain order IDs can be reused after cancellation/expiry,
- * we query by natural keys and filter for active status.
+ * Uses predictable ID hash (chainId + poolId + orderId) for db.find() compatibility.
+ * Filters by status to handle order ID reuse.
  */
 export async function findActiveOrder(
 	db: any,
 	chainId: number,
 	poolId: string,
-	onChainOrderId: bigint
+	onChainOrderId: bigint,
+	blockNumber?: bigint | number
 ): Promise<any | null> {
 	try {
-		// Query orders matching chainId, poolId, orderId and active status
-		// Note: poolId comparison is case-sensitive at DB level, normalized to lowercase
-		const activeOrders = await db
-			.select()
-			.from(orders)
-			.where(
-				and(
-					eq(orders.chainId, chainId),
-					eq(orders.poolId, poolId.toLowerCase()),
-					eq(orders.orderId, onChainOrderId),
-					or(
-						eq(orders.status, "PENDING"),
-						eq(orders.status, "OPEN"),
-						eq(orders.status, "PARTIALLY_FILLED")
-					)
-				)
-			);
+		// Create predictable ID (no txHash needed)
+		const orderId = createOrderId(chainId, onChainOrderId, poolId);
 
-		if (activeOrders && activeOrders.length > 0) {
-			logger.info('Found active order', LogLabel.DATABASE, 'findActiveOrder', {
+		// Use db.find() which works reliably in Ponder
+		const order = await db.find(orders, { id: orderId });
+
+		if (!order) {
+			logger.debug('Order not found', LogLabel.DATABASE, 'findActiveOrder', {
 				chainId,
 				poolId,
 				onChainOrderId: onChainOrderId.toString(),
-				hashedId: activeOrders[0].id,
-				status: activeOrders[0].status
+				hashedId: orderId,
+				blockNumber: blockNumber?.toString()
 			});
-			return activeOrders[0];
+			return null;
 		}
 
-		logger.debug('No active order found', LogLabel.DATABASE, 'findActiveOrder', {
+		// Check if order is active (not cancelled/filled/expired)
+		const isActive = order.status === "PENDING" || order.status === "OPEN" || order.status === "PARTIALLY_FILLED";
+
+		if (!isActive) {
+			logger.debug('Order found but not active', LogLabel.DATABASE, 'findActiveOrder', {
+				chainId,
+				poolId,
+				onChainOrderId: onChainOrderId.toString(),
+				hashedId: orderId,
+				status: order.status,
+				blockNumber: blockNumber?.toString()
+			});
+			return null;
+		}
+
+		logger.info('Found active order', LogLabel.DATABASE, 'findActiveOrder', {
 			chainId,
 			poolId,
-			onChainOrderId: onChainOrderId.toString()
+			onChainOrderId: onChainOrderId.toString(),
+			hashedId: orderId,
+			status: order.status,
+			blockNumber: blockNumber?.toString()
 		});
-		return null;
+		return order;
 	} catch (error) {
 		logger.error('Failed to find active order', LogLabel.DATABASE, 'findActiveOrder', {
 			error: error instanceof Error ? error.message : String(error),
 			stack: error instanceof Error ? error.stack : undefined,
 			chainId,
 			poolId,
-			onChainOrderId: onChainOrderId.toString()
+			onChainOrderId: onChainOrderId.toString(),
+			blockNumber: blockNumber?.toString()
 		});
 		return null;
 	}
@@ -397,7 +404,8 @@ export async function updateOrder(
 	chainId: number,
 	hashedOrderId: string,
 	event: any,
-	timestamp: number
+	timestamp: number,
+	blockNumber?: bigint | number
 ) {
 	// First check if the order exists
 	const existingOrder = await db.find(orders, {
@@ -410,7 +418,8 @@ export async function updateOrder(
 			hashedOrderId,
 			chainId,
 			orderId: event.args.orderId,
-			status: event.args.status
+			status: event.args.status,
+			blockNumber: blockNumber?.toString()
 		});
 		return false;
 	}
@@ -445,7 +454,8 @@ export async function updateOrder(
 				filled: filledAmount.toString(),
 				quantity: orderQuantity.toString(),
 				eventStatus: ORDER_STATUS[Number(event.args.status)],
-				correctedStatus: 'FILLED'
+				correctedStatus: 'FILLED',
+				blockNumber: blockNumber?.toString()
 			});
 		}
 
@@ -462,7 +472,8 @@ export async function updateOrder(
 			hashedOrderId,
 			chainId,
 			orderId: event.args.orderId,
-			status: event.args.status
+			status: event.args.status,
+			blockNumber: blockNumber?.toString()
 		});
 		return false;
 	}
@@ -473,7 +484,8 @@ export async function updateOrderQuantity(
 	chainId: number,
 	hashedOrderId: string,
 	filledQuantity: bigint,
-	executionPrice?: bigint
+	executionPrice?: bigint,
+	blockNumber?: bigint | number
 ) {
 	// First check if the order exists
 	const existingOrder = await db.find(orders, {
@@ -485,7 +497,8 @@ export async function updateOrderQuantity(
 		logger.warn('Order not found for quantity update', LogLabel.VALIDATION, 'updateOrderQuantity', {
 			hashedOrderId,
 			chainId,
-			filledQuantity: filledQuantity.toString()
+			filledQuantity: filledQuantity.toString(),
+			blockNumber: blockNumber?.toString()
 		});
 		return false;
 	}
@@ -508,7 +521,8 @@ export async function updateOrderQuantity(
 				oldQuantity: oldQuantity.toString(),
 				newFilledQuantity: newFilledQuantity.toString(),
 				oldPrice: oldPrice.toString(),
-				executionPrice: executionPrice?.toString() || 'undefined'
+				executionPrice: executionPrice?.toString() || 'undefined',
+				blockNumber: blockNumber?.toString()
 			});
 		}
 
@@ -535,14 +549,16 @@ export async function updateOrderQuantity(
 			logger.info('Order fully filled, updating status to FILLED', LogLabel.DATABASE, 'updateOrderQuantity', {
 				hashedOrderId,
 				filled: newFilledQuantity.toString(),
-				quantity: oldQuantity.toString()
+				quantity: oldQuantity.toString(),
+				blockNumber: blockNumber?.toString()
 			});
 		} else if (newFilledQuantity > BigInt(0) && !updateData.status) {
 			updateData.status = "PARTIALLY_FILLED";
 			logger.debug('Order partially filled, updating status to PARTIALLY_FILLED', LogLabel.DATABASE, 'updateOrderQuantity', {
 				hashedOrderId,
 				filled: newFilledQuantity.toString(),
-				quantity: oldQuantity.toString()
+				quantity: oldQuantity.toString(),
+				blockNumber: blockNumber?.toString()
 			});
 		}
 
@@ -558,7 +574,8 @@ export async function updateOrderQuantity(
 			error: error instanceof Error ? error.message : String(error),
 			hashedOrderId,
 			chainId,
-			filledQuantity: filledQuantity.toString()
+			filledQuantity: filledQuantity.toString(),
+			blockNumber: blockNumber?.toString()
 		});
 		return false;
 	}
