@@ -373,6 +373,22 @@ export async function updateOrder(
 			}
 		}
 
+		// CRITICAL FIX: Check if order is 100% filled regardless of event status
+		// This handles IOC orders that get partially filled then cancelled
+		const filledAmount = existingOrder.type === 'Market' ? BigInt(event.args.filled) : BigInt(existingOrder.filled);
+		const orderQuantity = BigInt(existingOrder.quantity);
+
+		if (filledAmount >= orderQuantity && orderQuantity > 0) {
+			updateData.status = "FILLED";
+			logger.info('Order is 100% filled, overriding event status to FILLED', LogLabel.DATABASE, 'updateOrder', {
+				hashedOrderId,
+				filled: filledAmount.toString(),
+				quantity: orderQuantity.toString(),
+				eventStatus: ORDER_STATUS[Number(event.args.status)],
+				correctedStatus: 'FILLED'
+			});
+		}
+
 		await db
 			.update(orders, {
 				id: hashedOrderId,
