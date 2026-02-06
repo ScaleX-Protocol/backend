@@ -27,7 +27,6 @@ import {
   upsertOrderBookDepthOnCancel,
   upsertOrderHistory,
 } from "@/utils";
-import { getDepth } from "@/utils/getDepth";
 import { getPoolTradingPair } from "@/utils/getPoolTradingPair";
 import { executeIfInSync } from "@/utils/syncState";
 import dotenv from "dotenv";
@@ -383,20 +382,8 @@ export async function handleOrderPlaced({ event, context }: any) {
           return;
         }
 
-        let latestDepth;
-        try {
-          latestDepth = await getDepth(event.log.address!, context.db, chainId);
-        } catch (error) {
-          log(LogLevel.ERROR, 'Failed to get depth', LogLabel.DATABASE, { error: (error as Error).message }, 'orderBookHandler.ts', 'handleOrderPlaced');
-          return;
-        }
-
-        try {
-          await publishDepthEvent(symbol, latestDepth.bids as any, latestDepth.asks as any, timestamp);
-        } catch (error) {
-          log(LogLevel.ERROR, 'Failed to publish depth event', LogLabel.EVENT_HANDLER, { error: error instanceof Error ? error.message : String(error) }, 'orderBookHandler.ts', 'handleOrderPlaced');
-          return;
-        }
+        // Depth calculation removed for performance optimization
+        // TODO: Consider calculating depth asynchronously or on-demand via API
 
       }, 'handleOrderPlaced');
     } catch (error) {
@@ -519,8 +506,8 @@ export async function handleOrderMatched({ event, context }: any) {
     });
   }
 
-  await upsertOrderBookDepth(db, chainId, poolAddress, getSide(args.side), price, quantity, timestamp);
-  await upsertOrderBookDepth(db, chainId, poolAddress, getOppositeSide(args.side), price, quantity, timestamp);
+  // await upsertOrderBookDepth(db, chainId, poolAddress, getSide(args.side), price, quantity, timestamp);
+  // await upsertOrderBookDepth(db, chainId, poolAddress, getOppositeSide(args.side), price, quantity, timestamp);
 
   const candlestickUpdated = await updateCandlestickBuckets(db, chainId, poolId, price, quantity, event, args);
   if (candlestickUpdated === false) {
@@ -569,10 +556,7 @@ export async function handleOrderMatched({ event, context }: any) {
       await publishOrderEvent(sellRowById, symbol, timestamp, "trade", BigInt(event.args.executedQuantity), BigInt(event.args.executionPrice));
     }
 
-    const latestDepth = await getDepth(event.log.address!, context.db, chainId);
-
-    // Publish depth event
-    await publishDepthEvent(symbol, latestDepth.bids as any, latestDepth.asks as any, timestamp);
+    // Depth calculation removed for performance optimization
 
     const timeIntervals = [
       { table: minuteBuckets, interval: '1m', seconds: TIME_INTERVALS.minute },
@@ -679,7 +663,7 @@ export async function handleOrderCancelled({ event, context }: any) {
       });
     }
 
-    await upsertOrderBookDepthOnCancel(db, chainId, order.id, event, timestamp);
+    // await upsertOrderBookDepthOnCancel(db, chainId, order.id, event, timestamp);
 
     // Track user activity for order cancellation
     await upsertUserActivity(db, chainId, event.args.user, timestamp);
@@ -692,9 +676,7 @@ export async function handleOrderCancelled({ event, context }: any) {
 
       await publishOrderEvent(row, symbol, timestamp, "cancelled", BigInt(0), BigInt(0));
 
-      const latestDepth = await getDepth(event.log.address!, context.db, chainId);
-
-      await publishDepthEvent(symbol, latestDepth.bids as any, latestDepth.asks as any, timestamp);
+      // Depth calculation removed for performance optimization
     }, 'handleOrderCancelled');
   } catch (e) {
     log(LogLevel.ERROR, 'OrderCancelled error', LogLabel.EVENT_HANDLER, { error: e instanceof Error ? e.message : String(e) }, 'orderBookHandler.ts', 'handleOrderCancelled');
@@ -805,16 +787,16 @@ export async function handleUpdateOrder({ event, context }: any) {
       // Use the order we already fetched
       if (order && order.side) {
         const price = BigInt(order.price);
-        await upsertOrderBookDepth(
-          db,
-          chainId,
-          poolAddress,
-          order.side,
-          price,
-          BigInt(order.quantity),
-          timestamp,
-          false
-        );
+        // await upsertOrderBookDepth(
+        //   db,
+        //   chainId,
+        //   poolAddress,
+        //   order.side,
+        //   price,
+        //   BigInt(order.quantity),
+        //   timestamp,
+        //   false
+        // );
       }
     }
     await executeIfInSync(Number(event.block.number), async () => {
@@ -826,10 +808,7 @@ export async function handleUpdateOrder({ event, context }: any) {
       // Publish order event
       await publishOrderEvent(row, symbol, timestamp, "trade", BigInt(event.args.filled), row.price);
 
-      const latestDepth = await getDepth(event.log.address!, context.db, chainId);
-
-      // Publish depth event
-      await publishDepthEvent(symbol, latestDepth.bids as any, latestDepth.asks as any, timestamp);
+      // Depth calculation removed for performance optimization
     }, 'handleUpdateOrder');
   } catch (e) {
     log(LogLevel.ERROR, 'UpdateOrder error', LogLabel.EVENT_HANDLER, { error: e instanceof Error ? e.message : String(e) }, 'orderBookHandler.ts', 'handleUpdateOrder');
@@ -860,10 +839,7 @@ export async function handleUpdateOrder({ event, context }: any) {
     // Publish order event
     await publishOrderEvent(row, symbol, timestamp, "trade", BigInt(event.args.filled), row.price);
 
-    const latestDepth = await getDepth(event.log.address!, context.db, chainId);
-
-    // Publish depth event
-    await publishDepthEvent(symbol, latestDepth.bids as any, latestDepth.asks as any, timestamp);
+    // Depth calculation removed for performance optimization
 
     // Publish kline events for all intervals
     const timeIntervals = [
