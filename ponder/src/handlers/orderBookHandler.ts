@@ -458,11 +458,11 @@ export async function handleOrderMatched({ event, context }: any) {
   await insertOrderBookTrades(db, chainId, tradeId, txHash, poolAddress, args);
 
   // Find buy order by natural keys (since orderId may have been reused)
-  const buyOrder = await findActiveOrder(db, chainId, poolAddress, BigInt(args.buyOrderId), event.block.number);
+  const buyOrder = await findActiveOrder(db, chainId, poolAddress, BigInt(args.buyOrderId), event.block.number, txHash);
   if (buyOrder) {
     const buyTradeId = createTradeId(chainId, txHash, args.user, OrderSide.BUY, args);
     await insertTrade(db, chainId, buyTradeId, buyOrder.id, price, quantity, event);
-    const buyOrderUpdated = await updateOrderQuantity(db, chainId, buyOrder.id, quantity, price, event.block.number);
+    const buyOrderUpdated = await updateOrderQuantity(db, chainId, buyOrder.id, quantity, price, event.block.number, txHash);
     if (buyOrderUpdated === false) {
       logger.warn('Buy order quantity update skipped - order not found', LogLabel.VALIDATION, 'handleOrderMatched', {
         buyOrderId: buyOrder.id,
@@ -489,11 +489,11 @@ export async function handleOrderMatched({ event, context }: any) {
   }
 
   // Find sell order by natural keys (since orderId may have been reused)
-  const sellOrder = await findActiveOrder(db, chainId, poolAddress, BigInt(args.sellOrderId), event.block.number);
+  const sellOrder = await findActiveOrder(db, chainId, poolAddress, BigInt(args.sellOrderId), event.block.number, txHash);
   if (sellOrder) {
     const sellTradeId = createTradeId(chainId, txHash, args.user, OrderSide.SELL, args);
     await insertTrade(db, chainId, sellTradeId, sellOrder.id, price, quantity, event);
-    const sellOrderUpdated = await updateOrderQuantity(db, chainId, sellOrder.id, quantity, price, event.block.number);
+    const sellOrderUpdated = await updateOrderQuantity(db, chainId, sellOrder.id, quantity, price, event.block.number, txHash);
     if (sellOrderUpdated === false) {
       logger.warn('Sell order quantity update skipped - order not found', LogLabel.VALIDATION, 'handleOrderMatched', {
         sellOrderId: sellOrder.id,
@@ -636,7 +636,7 @@ export async function handleOrderCancelled({ event, context }: any) {
   const timestamp = Number(event.args.timestamp);
 
   // Find order by natural keys (since orderId may have been reused)
-  const order = await findActiveOrder(db, chainId, poolAddress, BigInt(event.args.orderId!), event.block.number);
+  const order = await findActiveOrder(db, chainId, poolAddress, BigInt(event.args.orderId!), event.block.number, event.transaction.hash);
 
   // Log event received
   logger.info('OrderCancelled event received', LogLabel.EVENT_HANDLER, 'handleOrderCancelled', {
@@ -660,7 +660,7 @@ export async function handleOrderCancelled({ event, context }: any) {
   }
 
   try {
-    const orderUpdateSuccess = await updateOrder(db, chainId, order.id, event, timestamp, event.block.number);
+    const orderUpdateSuccess = await updateOrder(db, chainId, order.id, event, timestamp, event.block.number, event.transaction.hash);
     if (orderUpdateSuccess === false) {
       logger.warn('Order cancellation update skipped - order not found', LogLabel.VALIDATION, 'handleOrderCancelled', {
         hashedOrderId: order.id,
@@ -738,7 +738,7 @@ export async function handleUpdateOrder({ event, context }: any) {
   const timestamp = Number(event.args.timestamp);
 
   // Find order by natural keys (since orderId may have been reused)
-  const order = await findActiveOrder(db, chainId, poolAddress, orderId, event.block.number);
+  const order = await findActiveOrder(db, chainId, poolAddress, orderId, event.block.number, event.transaction.hash);
 
   const orderHistoryId = createOrderHistoryId(chainId, event.transaction.hash, filled, poolAddress, orderId.toString());
 
@@ -768,7 +768,7 @@ export async function handleUpdateOrder({ event, context }: any) {
       return;
     }
 
-    const orderUpdateSuccess = await updateOrder(db, chainId, order.id, event, timestamp, event.block.number);
+    const orderUpdateSuccess = await updateOrder(db, chainId, order.id, event, timestamp, event.block.number, event.transaction.hash);
 
     if (!orderUpdateSuccess) {
       logger.warn('Skipping order update - order does not exist', LogLabel.VALIDATION, 'handleUpdateOrder', {

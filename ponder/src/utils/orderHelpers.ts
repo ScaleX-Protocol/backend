@@ -29,10 +29,11 @@ export async function findActiveOrder(
 	chainId: number,
 	poolId: string,
 	onChainOrderId: bigint,
-	blockNumber?: bigint | number
+	blockNumber?: bigint | number,
+	txHash?: string
 ): Promise<any | null> {
 	try {
-		// Create predictable ID (no txHash needed)
+		// Create predictable ID (no txHash needed for query)
 		const orderId = createOrderId(chainId, onChainOrderId, poolId);
 
 		// Use db.find() which works reliably in Ponder
@@ -44,7 +45,8 @@ export async function findActiveOrder(
 				poolId,
 				onChainOrderId: onChainOrderId.toString(),
 				hashedId: orderId,
-				blockNumber: blockNumber?.toString()
+				blockNumber: blockNumber?.toString(),
+				txHash
 			});
 			return null;
 		}
@@ -59,7 +61,8 @@ export async function findActiveOrder(
 				onChainOrderId: onChainOrderId.toString(),
 				hashedId: orderId,
 				status: order.status,
-				blockNumber: blockNumber?.toString()
+				blockNumber: blockNumber?.toString(),
+				txHash
 			});
 			return null;
 		}
@@ -70,7 +73,8 @@ export async function findActiveOrder(
 			onChainOrderId: onChainOrderId.toString(),
 			hashedId: orderId,
 			status: order.status,
-			blockNumber: blockNumber?.toString()
+			blockNumber: blockNumber?.toString(),
+			txHash
 		});
 		return order;
 	} catch (error) {
@@ -80,7 +84,8 @@ export async function findActiveOrder(
 			chainId,
 			poolId,
 			onChainOrderId: onChainOrderId.toString(),
-			blockNumber: blockNumber?.toString()
+			blockNumber: blockNumber?.toString(),
+			txHash
 		});
 		return null;
 	}
@@ -405,7 +410,8 @@ export async function updateOrder(
 	hashedOrderId: string,
 	event: any,
 	timestamp: number,
-	blockNumber?: bigint | number
+	blockNumber?: bigint | number,
+	txHash?: string
 ) {
 	// First check if the order exists
 	const existingOrder = await db.find(orders, {
@@ -419,7 +425,8 @@ export async function updateOrder(
 			chainId,
 			orderId: event.args.orderId,
 			status: event.args.status,
-			blockNumber: blockNumber?.toString()
+			blockNumber: blockNumber?.toString(),
+			txHash
 		});
 		return false;
 	}
@@ -455,7 +462,8 @@ export async function updateOrder(
 				quantity: orderQuantity.toString(),
 				eventStatus: ORDER_STATUS[Number(event.args.status)],
 				correctedStatus: 'FILLED',
-				blockNumber: blockNumber?.toString()
+				blockNumber: blockNumber?.toString(),
+				txHash
 			});
 		}
 
@@ -473,7 +481,8 @@ export async function updateOrder(
 			chainId,
 			orderId: event.args.orderId,
 			status: event.args.status,
-			blockNumber: blockNumber?.toString()
+			blockNumber: blockNumber?.toString(),
+			txHash
 		});
 		return false;
 	}
@@ -485,7 +494,8 @@ export async function updateOrderQuantity(
 	hashedOrderId: string,
 	filledQuantity: bigint,
 	executionPrice?: bigint,
-	blockNumber?: bigint | number
+	blockNumber?: bigint | number,
+	txHash?: string
 ) {
 	// First check if the order exists
 	const existingOrder = await db.find(orders, {
@@ -498,7 +508,8 @@ export async function updateOrderQuantity(
 			hashedOrderId,
 			chainId,
 			filledQuantity: filledQuantity.toString(),
-			blockNumber: blockNumber?.toString()
+			blockNumber: blockNumber?.toString(),
+			txHash
 		});
 		return false;
 	}
@@ -522,7 +533,8 @@ export async function updateOrderQuantity(
 				newFilledQuantity: newFilledQuantity.toString(),
 				oldPrice: oldPrice.toString(),
 				executionPrice: executionPrice?.toString() || 'undefined',
-				blockNumber: blockNumber?.toString()
+				blockNumber: blockNumber?.toString(),
+				txHash
 			});
 		}
 
@@ -550,7 +562,8 @@ export async function updateOrderQuantity(
 				hashedOrderId,
 				filled: newFilledQuantity.toString(),
 				quantity: oldQuantity.toString(),
-				blockNumber: blockNumber?.toString()
+				blockNumber: blockNumber?.toString(),
+				txHash
 			});
 		} else if (newFilledQuantity > BigInt(0) && !updateData.status) {
 			updateData.status = "PARTIALLY_FILLED";
@@ -558,7 +571,8 @@ export async function updateOrderQuantity(
 				hashedOrderId,
 				filled: newFilledQuantity.toString(),
 				quantity: oldQuantity.toString(),
-				blockNumber: blockNumber?.toString()
+				blockNumber: blockNumber?.toString(),
+				txHash
 			});
 		}
 
@@ -575,7 +589,8 @@ export async function updateOrderQuantity(
 			hashedOrderId,
 			chainId,
 			filledQuantity: filledQuantity.toString(),
-			blockNumber: blockNumber?.toString()
+			blockNumber: blockNumber?.toString(),
+			txHash
 		});
 		return false;
 	}
