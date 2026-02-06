@@ -1,8 +1,8 @@
 import { createHash } from "crypto";
 import { Address } from "viem";
 
-export function createOrderId(chainId: number, orderId: bigint, poolAddress: string): string {
-	return createHash("sha256").update(`${chainId}_${poolAddress}_${orderId}`).digest("hex");
+export function createOrderId(chainId: number, orderId: bigint, poolAddress: string, txHash: string): string {
+	return createHash("sha256").update(`${chainId}_${poolAddress}_${orderId}_${txHash}`).digest("hex");
 }
 
 export function createBucketId(chainId: number, poolAddress: string, openTime: number): string {

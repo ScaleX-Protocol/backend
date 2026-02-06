@@ -23,7 +23,7 @@ ponder.on(PonderEvents.UNLOCK, withEventValidator(balanceManagerHandler.handleUn
 // Order Book Events - With transaction validation
 ponder.on(PonderEvents.ORDER_PLACED, withEventValidator(orderBookHandler.handleOrderPlaced, 'orderPlaced'));
 ponder.on(PonderEvents.ORDER_MATCHED, withEventValidator(orderBookHandler.handleOrderMatched, 'orderMatched'));
-ponder.on(PonderEvents.ORDER_CANCELLED, withEventValidator(orderBookHandler.handleOrderCancelled, 'orderCancelled'));
+// ponder.on(PonderEvents.ORDER_CANCELLED, withEventValidator(orderBookHandler.handleOrderCancelled, 'orderCancelled'));
 ponder.on(PonderEvents.UPDATE_ORDER, withEventValidator(orderBookHandler.handleUpdateOrder, 'updateOrder'));
 
 // Hyperlane Mailbox Events - With transaction validation

@@ -15,9 +15,69 @@ import { ORDER_STATUS, OrderSide, OrderType, TIME_INTERVALS } from "./constants"
 import { createBucketId, createOrderId } from "./id";
 import { OrderMatchedEventArgs, OrderPlacedEventArgs } from "@/types";
 import { createLogger, LogLabel } from "./logger";
+import { eq, and, or } from "ponder";
 
 // Create logger instance for this file
 const logger = createLogger('orderHelpers.ts');
+
+/**
+ * Find an active order by its on-chain order ID.
+ * Since on-chain order IDs can be reused after cancellation/expiry,
+ * we query by natural keys and filter for active status.
+ */
+export async function findActiveOrder(
+	db: any,
+	chainId: number,
+	poolId: string,
+	onChainOrderId: bigint
+): Promise<any | null> {
+	try {
+		// Query orders matching chainId, poolId, orderId and active status
+		// Note: poolId comparison is case-sensitive at DB level, normalized to lowercase
+		const activeOrders = await db
+			.select()
+			.from(orders)
+			.where(
+				and(
+					eq(orders.chainId, chainId),
+					eq(orders.poolId, poolId.toLowerCase()),
+					eq(orders.orderId, onChainOrderId),
+					or(
+						eq(orders.status, "PENDING"),
+						eq(orders.status, "OPEN"),
+						eq(orders.status, "PARTIALLY_FILLED")
+					)
+				)
+			);
+
+		if (activeOrders && activeOrders.length > 0) {
+			logger.info('Found active order', LogLabel.DATABASE, 'findActiveOrder', {
+				chainId,
+				poolId,
+				onChainOrderId: onChainOrderId.toString(),
+				hashedId: activeOrders[0].id,
+				status: activeOrders[0].status
+			});
+			return activeOrders[0];
+		}
+
+		logger.debug('No active order found', LogLabel.DATABASE, 'findActiveOrder', {
+			chainId,
+			poolId,
+			onChainOrderId: onChainOrderId.toString()
+		});
+		return null;
+	} catch (error) {
+		logger.error('Failed to find active order', LogLabel.DATABASE, 'findActiveOrder', {
+			error: error instanceof Error ? error.message : String(error),
+			stack: error instanceof Error ? error.stack : undefined,
+			chainId,
+			poolId,
+			onChainOrderId: onChainOrderId.toString()
+		});
+		return null;
+	}
+}
 
 export async function insertOrder(db: any, orderData: any) {
 	await db.insert(orders).values(orderData).onConflictDoNothing();
@@ -287,7 +347,7 @@ export function createOrderData(
 	txHash: string,
 ) {
 	const orderData = {
-		id: createOrderId(chainId, args.orderId, poolId),
+		id: createOrderId(chainId, args.orderId, poolId, txHash),
 		chainId,
 		userAddress: args.user,
 		poolId,
@@ -366,9 +426,9 @@ export async function updateOrder(
 			updateData.filled = BigInt(event.args.filled);
 
 			// Calculate executed quote quantity for market orders
-			if (existingOrder.price && BigInt(event.args.filled) > 0) {
+			if (existingOrder.price && BigInt(event.args.filled) > BigInt(0)) {
 				updateData.executedQuoteQuantity = existingOrder.price * BigInt(event.args.filled);
-			} else if (BigInt(event.args.filled) === 0) {
+			} else if (BigInt(event.args.filled) === BigInt(0)) {
 				updateData.executedQuoteQuantity = BigInt(0);
 			}
 		}
