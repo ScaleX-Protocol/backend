@@ -13,3 +13,5 @@ export { UpgradeableBeaconABI } from './UpgradeableBeacon';
 export { BeaconProxyABI } from './BeaconProxy';
 export { MailboxABI } from './Mailbox';
 export { SCALEXRouterABI } from './ScaleXRouter';
+export { AgentRouterABI } from './AgentRouter';
+export { PolicyFactoryABI } from './PolicyFactory';

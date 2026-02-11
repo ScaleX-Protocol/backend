@@ -2,7 +2,7 @@
 import dotenv from "dotenv";
 import { factory } from "ponder";
 import { fallback, getAddress, http, parseAbiItem } from "viem";
-import { BalanceManagerABI, LendingManagerABI, MailboxABI, OracleABI, OrderBookABI, PoolManagerABI, SCALEXRouterABI, SyntheticTokenFactoryABI, TokenRegistryABI } from "./abis";
+import { AgentRouterABI, BalanceManagerABI, LendingManagerABI, MailboxABI, OracleABI, OrderBookABI, PolicyFactoryABI, PoolManagerABI, SCALEXRouterABI, SyntheticTokenFactoryABI, TokenRegistryABI } from "./abis";
 
 dotenv.config({ path: ".env.core-chain" });
 
@@ -134,6 +134,30 @@ const contracts: any = {
 			},
 		},
 	},
+
+	// AgentRouter exists on ScaleX Anvil (core chain) - AI Agent execution layer
+	AgentRouter: {
+		abi: AgentRouterABI || [],
+		network: {
+			coreDevnet: {
+				address: getAddress((process.env.AGENTROUTER_CONTRACT_SCALEX_CORE_DEVNET_ADDRESS as `0x${string}`) || default_address),
+				startBlock: Number(process.env.SCALEX_CORE_DEVNET_START_BLOCK) || 0,
+				endBlock: Number(process.env.SCALEX_CORE_DEVNET_END_BLOCK) || undefined,
+			},
+		},
+	},
+
+	// PolicyFactory exists on ScaleX Anvil (core chain) - AI Agent policy management
+	PolicyFactory: {
+		abi: PolicyFactoryABI || [],
+		network: {
+			coreDevnet: {
+				address: getAddress((process.env.POLICYFACTORY_CONTRACT_SCALEX_CORE_DEVNET_ADDRESS as `0x${string}`) || default_address),
+				startBlock: Number(process.env.SCALEX_CORE_DEVNET_START_BLOCK) || 0,
+				endBlock: Number(process.env.SCALEX_CORE_DEVNET_END_BLOCK) || undefined,
+			},
+		},
+	},
 };
 
 export function getCoreChainConfig() {
@@ -192,6 +216,8 @@ export function validateCoreChainEnvironment(): boolean {
 		"SYNTHETICTOKENFACTORY_CONTRACT_SCALEX_CORE_DEVNET_ADDRESS",
 		"ORACLE_CONTRACT_SCALEX_CORE_DEVNET_ADDRESS",
 		"LENDINGMANAGER_CONTRACT_SCALEX_CORE_DEVNET_ADDRESS",
+		"AGENTROUTER_CONTRACT_SCALEX_CORE_DEVNET_ADDRESS",
+		"POLICYFACTORY_CONTRACT_SCALEX_CORE_DEVNET_ADDRESS",
 	];
 
 	const missing = requiredVars.filter(varName => !process.env[varName]);

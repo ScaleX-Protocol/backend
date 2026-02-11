@@ -68,6 +68,19 @@ export const PonderEvents = {
 
 	// Oracle Events
 	ORACLE_PRICE_UPDATED: ponderEvent("Oracle:PriceUpdated"),
+
+	// PolicyFactory Events (AI Agents)
+	AGENT_INSTALLED: ponderEvent("PolicyFactory:AgentInstalled"),
+	AGENT_UNINSTALLED: ponderEvent("PolicyFactory:AgentUninstalled"),
+
+	// AgentRouter Events (AI Agents)
+	AGENT_SWAP_EXECUTED: ponderEvent("AgentRouter:AgentSwapExecuted"),
+	AGENT_LIMIT_ORDER_PLACED: ponderEvent("AgentRouter:AgentLimitOrderPlaced"),
+	AGENT_ORDER_CANCELLED: ponderEvent("AgentRouter:AgentOrderCancelled"),
+	AGENT_BORROW_EXECUTED: ponderEvent("AgentRouter:AgentBorrowExecuted"),
+	AGENT_REPAY_EXECUTED: ponderEvent("AgentRouter:AgentRepayExecuted"),
+	AGENT_COLLATERAL_SUPPLIED: ponderEvent("AgentRouter:AgentCollateralSupplied"),
+	AGENT_COLLATERAL_WITHDRAWN: ponderEvent("AgentRouter:AgentCollateralWithdrawn"),
 };
 
 /**

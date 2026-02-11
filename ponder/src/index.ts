@@ -6,6 +6,7 @@ import * as crossChainHandler from "../src/handlers/crossChainHandler";
 import * as tokenRegistryHandler from "../src/handlers/tokenRegistryHandler";
 import * as lendingManagerHandler from "../src/handlers/lendingManagerHandler";
 import * as oracleHandler from "../src/handlers/oracleHandler";
+import * as agentRouterHandler from "../src/handlers/agentRouterHandler";
 import { PonderEvents } from "../src/types/ponder-core-chain";
 import { withEventValidator } from "../src/utils/eventValidator";
 
@@ -50,6 +51,20 @@ ponder.on(PonderEvents.LENDING_MANAGER_INTEREST_RATE_PARAMS_SET, withEventValida
 // Oracle Events - Temporarily disabled due to telemetry issue
 ponder.on(PonderEvents.ORACLE_PRICE_UPDATED, oracleHandler.handleOraclePriceUpdate);
 
+// PolicyFactory Events (AI Agents) - With transaction validation
+ponder.on(PonderEvents.AGENT_INSTALLED, withEventValidator(agentRouterHandler.handleAgentInstalled, 'agentInstalled'));
+ponder.on(PonderEvents.AGENT_UNINSTALLED, withEventValidator(agentRouterHandler.handleAgentUninstalled, 'agentUninstalled'));
+
+// AgentRouter Events (AI Agents) - With transaction validation
+ponder.on(PonderEvents.AGENT_SWAP_EXECUTED, withEventValidator(agentRouterHandler.handleAgentSwapExecuted, 'agentSwapExecuted'));
+ponder.on(PonderEvents.AGENT_LIMIT_ORDER_PLACED, withEventValidator(agentRouterHandler.handleAgentLimitOrderPlaced, 'agentLimitOrderPlaced'));
+ponder.on(PonderEvents.AGENT_ORDER_CANCELLED, withEventValidator(agentRouterHandler.handleAgentOrderCancelled, 'agentOrderCancelled'));
+ponder.on(PonderEvents.AGENT_BORROW_EXECUTED, withEventValidator(agentRouterHandler.handleAgentBorrowExecuted, 'agentBorrowExecuted'));
+ponder.on(PonderEvents.AGENT_REPAY_EXECUTED, withEventValidator(agentRouterHandler.handleAgentRepayExecuted, 'agentRepayExecuted'));
+ponder.on(PonderEvents.AGENT_COLLATERAL_SUPPLIED, withEventValidator(agentRouterHandler.handleAgentCollateralSupplied, 'agentCollateralSupplied'));
+ponder.on(PonderEvents.AGENT_COLLATERAL_WITHDRAWN, withEventValidator(agentRouterHandler.handleAgentCollateralWithdrawn, 'agentCollateralWithdrawn'));
+
 console.log("✅ Core Chain indexer initialized - Chain ID: 84532");
 console.log("📊 Monitoring: OrderBook, PoolManager, Hyperlane cross-chain events, TokenRegistry mappings");
 console.log("🏦 Monitoring: LendingManager and Oracle events for lending protocol data");
+console.log("🤖 Monitoring: AI Agent events for AgentRouter and PolicyFactory");

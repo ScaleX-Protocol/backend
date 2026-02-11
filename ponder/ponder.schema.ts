@@ -1127,3 +1127,178 @@ export const crossChainMessageLinks = onchainTable(
 		statusIdx: index().on(table.status),
 	})
 );
+
+// =============================================================
+//                   AI AGENT SYSTEM TABLES
+// =============================================================
+
+// Agent installations (tracking which agents are enabled for which users)
+export const agentInstallations = onchainTable(
+	"agent_installations",
+	t => ({
+		id: t.text().primaryKey(), // chainId-owner-agentTokenId
+		chainId: t.integer().notNull(),
+		owner: t.hex().notNull(),
+		agentTokenId: t.bigint().notNull(),
+		templateUsed: t.varchar(),
+		enabled: t.boolean().default(true),
+		installedAt: t.integer().notNull(),
+		uninstalledAt: t.integer(),
+		transactionId: t.text().notNull(),
+		blockNumber: t.bigint().notNull(),
+	}),
+	table => ({
+		chainIdIdx: index().on(table.chainId),
+		ownerIdx: index().on(table.owner),
+		agentTokenIdIdx: index().on(table.agentTokenId),
+		ownerAgentIdx: index().on(table.owner, table.agentTokenId),
+		enabledIdx: index().on(table.enabled),
+		ownerEnabledIdx: index().on(table.owner, table.enabled),
+		installedAtIdx: index().on(table.installedAt),
+	})
+);
+
+// Agent orders (tracking orders placed by agents)
+export const agentOrders = onchainTable(
+	"agent_orders",
+	t => ({
+		id: t.text().primaryKey(), // chainId-orderId
+		chainId: t.integer().notNull(),
+		owner: t.hex().notNull(),
+		agentTokenId: t.bigint().notNull(),
+		executor: t.hex().notNull(),
+		orderId: t.text(), // hex bytes32
+		orderType: t.varchar().notNull(), // "MARKET" or "LIMIT"
+		side: t.varchar(), // "BUY" or "SELL"
+		tokenIn: t.hex().notNull(),
+		tokenOut: t.hex().notNull(),
+		amountIn: t.bigint().notNull(),
+		amountOut: t.bigint(), // For market orders
+		limitPrice: t.bigint(), // For limit orders
+		timestamp: t.integer().notNull(),
+		transactionId: t.text().notNull(),
+		blockNumber: t.bigint().notNull(),
+		status: t.varchar().default("ACTIVE"), // "ACTIVE", "FILLED", "CANCELLED"
+	}),
+	table => ({
+		chainIdIdx: index().on(table.chainId),
+		ownerIdx: index().on(table.owner),
+		agentTokenIdIdx: index().on(table.agentTokenId),
+		executorIdx: index().on(table.executor),
+		orderIdIdx: index().on(table.orderId),
+		orderTypeIdx: index().on(table.orderType),
+		statusIdx: index().on(table.status),
+		timestampIdx: index().on(table.timestamp),
+		ownerAgentIdx: index().on(table.owner, table.agentTokenId),
+		ownerTimestampIdx: index().on(table.owner, table.timestamp),
+		agentTimestampIdx: index().on(table.agentTokenId, table.timestamp),
+	})
+);
+
+// Agent lending events (borrow, repay, supply, withdraw)
+export const agentLendingEvents = onchainTable(
+	"agent_lending_events",
+	t => ({
+		id: t.text().primaryKey(), // chainId-txHash-logIndex
+		chainId: t.integer().notNull(),
+		owner: t.hex().notNull(),
+		agentTokenId: t.bigint().notNull(),
+		executor: t.hex().notNull(),
+		action: t.varchar().notNull(), // "BORROW", "REPAY", "SUPPLY", "WITHDRAW"
+		token: t.hex().notNull(),
+		amount: t.bigint().notNull(),
+		newHealthFactor: t.bigint(), // For borrow/repay events
+		timestamp: t.integer().notNull(),
+		transactionId: t.text().notNull(),
+		blockNumber: t.bigint().notNull(),
+	}),
+	table => ({
+		chainIdIdx: index().on(table.chainId),
+		ownerIdx: index().on(table.owner),
+		agentTokenIdIdx: index().on(table.agentTokenId),
+		executorIdx: index().on(table.executor),
+		actionIdx: index().on(table.action),
+		tokenIdx: index().on(table.token),
+		timestampIdx: index().on(table.timestamp),
+		ownerActionIdx: index().on(table.owner, table.action),
+		agentActionIdx: index().on(table.agentTokenId, table.action),
+		ownerTimestampIdx: index().on(table.owner, table.timestamp),
+		agentTimestampIdx: index().on(table.agentTokenId, table.timestamp),
+	})
+);
+
+// Agent statistics (aggregate metrics per agent)
+export const agentStats = onchainTable(
+	"agent_stats",
+	t => ({
+		id: t.text().primaryKey(), // chainId-owner-agentTokenId
+		chainId: t.integer().notNull(),
+		owner: t.hex().notNull(),
+		agentTokenId: t.bigint().notNull(),
+		totalMarketOrders: t.integer().default(0),
+		totalLimitOrders: t.integer().default(0),
+		totalOrdersCancelled: t.integer().default(0),
+		totalTradingVolume: t.bigint().default(BigInt(0)),
+		totalBorrowAmount: t.bigint().default(BigInt(0)),
+		totalRepayAmount: t.bigint().default(BigInt(0)),
+		totalCollateralSupplied: t.bigint().default(BigInt(0)),
+		totalCollateralWithdrawn: t.bigint().default(BigInt(0)),
+		firstActivityTimestamp: t.integer(),
+		lastActivityTimestamp: t.integer(),
+		isActive: t.boolean().default(true),
+	}),
+	table => ({
+		chainIdIdx: index().on(table.chainId),
+		ownerIdx: index().on(table.owner),
+		agentTokenIdIdx: index().on(table.agentTokenId),
+		ownerAgentIdx: index().on(table.owner, table.agentTokenId),
+		isActiveIdx: index().on(table.isActive),
+		lastActivityIdx: index().on(table.lastActivityTimestamp),
+		totalVolumeIdx: index().on(table.totalTradingVolume),
+	})
+);
+
+// Relations for AI agent tables
+export const agentInstallationsRelations = relations(agentInstallations, ({ one }) => ({
+	owner: one(users, {
+		fields: [agentInstallations.owner, agentInstallations.chainId],
+		references: [users.address, users.chainId],
+	}),
+}));
+
+export const agentOrdersRelations = relations(agentOrders, ({ one }) => ({
+	owner: one(users, {
+		fields: [agentOrders.owner, agentOrders.chainId],
+		references: [users.address, users.chainId],
+	}),
+	installation: one(agentInstallations, {
+		fields: [agentOrders.owner, agentOrders.agentTokenId, agentOrders.chainId],
+		references: [agentInstallations.owner, agentInstallations.agentTokenId, agentInstallations.chainId],
+	}),
+}));
+
+export const agentLendingEventsRelations = relations(agentLendingEvents, ({ one }) => ({
+	owner: one(users, {
+		fields: [agentLendingEvents.owner, agentLendingEvents.chainId],
+		references: [users.address, users.chainId],
+	}),
+	installation: one(agentInstallations, {
+		fields: [agentLendingEvents.owner, agentLendingEvents.agentTokenId, agentLendingEvents.chainId],
+		references: [agentInstallations.owner, agentInstallations.agentTokenId, agentInstallations.chainId],
+	}),
+	token: one(currencies, {
+		fields: [agentLendingEvents.token, agentLendingEvents.chainId],
+		references: [currencies.address, currencies.chainId],
+	}),
+}));
+
+export const agentStatsRelations = relations(agentStats, ({ one }) => ({
+	owner: one(users, {
+		fields: [agentStats.owner, agentStats.chainId],
+		references: [users.address, users.chainId],
+	}),
+	installation: one(agentInstallations, {
+		fields: [agentStats.owner, agentStats.agentTokenId, agentStats.chainId],
+		references: [agentInstallations.owner, agentInstallations.agentTokenId, agentInstallations.chainId],
+	}),
+}));
