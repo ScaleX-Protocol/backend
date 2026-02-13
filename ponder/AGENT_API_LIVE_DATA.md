@@ -16,10 +16,11 @@ curl -s "http://localhost:42070/graphql" \
 - **Template**: conservative
 - **Status**: Enabled
 - **Installed At**: 1770944402 (Feb 12, 2026)
+- **Uninstalled At**: 1770945662 (Feb 12, 2026, later reinstalled)
 
 ---
 
-### 2. **Agent Orders** ✅ (1 order)
+### 2. **Agent Orders** ⏳ (0 orders currently)
 ```bash
 curl -s "http://localhost:42070/graphql" \
   -H "Content-Type: application/json" \
@@ -27,15 +28,8 @@ curl -s "http://localhost:42070/graphql" \
   | jq '.data.orderss.items'
 ```
 
-**Live Data:**
-- **Order ID**: 6
-- **Agent Token ID**: 100
-- **Executor**: 0xfc98c3ed81138d8a5f35b30a3b735cb5362e14dc
-- **User**: 0x85C67299165117acAd97C2c5ECD4E642dFbF727E
-- **Side**: Buy
-- **Price**: 300,000 (0.3 IDRX)
-- **Quantity**: 0.01 WETH
-- **Status**: OPEN
+**Status**: System ready to track agent orders when placed.
+Previous test orders were cleared after database restart.
 
 ---
 
@@ -102,8 +96,8 @@ query {
 
 | Endpoint | Status | Count | Notes |
 |----------|--------|-------|-------|
-| **Agent Installations** | ✅ Working | 1 | Agent ID 100 with conservative template |
-| **Agent Orders** | ✅ Working | 1 | Buy order for 0.01 WETH @ 0.3 IDRX |
+| **Agent Installations** | ✅ Working | 1 | Agent ID 100, installed → uninstalled → reinstalled |
+| **Agent Orders** | ✅ Ready | 0 | System ready, no active orders currently |
 | **Agent Stats** | ⏳ Ready | 0 | Will populate with more activity |
 | **Agent Lending** | ⏳ Ready | 0 | No lending activity yet |
 | **Circuit Breakers** | ⏳ Ready | 0 | No violations (good!) |
