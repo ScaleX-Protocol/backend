@@ -48,14 +48,12 @@ ponder.on(PonderEvents.LENDING_MANAGER_LIQUIDATION, withEventValidator(lendingMa
 ponder.on(PonderEvents.LENDING_MANAGER_ASSET_CONFIGURED, withEventValidator(lendingManagerHandler.handleAssetConfigured, 'assetConfigured'));
 ponder.on(PonderEvents.LENDING_MANAGER_INTEREST_RATE_PARAMS_SET, withEventValidator(lendingManagerHandler.handleInterestRateParamsSet, 'interestRateParamsSet'));
 
-// Oracle Events - Temporarily disabled due to telemetry issue
+// Oracle Events
 ponder.on(PonderEvents.ORACLE_PRICE_UPDATED, oracleHandler.handleOraclePriceUpdate);
 
-// PolicyFactory Events (AI Agents) - With transaction validation
+// AI Agent Events - ERC-8004 Agent System
 ponder.on(PonderEvents.AGENT_INSTALLED, withEventValidator(agentRouterHandler.handleAgentInstalled, 'agentInstalled'));
 ponder.on(PonderEvents.AGENT_UNINSTALLED, withEventValidator(agentRouterHandler.handleAgentUninstalled, 'agentUninstalled'));
-
-// AgentRouter Events (AI Agents) - With transaction validation
 ponder.on(PonderEvents.AGENT_SWAP_EXECUTED, withEventValidator(agentRouterHandler.handleAgentSwapExecuted, 'agentSwapExecuted'));
 ponder.on(PonderEvents.AGENT_LIMIT_ORDER_PLACED, withEventValidator(agentRouterHandler.handleAgentLimitOrderPlaced, 'agentLimitOrderPlaced'));
 ponder.on(PonderEvents.AGENT_ORDER_CANCELLED, withEventValidator(agentRouterHandler.handleAgentOrderCancelled, 'agentOrderCancelled'));
@@ -63,8 +61,11 @@ ponder.on(PonderEvents.AGENT_BORROW_EXECUTED, withEventValidator(agentRouterHand
 ponder.on(PonderEvents.AGENT_REPAY_EXECUTED, withEventValidator(agentRouterHandler.handleAgentRepayExecuted, 'agentRepayExecuted'));
 ponder.on(PonderEvents.AGENT_COLLATERAL_SUPPLIED, withEventValidator(agentRouterHandler.handleAgentCollateralSupplied, 'agentCollateralSupplied'));
 ponder.on(PonderEvents.AGENT_COLLATERAL_WITHDRAWN, withEventValidator(agentRouterHandler.handleAgentCollateralWithdrawn, 'agentCollateralWithdrawn'));
+// Note: CircuitBreakerTriggered and PolicyViolation events are not in the current AgentRouter ABI
+// ponder.on(PonderEvents.CIRCUIT_BREAKER_TRIGGERED, withEventValidator(agentRouterHandler.handleCircuitBreakerTriggered, 'circuitBreakerTriggered'));
+// ponder.on(PonderEvents.POLICY_VIOLATION, withEventValidator(agentRouterHandler.handlePolicyViolation, 'policyViolation'));
 
 console.log("✅ Core Chain indexer initialized - Chain ID: 84532");
 console.log("📊 Monitoring: OrderBook, PoolManager, Hyperlane cross-chain events, TokenRegistry mappings");
 console.log("🏦 Monitoring: LendingManager and Oracle events for lending protocol data");
-console.log("🤖 Monitoring: AI Agent events for AgentRouter and PolicyFactory");
+console.log("🤖 Monitoring: AI Agent system (ERC-8004) - installations, orders, lending, violations");

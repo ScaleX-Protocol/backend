@@ -64,6 +64,9 @@ export const orders = onchainTable(
 		timeInForce: t.varchar(),
 		quoteQuantity: t.bigint(),
 		executedQuoteQuantity: t.bigint(),
+		// ERC-8004 Agent tracking
+		agentTokenId: t.bigint(), // 0 for non-agent orders
+		executor: t.hex(), // Address of executor (for agent orders)
 	}),
 	(table: any) => ({
 		orderIdChainIdx: index().on(table.orderId, table.chainId),
@@ -76,6 +79,10 @@ export const orders = onchainTable(
 		statusIdx: index().on(table.status),
 		timestampIdx: index().on(table.timestamp),
 		userIdx: index().on(table.userAddress),
+		// Agent tracking indexes
+		agentTokenIdIdx: index().on(table.agentTokenId),
+		executorIdx: index().on(table.executor),
+		agentUserIdx: index().on(table.agentTokenId, table.userAddress),
 	})
 );
 
@@ -663,6 +670,9 @@ export const deposits = onchainTable(
 		timestamp: t.integer().notNull(),
 		transactionId: t.text().notNull(),
 		blockNumber: t.bigint().notNull(),
+		// ERC-8004 Agent tracking
+		agentTokenId: t.bigint(), // 0 for non-agent deposits
+		executor: t.hex(), // Address of executor (for agent deposits)
 	}),
 	table => ({
 		userIdx: index().on(table.userAddress),
@@ -674,6 +684,10 @@ export const deposits = onchainTable(
 		currencyChainIdx: index().on(table.currency, table.chainId),
 		userCurrencyChainIdx: index().on(table.userAddress, table.currency, table.chainId),
 		transactionIdx: index().on(table.transactionId),
+		// Agent tracking indexes
+		agentTokenIdIdx: index().on(table.agentTokenId),
+		executorIdx: index().on(table.executor),
+		agentUserIdx: index().on(table.agentTokenId, table.userAddress),
 	})
 );
 
@@ -688,6 +702,9 @@ export const withdrawals = onchainTable(
 		timestamp: t.integer().notNull(),
 		transactionId: t.text().notNull(),
 		blockNumber: t.bigint().notNull(),
+		// ERC-8004 Agent tracking
+		agentTokenId: t.bigint(), // 0 for non-agent withdrawals
+		executor: t.hex(), // Address of executor (for agent withdrawals)
 	}),
 	table => ({
 		userIdx: index().on(table.userAddress),
@@ -699,6 +716,10 @@ export const withdrawals = onchainTable(
 		currencyChainIdx: index().on(table.currency, table.chainId),
 		userCurrencyChainIdx: index().on(table.userAddress, table.currency, table.chainId),
 		transactionIdx: index().on(table.transactionId),
+		// Agent tracking indexes
+		agentTokenIdIdx: index().on(table.agentTokenId),
+		executorIdx: index().on(table.executor),
+		agentUserIdx: index().on(table.agentTokenId, table.userAddress),
 	})
 );
 
@@ -713,6 +734,9 @@ export const lockEvents = onchainTable(
 		timestamp: t.integer().notNull(),
 		transactionId: t.text().notNull(),
 		blockNumber: t.bigint().notNull(),
+		// ERC-8004 Agent tracking
+		agentTokenId: t.bigint(), // 0 for non-agent locks
+		executor: t.hex(), // Address of executor (for agent locks)
 	}),
 	table => ({
 		userIdx: index().on(table.userAddress),
@@ -724,6 +748,10 @@ export const lockEvents = onchainTable(
 		currencyChainIdx: index().on(table.currency, table.chainId),
 		userCurrencyChainIdx: index().on(table.userAddress, table.currency, table.chainId),
 		transactionIdx: index().on(table.transactionId),
+		// Agent tracking indexes
+		agentTokenIdIdx: index().on(table.agentTokenId),
+		executorIdx: index().on(table.executor),
+		agentUserIdx: index().on(table.agentTokenId, table.userAddress),
 	})
 );
 
@@ -738,6 +766,9 @@ export const unlockEvents = onchainTable(
 		timestamp: t.integer().notNull(),
 		transactionId: t.text().notNull(),
 		blockNumber: t.bigint().notNull(),
+		// ERC-8004 Agent tracking
+		agentTokenId: t.bigint(), // 0 for non-agent unlocks
+		executor: t.hex(), // Address of executor (for agent unlocks)
 	}),
 	table => ({
 		userIdx: index().on(table.userAddress),
@@ -802,6 +833,9 @@ export const lendingEvents = onchainTable(
 		blockNumber: t.bigint().notNull(),
 		liquidator: t.hex(), // For liquidation events
 		liquidatedAmount: t.bigint(), // For liquidation events
+		// ERC-8004 Agent tracking
+		agentTokenId: t.bigint(), // 0 for non-agent operations
+		executor: t.hex(), // Address of executor (for agent operations)
 	}),
 	table => ({
 		userIdx: index().on(table.userAddress),
@@ -815,6 +849,11 @@ export const lendingEvents = onchainTable(
 		userTimestampIdx: index().on(table.userAddress, table.timestamp),
 		healthFactorIdx: index().on(table.healthFactor),
 		liquidatorIdx: index().on(table.liquidator),
+		// Agent tracking indexes
+		agentTokenIdIdx: index().on(table.agentTokenId),
+		executorIdx: index().on(table.executor),
+		agentUserIdx: index().on(table.agentTokenId, table.userAddress),
+		agentActionIdx: index().on(table.agentTokenId, table.action),
 	})
 );
 
@@ -1255,6 +1294,56 @@ export const agentStats = onchainTable(
 		isActiveIdx: index().on(table.isActive),
 		lastActivityIdx: index().on(table.lastActivityTimestamp),
 		totalVolumeIdx: index().on(table.totalTradingVolume),
+	})
+);
+
+// Agent circuit breaker events (risk management triggers)
+export const agentCircuitBreakers = onchainTable(
+	"agent_circuit_breakers",
+	t => ({
+		id: t.text().primaryKey(), // chainId-txHash-logIndex
+		chainId: t.integer().notNull(),
+		owner: t.hex().notNull(),
+		agentTokenId: t.bigint().notNull(),
+		drawdownBps: t.integer().notNull(), // Drawdown in basis points
+		currentValue: t.bigint().notNull(),
+		dayStartValue: t.bigint().notNull(),
+		timestamp: t.integer().notNull(),
+		transactionId: t.text().notNull(),
+		blockNumber: t.bigint().notNull(),
+	}),
+	table => ({
+		chainIdIdx: index().on(table.chainId),
+		ownerIdx: index().on(table.owner),
+		agentTokenIdIdx: index().on(table.agentTokenId),
+		timestampIdx: index().on(table.timestamp),
+		drawdownIdx: index().on(table.drawdownBps),
+		ownerAgentIdx: index().on(table.owner, table.agentTokenId),
+		agentTimestampIdx: index().on(table.agentTokenId, table.timestamp),
+	})
+);
+
+// Agent policy violations (compliance/authorization issues)
+export const agentPolicyViolations = onchainTable(
+	"agent_policy_violations",
+	t => ({
+		id: t.text().primaryKey(), // chainId-txHash-logIndex
+		chainId: t.integer().notNull(),
+		owner: t.hex().notNull(),
+		agentTokenId: t.bigint().notNull(),
+		reason: t.varchar().notNull(), // Violation reason
+		timestamp: t.integer().notNull(),
+		transactionId: t.text().notNull(),
+		blockNumber: t.bigint().notNull(),
+	}),
+	table => ({
+		chainIdIdx: index().on(table.chainId),
+		ownerIdx: index().on(table.owner),
+		agentTokenIdIdx: index().on(table.agentTokenId),
+		reasonIdx: index().on(table.reason),
+		timestampIdx: index().on(table.timestamp),
+		ownerAgentIdx: index().on(table.owner, table.agentTokenId),
+		agentTimestampIdx: index().on(table.agentTokenId, table.timestamp),
 	})
 );
 

@@ -81,6 +81,8 @@ export const PonderEvents = {
 	AGENT_REPAY_EXECUTED: ponderEvent("AgentRouter:AgentRepayExecuted"),
 	AGENT_COLLATERAL_SUPPLIED: ponderEvent("AgentRouter:AgentCollateralSupplied"),
 	AGENT_COLLATERAL_WITHDRAWN: ponderEvent("AgentRouter:AgentCollateralWithdrawn"),
+	CIRCUIT_BREAKER_TRIGGERED: ponderEvent("AgentRouter:CircuitBreakerTriggered"),
+	POLICY_VIOLATION: ponderEvent("AgentRouter:PolicyViolation"),
 };
 
 /**
@@ -98,6 +100,8 @@ export interface OrderPlacedEventArgs {
 	autoRepay: boolean;
 	autoBorrow: boolean;
 	timeInForce: number;
+	agentTokenId: string;
+	executor: string;
 }
 
 /**

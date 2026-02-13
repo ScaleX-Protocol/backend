@@ -6,6 +6,8 @@ import {
 	agentOrders,
 	agentLendingEvents,
 	agentStats,
+	agentCircuitBreakers,
+	agentPolicyViolations,
 	users,
 } from "ponder:schema";
 
@@ -69,7 +71,7 @@ async function upsertUserActivity(db: any, chainId: number, user: string, timest
 //           POLICYFACTORY EVENT HANDLERS
 // =============================================================
 
-export async function handleAgentInstalled(event: any, context: any) {
+export async function handleAgentInstalled({ event, context }: any) {
 	try {
 		const { owner, agentTokenId, templateUsed, timestamp } = event.args;
 		const chainId = context.network.chainId;
@@ -125,7 +127,7 @@ export async function handleAgentInstalled(event: any, context: any) {
 	}
 }
 
-export async function handleAgentUninstalled(event: any, context: any) {
+export async function handleAgentUninstalled({ event, context }: any) {
 	try {
 		const { owner, agentTokenId, timestamp } = event.args;
 		const chainId = context.network.chainId;
@@ -175,7 +177,7 @@ export async function handleAgentUninstalled(event: any, context: any) {
 //           AGENTROUTER EVENT HANDLERS
 // =============================================================
 
-export async function handleAgentSwapExecuted(event: any, context: any) {
+export async function handleAgentSwapExecuted({ event, context }: any) {
 	try {
 		const { owner, agentTokenId, executor, tokenIn, tokenOut, amountIn, amountOut, timestamp } = event.args;
 		const chainId = context.network.chainId;
@@ -236,7 +238,7 @@ export async function handleAgentSwapExecuted(event: any, context: any) {
 	}
 }
 
-export async function handleAgentLimitOrderPlaced(event: any, context: any) {
+export async function handleAgentLimitOrderPlaced({ event, context }: any) {
 	try {
 		const { owner, agentTokenId, executor, orderId, tokenIn, tokenOut, amount, limitPrice, isBuy, timestamp } = event.args;
 		const chainId = context.network.chainId;
@@ -296,7 +298,7 @@ export async function handleAgentLimitOrderPlaced(event: any, context: any) {
 	}
 }
 
-export async function handleAgentOrderCancelled(event: any, context: any) {
+export async function handleAgentOrderCancelled({ event, context }: any) {
 	try {
 		const { owner, agentTokenId, executor, orderId, timestamp } = event.args;
 		const chainId = context.network.chainId;
@@ -339,7 +341,7 @@ export async function handleAgentOrderCancelled(event: any, context: any) {
 	}
 }
 
-export async function handleAgentBorrowExecuted(event: any, context: any) {
+export async function handleAgentBorrowExecuted({ event, context }: any) {
 	try {
 		const { owner, agentTokenId, executor, token, amount, newHealthFactor, timestamp } = event.args;
 		const chainId = context.network.chainId;
@@ -394,7 +396,7 @@ export async function handleAgentBorrowExecuted(event: any, context: any) {
 	}
 }
 
-export async function handleAgentRepayExecuted(event: any, context: any) {
+export async function handleAgentRepayExecuted({ event, context }: any) {
 	try {
 		const { owner, agentTokenId, executor, token, amount, newHealthFactor, timestamp } = event.args;
 		const chainId = context.network.chainId;
@@ -449,7 +451,7 @@ export async function handleAgentRepayExecuted(event: any, context: any) {
 	}
 }
 
-export async function handleAgentCollateralSupplied(event: any, context: any) {
+export async function handleAgentCollateralSupplied({ event, context }: any) {
 	try {
 		const { owner, agentTokenId, executor, token, amount, timestamp } = event.args;
 		const chainId = context.network.chainId;
@@ -504,7 +506,7 @@ export async function handleAgentCollateralSupplied(event: any, context: any) {
 	}
 }
 
-export async function handleAgentCollateralWithdrawn(event: any, context: any) {
+export async function handleAgentCollateralWithdrawn({ event, context }: any) {
 	try {
 		const { owner, agentTokenId, executor, token, amount, timestamp } = event.args;
 		const chainId = context.network.chainId;
@@ -553,6 +555,112 @@ export async function handleAgentCollateralWithdrawn(event: any, context: any) {
 			`Failed to handle AgentCollateralWithdrawn event`,
 			LogLabel.EVENT_HANDLER,
 			'handleAgentCollateralWithdrawn',
+			{ error: error instanceof Error ? error.message : String(error) }
+		);
+		throw error;
+	}
+}
+
+// =============================================================
+//           AGENT MONITORING EVENTS
+// =============================================================
+
+export async function handleCircuitBreakerTriggered({ event, context }: any) {
+	try {
+		const { owner, agentTokenId, drawdownBps, currentValue, dayStartValue, timestamp } = event.args;
+		const chainId = context.network.chainId;
+		const eventId = `${chainId}-${event.transaction.hash}-${event.log.logIndex}`;
+
+		logger.warn(
+			`Circuit breaker triggered - Owner: ${owner}, AgentTokenId: ${agentTokenId}, Drawdown: ${drawdownBps} bps`,
+			LogLabel.EVENT_HANDLER,
+			'handleCircuitBreakerTriggered'
+		);
+
+		// Upsert user
+		await upsertUserActivity(context.db, chainId, owner, Number(timestamp));
+
+		// Insert circuit breaker event
+		await context.db.insert(agentCircuitBreakers).values({
+			id: eventId,
+			chainId,
+			owner: owner as `0x${string}`,
+			agentTokenId,
+			drawdownBps,
+			currentValue,
+			dayStartValue,
+			timestamp: Number(timestamp),
+			transactionId: event.transaction.hash,
+			blockNumber: BigInt(event.block.number),
+		});
+
+		// Update agent stats to mark as potentially at risk
+		const statsId = `${chainId}-${owner}-${agentTokenId}`;
+		await context.db
+			.update(agentStats, { id: statsId })
+			.set({
+				lastActivityTimestamp: Number(timestamp),
+			});
+
+		// Update indexer status
+		await updateIndexerStatus(
+			context.db,
+			chainId,
+			BigInt(event.block.number),
+			Number(event.block.timestamp),
+			"CircuitBreakerTriggered"
+		);
+	} catch (error) {
+		logger.error(
+			`Failed to handle CircuitBreakerTriggered event`,
+			LogLabel.EVENT_HANDLER,
+			'handleCircuitBreakerTriggered',
+			{ error: error instanceof Error ? error.message : String(error) }
+		);
+		throw error;
+	}
+}
+
+export async function handlePolicyViolation({ event, context }: any) {
+	try {
+		const { owner, agentTokenId, reason, timestamp } = event.args;
+		const chainId = context.network.chainId;
+		const eventId = `${chainId}-${event.transaction.hash}-${event.log.logIndex}`;
+
+		logger.warn(
+			`Policy violation - Owner: ${owner}, AgentTokenId: ${agentTokenId}, Reason: ${reason}`,
+			LogLabel.EVENT_HANDLER,
+			'handlePolicyViolation'
+		);
+
+		// Upsert user
+		await upsertUserActivity(context.db, chainId, owner, Number(timestamp));
+
+		// Insert policy violation event
+		await context.db.insert(agentPolicyViolations).values({
+			id: eventId,
+			chainId,
+			owner: owner as `0x${string}`,
+			agentTokenId,
+			reason,
+			timestamp: Number(timestamp),
+			transactionId: event.transaction.hash,
+			blockNumber: BigInt(event.block.number),
+		});
+
+		// Update indexer status
+		await updateIndexerStatus(
+			context.db,
+			chainId,
+			BigInt(event.block.number),
+			Number(event.block.timestamp),
+			"PolicyViolation"
+		);
+	} catch (error) {
+		logger.error(
+			`Failed to handle PolicyViolation event`,
+			LogLabel.EVENT_HANDLER,
+			'handlePolicyViolation',
 			{ error: error instanceof Error ? error.message : String(error) }
 		);
 		throw error;
