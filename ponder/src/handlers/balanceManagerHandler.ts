@@ -60,7 +60,9 @@ async function recordLendingTransferEvents(
 	timestamp: number,
 	txHash: string,
 	blockNumber: bigint,
-	logIndex: number
+	logIndex: number,
+	agentTokenId?: bigint,
+	executor?: string
 ) {
 	try {
 		// Check if the currency is a synthetic token by looking up in currencies table
@@ -103,6 +105,8 @@ async function recordLendingTransferEvents(
 			timestamp,
 			transactionId: txHash,
 			blockNumber,
+			agentTokenId: agentTokenId ?? BigInt(0),
+			executor: executor ?? null,
 		}).onConflictDoUpdate({
 			id: transferOutEventId,
 			chainId,
@@ -113,6 +117,8 @@ async function recordLendingTransferEvents(
 			timestamp,
 			transactionId: txHash,
 			blockNumber,
+			agentTokenId: agentTokenId ?? BigInt(0),
+			executor: executor ?? null,
 		});
 
 		// Record TRANSFER_IN event for receiver (increases their supply)
@@ -127,6 +133,8 @@ async function recordLendingTransferEvents(
 			timestamp,
 			transactionId: txHash,
 			blockNumber,
+			agentTokenId: agentTokenId ?? BigInt(0),
+			executor: executor ?? null,
 		}).onConflictDoUpdate({
 			id: transferInEventId,
 			chainId,
@@ -137,6 +145,8 @@ async function recordLendingTransferEvents(
 			timestamp,
 			transactionId: txHash,
 			blockNumber,
+			agentTokenId: agentTokenId ?? BigInt(0),
+			executor: executor ?? null,
 		});
 
 		logger.info(`Recorded lending transfer events: ${sender} -> ${receiver}, amount: ${amount.toString()}, underlying: ${underlyingToken}`, LogLabel.EVENT_HANDLER, 'recordLendingTransferEvents', {
@@ -182,6 +192,9 @@ export async function handleDeposit({ event, context }: any) {
 		timestamp: timestamp,
 		transactionId: event.transaction.hash,
 		blockNumber: BigInt(event.block.number),
+		// ERC-8004 Agent tracking
+		agentTokenId: event.args.agentTokenId ?? BigInt(0),
+		executor: event.args.executor ?? null,
 	});
 
 	// Track user
@@ -207,6 +220,9 @@ export async function handleWithdrawal({ event, context }: any) {
 		timestamp: timestamp,
 		transactionId: event.transaction.hash,
 		blockNumber: BigInt(event.block.number),
+		// ERC-8004 Agent tracking
+		agentTokenId: event.args.agentTokenId ?? BigInt(0),
+		executor: event.args.executor ?? null,
 	});
 
 	// Track user activity
@@ -234,7 +250,9 @@ export async function handleTransferFrom({ event, context }: any) {
 		timestamp,
 		event.transaction.hash,
 		BigInt(event.block.number),
-		Number(event.log.logIndex)
+		Number(event.log.logIndex),
+		event.args.agentTokenId,
+		event.args.executor
 	);
 
 	// Track user activity for sender, receiver, and operator
@@ -264,7 +282,9 @@ export async function handleTransferLockedFrom({ event, context }: any) {
 		timestamp,
 		event.transaction.hash,
 		BigInt(event.block.number),
-		Number(event.log.logIndex)
+		Number(event.log.logIndex),
+		event.args.agentTokenId,
+		event.args.executor
 	);
 
 	// Track user activity for sender, receiver, and operator
@@ -292,6 +312,9 @@ export async function handleLock({ event, context }: any) {
 		timestamp: timestamp,
 		transactionId: event.transaction.hash,
 		blockNumber: BigInt(event.block.number),
+		// ERC-8004 Agent tracking
+		agentTokenId: event.args.agentTokenId ?? BigInt(0),
+		executor: event.args.executor ?? null,
 	});
 
 	// Track user activity
@@ -317,6 +340,9 @@ export async function handleUnlock({ event, context }: any) {
 		timestamp: timestamp,
 		transactionId: event.transaction.hash,
 		blockNumber: BigInt(event.block.number),
+		// ERC-8004 Agent tracking
+		agentTokenId: event.args.agentTokenId ?? BigInt(0),
+		executor: event.args.executor ?? null,
 	});
 
 	// Track user activity

@@ -20,6 +20,8 @@ export interface OrderPlacedEventArgs {
 	autoRepay: boolean;
 	autoBorrow: boolean;
 	timeInForce: number;
+	agentTokenId: bigint;
+	executor: string;
 }
 
 export interface UpdateOrderEventArgs {

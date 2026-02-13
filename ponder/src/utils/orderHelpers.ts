@@ -379,6 +379,9 @@ export function createOrderData(
 		quoteQuantity: args.price * args.quantity,
 		executedQuoteQuantity: BigInt(0),
 		transactionId: txHash,
+		// ERC-8004 Agent tracking
+		agentTokenId: args.agentTokenId ?? BigInt(0),
+		executor: args.executor ?? null,
 	};
 	return orderData;
 }

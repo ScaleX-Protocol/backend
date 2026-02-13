@@ -72,6 +72,8 @@ export interface OrderPlacedEventArgs {
 	autoRepay: boolean;
 	autoBorrow: boolean;
 	timeInForce: number;
+	agentTokenId: string;
+	executor: string;
 }
 
 /**

@@ -179,6 +179,9 @@ export async function handleSupply({ event, context }: any) {
     timestamp,
     transactionId: txHash,
     blockNumber: BigInt(event.block.number),
+    // ERC-8004 Agent tracking
+    agentTokenId: event.args.agentTokenId ?? BigInt(0),
+    executor: event.args.executor ?? null,
   };
   console.log('[LENDING-DB-INSERT] About to insert lending event:', JSON.stringify(insertValues, (key, value) =>
     typeof value === 'bigint' ? value.toString() : value
@@ -193,6 +196,8 @@ export async function handleSupply({ event, context }: any) {
     timestamp,
     transactionId: txHash,
     blockNumber: BigInt(event.block.number),
+    agentTokenId: event.args.agentTokenId ?? BigInt(0),
+    executor: event.args.executor ?? null,
   }));
 
   // Update user stats
@@ -315,6 +320,9 @@ export async function handleBorrow({ event, context }: any) {
       timestamp,
       transactionId: txHash,
       blockNumber: BigInt(event.block.number),
+      // ERC-8004 Agent tracking
+      agentTokenId: event.args.agentTokenId ?? BigInt(0),
+      executor: event.args.executor ?? null,
     }).onConflictDoUpdate((row: any) => ({
       action: row.action,
       token: row.token,
@@ -324,6 +332,8 @@ export async function handleBorrow({ event, context }: any) {
       timestamp,
       transactionId: txHash,
       blockNumber: BigInt(event.block.number),
+      agentTokenId: event.args.agentTokenId ?? BigInt(0),
+      executor: event.args.executor ?? null,
     }));
 
     // Update user stats
@@ -413,6 +423,9 @@ export async function handleRepay({ event, context }: any) {
     timestamp: timestamp,
     transactionId: txHash,
     blockNumber: BigInt(event.block.number),
+    // ERC-8004 Agent tracking
+    agentTokenId: event.args.agentTokenId ?? BigInt(0),
+    executor: event.args.executor ?? null,
   });
 
   // Update user stats
@@ -492,6 +505,9 @@ export async function handleWithdraw({ event, context }: any) {
     timestamp,
     transactionId: txHash,
     blockNumber: BigInt(event.block.number),
+    // ERC-8004 Agent tracking
+    agentTokenId: event.args.agentTokenId ?? BigInt(0),
+    executor: event.args.executor ?? null,
   });
 
   // Update user stats
@@ -563,6 +579,9 @@ export async function handleLiquidation({ event, context }: any) {
     blockNumber: BigInt(event.block.number),
     liquidator: liquidator,
     liquidatedAmount: debtToCover,
+    // ERC-8004 Agent tracking
+    agentTokenId: event.args.agentTokenId ?? BigInt(0),
+    executor: event.args.executor ?? null,
   });
 
   // Update liquidated user stats
