@@ -6,6 +6,11 @@ import { Hono } from "hono";
 import { and, asc, client, desc, eq, graphql, gt, gte, inArray, lte, or, sql } from "ponder";
 import { db } from "ponder:api";
 import schema, {
+	agentCircuitBreakers,
+	agentInstallations,
+	agentLendingEvents,
+	agentPolicyViolations,
+	agentStats,
 	assetConfigurations,
 	balances,
 	chainBalanceDeposits,
@@ -2682,6 +2687,440 @@ app.get("/api/lending/dashboard/:user", async c => {
 		}, 500);
 	}
 });
+
+// ============================================================================
+// AI AGENT API ENDPOINTS (ERC-8004)
+// ============================================================================
+
+/**
+ * GET /api/agents
+ * Get all agent installations
+ * Query params: chainId, limit, offset, owner, enabled
+ */
+app.get("/api/agents", async c => {
+	const { chainId, limit, offset, owner, enabled } = c.req.query();
+
+	try {
+		const targetChainId = chainId ? Number(chainId) : 84532;
+		const queryLimit = limit ? Math.min(Number(limit), 100) : 50;
+		const queryOffset = offset ? Number(offset) : 0;
+
+		const conditions = [eq(agentInstallations.chainId, targetChainId)];
+
+		if (owner) {
+			conditions.push(eq(agentInstallations.owner, owner as `0x${string}`));
+		}
+
+		if (enabled !== undefined) {
+			conditions.push(eq(agentInstallations.enabled, enabled === 'true'));
+		}
+
+		const agents = await db
+			.select()
+			.from(agentInstallations)
+			.where(and(...conditions))
+			.limit(queryLimit)
+			.offset(queryOffset)
+			.execute();
+
+		// Convert BigInt fields to strings for JSON serialization
+		const serializedAgents = agents.map(agent => ({
+			...agent,
+			agentTokenId: agent.agentTokenId?.toString(),
+			blockNumber: agent.blockNumber?.toString(),
+			installedAt: agent.installedAt,
+			uninstalledAt: agent.uninstalledAt
+		}));
+
+		return c.json({
+			success: true,
+			data: serializedAgents,
+			count: agents.length,
+			pagination: {
+				limit: queryLimit,
+				offset: queryOffset
+			}
+		});
+	} catch (error) {
+		console.error("Error fetching agents:", error);
+		return c.json({
+			success: false,
+			error: "Failed to fetch agents",
+			details: error instanceof Error ? error.message : String(error)
+		}, 500);
+	}
+});
+
+/**
+ * GET /api/agents/:agentTokenId
+ * Get specific agent installation details
+ */
+app.get("/api/agents/:agentTokenId", async c => {
+	const { agentTokenId } = c.req.param();
+	const { chainId } = c.req.query();
+
+	try {
+		const targetChainId = chainId ? Number(chainId) : 84532;
+
+		const agent = await db
+			.select()
+			.from(agentInstallations)
+			.where(and(
+				eq(agentInstallations.agentTokenId, agentTokenId),
+				eq(agentInstallations.chainId, targetChainId)
+			))
+			.limit(1)
+			.execute();
+
+		if (agent.length === 0) {
+			return c.json({
+				success: false,
+				error: "Agent not found"
+			}, 404);
+		}
+
+		// Convert BigInt fields to strings
+		const serializedAgent = {
+			...agent[0],
+			agentTokenId: agent[0].agentTokenId?.toString(),
+			blockNumber: agent[0].blockNumber?.toString(),
+			installedAt: agent[0].installedAt,
+			uninstalledAt: agent[0].uninstalledAt
+		};
+
+		return c.json({
+			success: true,
+			data: serializedAgent
+		});
+	} catch (error) {
+		console.error("Error fetching agent:", error);
+		return c.json({
+			success: false,
+			error: "Failed to fetch agent",
+			details: error instanceof Error ? error.message : String(error)
+		}, 500);
+	}
+});
+
+/**
+ * GET /api/agents/:agentTokenId/orders
+ * Get orders placed by a specific agent
+ */
+app.get("/api/agents/:agentTokenId/orders", async c => {
+	const { agentTokenId } = c.req.param();
+	const { chainId, limit, offset, status } = c.req.query();
+
+	try {
+		const targetChainId = chainId ? Number(chainId) : 84532;
+		const queryLimit = limit ? Math.min(Number(limit), 100) : 50;
+		const queryOffset = offset ? Number(offset) : 0;
+
+		const conditions = [
+			eq(orders.agentTokenId, agentTokenId),
+			eq(orders.chainId, targetChainId)
+		];
+
+		if (status) {
+			conditions.push(eq(orders.status, status.toUpperCase()));
+		}
+
+		const agentOrders = await db
+			.select()
+			.from(orders)
+			.where(and(...conditions))
+			.orderBy(desc(orders.timestamp))
+			.limit(queryLimit)
+			.offset(queryOffset)
+			.execute();
+
+		// Convert BigInt fields to strings
+		const serializedOrders = agentOrders.map(order => ({
+			...order,
+			orderId: order.orderId?.toString(),
+			price: order.price?.toString(),
+			quantity: order.quantity?.toString(),
+			filled: order.filled?.toString(),
+			quoteQuantity: order.quoteQuantity?.toString(),
+			executedQuoteQuantity: order.executedQuoteQuantity?.toString(),
+			agentTokenId: order.agentTokenId?.toString()
+		}));
+
+		return c.json({
+			success: true,
+			data: serializedOrders,
+			count: agentOrders.length,
+			pagination: {
+				limit: queryLimit,
+				offset: queryOffset
+			}
+		});
+	} catch (error) {
+		console.error("Error fetching agent orders:", error);
+		return c.json({
+			success: false,
+			error: "Failed to fetch agent orders",
+			details: error instanceof Error ? error.message : String(error)
+		}, 500);
+	}
+});
+
+/**
+ * GET /api/agents/:agentTokenId/stats
+ * Get statistics for a specific agent
+ */
+app.get("/api/agents/:agentTokenId/stats", async c => {
+	const { agentTokenId } = c.req.param();
+	const { chainId } = c.req.query();
+
+	try {
+		const targetChainId = chainId ? Number(chainId) : 84532;
+
+		// Get agent stats if available
+		const stats = await db
+			.select()
+			.from(agentStats)
+			.where(and(
+				eq(agentStats.agentTokenId, agentTokenId),
+				eq(agentStats.chainId, targetChainId)
+			))
+			.limit(1)
+			.execute();
+
+		// Get order counts by status
+		const orderStats = await db
+			.select({
+				status: orders.status,
+				count: sql<number>`count(*)::int`
+			})
+			.from(orders)
+			.where(and(
+				eq(orders.agentTokenId, agentTokenId),
+				eq(orders.chainId, targetChainId)
+			))
+			.groupBy(orders.status)
+			.execute();
+
+		return c.json({
+			success: true,
+			data: {
+				agentStats: stats[0] || null,
+				ordersByStatus: orderStats.reduce((acc, item) => {
+					acc[item.status] = item.count;
+					return acc;
+				}, {} as Record<string, number>)
+			}
+		});
+	} catch (error) {
+		console.error("Error fetching agent stats:", error);
+		return c.json({
+			success: false,
+			error: "Failed to fetch agent stats",
+			details: error instanceof Error ? error.message : String(error)
+		}, 500);
+	}
+});
+
+/**
+ * GET /api/agent-orders
+ * Get all orders placed by agents
+ * Query params: chainId, limit, offset, executor, status
+ */
+app.get("/api/agent-orders", async c => {
+	const { chainId, limit, offset, executor, status } = c.req.query();
+
+	try {
+		const targetChainId = chainId ? Number(chainId) : 84532;
+		const queryLimit = limit ? Math.min(Number(limit), 100) : 50;
+		const queryOffset = offset ? Number(offset) : 0;
+
+		const conditions = [
+			eq(orders.chainId, targetChainId),
+			sql`${orders.agentTokenId} > '0'` // Only agent orders
+		];
+
+		if (executor) {
+			conditions.push(eq(orders.executor, executor as `0x${string}`));
+		}
+
+		if (status) {
+			conditions.push(eq(orders.status, status.toUpperCase()));
+		}
+
+		const agentOrders = await db
+			.select()
+			.from(orders)
+			.where(and(...conditions))
+			.orderBy(desc(orders.timestamp))
+			.limit(queryLimit)
+			.offset(queryOffset)
+			.execute();
+
+		// Convert BigInt fields to strings
+		const serializedOrders = agentOrders.map(order => ({
+			...order,
+			orderId: order.orderId?.toString(),
+			price: order.price?.toString(),
+			quantity: order.quantity?.toString(),
+			filled: order.filled?.toString(),
+			quoteQuantity: order.quoteQuantity?.toString(),
+			executedQuoteQuantity: order.executedQuoteQuantity?.toString(),
+			agentTokenId: order.agentTokenId?.toString()
+		}));
+
+		return c.json({
+			success: true,
+			data: serializedOrders,
+			count: agentOrders.length,
+			pagination: {
+				limit: queryLimit,
+				offset: queryOffset
+			}
+		});
+	} catch (error) {
+		console.error("Error fetching agent orders:", error);
+		return c.json({
+			success: false,
+			error: "Failed to fetch agent orders",
+			details: error instanceof Error ? error.message : String(error)
+		}, 500);
+	}
+});
+
+/**
+ * GET /api/agents/:agentTokenId/lending
+ * Get lending activity for a specific agent
+ */
+app.get("/api/agents/:agentTokenId/lending", async c => {
+	const { agentTokenId } = c.req.param();
+	const { chainId, limit, offset } = c.req.query();
+
+	try {
+		const targetChainId = chainId ? Number(chainId) : 84532;
+		const queryLimit = limit ? Math.min(Number(limit), 100) : 50;
+		const queryOffset = offset ? Number(offset) : 0;
+
+		const lendingActivity = await db
+			.select()
+			.from(agentLendingEvents)
+			.where(and(
+				eq(agentLendingEvents.agentTokenId, agentTokenId),
+				eq(agentLendingEvents.chainId, targetChainId)
+			))
+			.orderBy(desc(agentLendingEvents.timestamp))
+			.limit(queryLimit)
+			.offset(queryOffset)
+			.execute();
+
+		return c.json({
+			success: true,
+			data: lendingActivity,
+			count: lendingActivity.length,
+			pagination: {
+				limit: queryLimit,
+				offset: queryOffset
+			}
+		});
+	} catch (error) {
+		console.error("Error fetching agent lending activity:", error);
+		return c.json({
+			success: false,
+			error: "Failed to fetch agent lending activity",
+			details: error instanceof Error ? error.message : String(error)
+		}, 500);
+	}
+});
+
+/**
+ * GET /api/agents/:agentTokenId/violations
+ * Get policy violations for a specific agent
+ */
+app.get("/api/agents/:agentTokenId/violations", async c => {
+	const { agentTokenId } = c.req.param();
+	const { chainId, limit, offset } = c.req.query();
+
+	try {
+		const targetChainId = chainId ? Number(chainId) : 84532;
+		const queryLimit = limit ? Math.min(Number(limit), 100) : 50;
+		const queryOffset = offset ? Number(offset) : 0;
+
+		const violations = await db
+			.select()
+			.from(agentPolicyViolations)
+			.where(and(
+				eq(agentPolicyViolations.agentTokenId, agentTokenId),
+				eq(agentPolicyViolations.chainId, targetChainId)
+			))
+			.orderBy(desc(agentPolicyViolations.timestamp))
+			.limit(queryLimit)
+			.offset(queryOffset)
+			.execute();
+
+		return c.json({
+			success: true,
+			data: violations,
+			count: violations.length,
+			pagination: {
+				limit: queryLimit,
+				offset: queryOffset
+			}
+		});
+	} catch (error) {
+		console.error("Error fetching agent violations:", error);
+		return c.json({
+			success: false,
+			error: "Failed to fetch agent violations",
+			details: error instanceof Error ? error.message : String(error)
+		}, 500);
+	}
+});
+
+/**
+ * GET /api/agents/:agentTokenId/circuit-breakers
+ * Get circuit breaker events for a specific agent
+ */
+app.get("/api/agents/:agentTokenId/circuit-breakers", async c => {
+	const { agentTokenId } = c.req.param();
+	const { chainId, limit, offset } = c.req.query();
+
+	try {
+		const targetChainId = chainId ? Number(chainId) : 84532;
+		const queryLimit = limit ? Math.min(Number(limit), 100) : 50;
+		const queryOffset = offset ? Number(offset) : 0;
+
+		const circuitBreakers = await db
+			.select()
+			.from(agentCircuitBreakers)
+			.where(and(
+				eq(agentCircuitBreakers.agentTokenId, agentTokenId),
+				eq(agentCircuitBreakers.chainId, targetChainId)
+			))
+			.orderBy(desc(agentCircuitBreakers.timestamp))
+			.limit(queryLimit)
+			.offset(queryOffset)
+			.execute();
+
+		return c.json({
+			success: true,
+			data: circuitBreakers,
+			count: circuitBreakers.length,
+			pagination: {
+				limit: queryLimit,
+				offset: queryOffset
+			}
+		});
+	} catch (error) {
+		console.error("Error fetching circuit breakers:", error);
+		return c.json({
+			success: false,
+			error: "Failed to fetch circuit breakers",
+			details: error instanceof Error ? error.message : String(error)
+		}, 500);
+	}
+});
+
+// ============================================================================
+// END AI AGENT API ENDPOINTS
+// ============================================================================
 
 // Function to format our bucket data into Binance Kline format
 function formatKlineData(bucket: BucketData): BinanceKlineData {
