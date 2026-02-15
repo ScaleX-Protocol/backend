@@ -2900,10 +2900,21 @@ app.get("/api/agents/:agentTokenId/stats", async c => {
 			.groupBy(orders.status)
 			.execute();
 
+		// Serialize BigInt fields to strings for JSON response
+		const serializedStats = stats[0] ? {
+			...stats[0],
+			agentTokenId: stats[0].agentTokenId.toString(),
+			totalTradingVolume: stats[0].totalTradingVolume.toString(),
+			totalBorrowAmount: stats[0].totalBorrowAmount.toString(),
+			totalRepayAmount: stats[0].totalRepayAmount.toString(),
+			totalCollateralSupplied: stats[0].totalCollateralSupplied.toString(),
+			totalCollateralWithdrawn: stats[0].totalCollateralWithdrawn.toString(),
+		} : null;
+
 		return c.json({
 			success: true,
 			data: {
-				agentStats: stats[0] || null,
+				agentStats: serializedStats,
 				ordersByStatus: orderStats.reduce((acc, item) => {
 					acc[item.status] = item.count;
 					return acc;
