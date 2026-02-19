@@ -63,24 +63,30 @@ export async function handlePolicyInstalled({ event, context }: any) {
 		);
 
 
-		// Insert agent installation record
-		await context.db
-			.insert(agentInstallations)
-			.values({
-				id: installationId,
-				chainId,
-				owner: user as `0x${string}`,
-				agentTokenId: strategyAgentId,
-				templateUsed,
-				enabled: true,
-				installedAt: Number(timestamp),
-				transactionId: event.transaction.hash,
-				blockNumber: BigInt(event.block.number),
-			})
-			.onConflictDoUpdate(() => ({
-				enabled: true,
-				templateUsed,
-			}));
+		// Insert or update agent installation record (avoid onConflictDoUpdate to prevent insertBuffer PK conflicts in Ponder 0.9.14)
+		const existingInstallation = await context.db.find(agentInstallations, { id: installationId });
+		if (existingInstallation) {
+			await context.db
+				.update(agentInstallations, { id: installationId })
+				.set({
+					enabled: true,
+					templateUsed,
+				});
+		} else {
+			await context.db
+				.insert(agentInstallations)
+				.values({
+					id: installationId,
+					chainId,
+					owner: user as `0x${string}`,
+					agentTokenId: strategyAgentId,
+					templateUsed,
+					enabled: true,
+					installedAt: Number(timestamp),
+					transactionId: event.transaction.hash,
+					blockNumber: BigInt(event.block.number),
+				});
+		}
 
 		// Initialize agent stats
 		await upsertAgentStats(context.db, chainId, user, strategyAgentId, Number(timestamp), {});
