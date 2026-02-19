@@ -196,7 +196,7 @@ export async function handleAgentSwapExecuted({ event, context }: any) {
 		await context.db.insert(agentOrders).values({
 			id: orderId,
 			chainId,
-			owner: user as `0x${string}`,
+			owner: owner as `0x${string}`,
 			agentTokenId,
 			executor: executor as `0x${string}`,
 			orderId: null,
@@ -257,7 +257,7 @@ export async function handleAgentLimitOrderPlaced({ event, context }: any) {
 		await context.db.insert(agentOrders).values({
 			id: orderDbId,
 			chainId,
-			owner: user as `0x${string}`,
+			owner: owner as `0x${string}`,
 			agentTokenId,
 			executor: executor as `0x${string}`,
 			orderId: orderId as `0x${string}`,
@@ -360,7 +360,7 @@ export async function handleAgentBorrowExecuted({ event, context }: any) {
 		await context.db.insert(agentLendingEvents).values({
 			id: eventId,
 			chainId,
-			owner: user as `0x${string}`,
+			owner: owner as `0x${string}`,
 			agentTokenId,
 			executor: executor as `0x${string}`,
 			action: "BORROW",
@@ -415,7 +415,7 @@ export async function handleAgentRepayExecuted({ event, context }: any) {
 		await context.db.insert(agentLendingEvents).values({
 			id: eventId,
 			chainId,
-			owner: user as `0x${string}`,
+			owner: owner as `0x${string}`,
 			agentTokenId,
 			executor: executor as `0x${string}`,
 			action: "REPAY",
@@ -470,7 +470,7 @@ export async function handleAgentCollateralSupplied({ event, context }: any) {
 		await context.db.insert(agentLendingEvents).values({
 			id: eventId,
 			chainId,
-			owner: user as `0x${string}`,
+			owner: owner as `0x${string}`,
 			agentTokenId,
 			executor: executor as `0x${string}`,
 			action: "SUPPLY",
@@ -525,7 +525,7 @@ export async function handleAgentCollateralWithdrawn({ event, context }: any) {
 		await context.db.insert(agentLendingEvents).values({
 			id: eventId,
 			chainId,
-			owner: user as `0x${string}`,
+			owner: owner as `0x${string}`,
 			agentTokenId,
 			executor: executor as `0x${string}`,
 			action: "WITHDRAW",
@@ -584,7 +584,7 @@ export async function handleCircuitBreakerTriggered({ event, context }: any) {
 		await context.db.insert(agentCircuitBreakers).values({
 			id: eventId,
 			chainId,
-			owner: user as `0x${string}`,
+			owner: owner as `0x${string}`,
 			agentTokenId,
 			drawdownBps,
 			currentValue,
@@ -640,7 +640,7 @@ export async function handlePolicyViolation({ event, context }: any) {
 		await context.db.insert(agentPolicyViolations).values({
 			id: eventId,
 			chainId,
-			owner: user as `0x${string}`,
+			owner: owner as `0x${string}`,
 			agentTokenId,
 			reason,
 			timestamp: Number(timestamp),
