@@ -52,8 +52,11 @@ ponder.on(PonderEvents.LENDING_MANAGER_INTEREST_RATE_PARAMS_SET, withEventValida
 ponder.on(PonderEvents.ORACLE_PRICE_UPDATED, oracleHandler.handleOraclePriceUpdate);
 
 // AI Agent Events - ERC-8004 Agent System
-ponder.on(PonderEvents.AGENT_INSTALLED, withEventValidator(agentRouterHandler.handleAgentInstalled, 'agentInstalled'));
-ponder.on(PonderEvents.AGENT_UNINSTALLED, withEventValidator(agentRouterHandler.handleAgentUninstalled, 'agentUninstalled'));
+ponder.on(PonderEvents.POLICY_INSTALLED, withEventValidator(agentRouterHandler.handlePolicyInstalled, 'policyInstalled'));
+ponder.on(PonderEvents.POLICY_UNINSTALLED, withEventValidator(agentRouterHandler.handlePolicyUninstalled, 'policyUninstalled'));
+ponder.on(PonderEvents.STRATEGY_AGENT_AUTHORIZED, withEventValidator(agentRouterHandler.handleStrategyAgentAuthorized, 'strategyAgentAuthorized'));
+ponder.on(PonderEvents.STRATEGY_AGENT_REVOKED, withEventValidator(agentRouterHandler.handleStrategyAgentRevoked, 'strategyAgentRevoked'));
+
 ponder.on(PonderEvents.AGENT_SWAP_EXECUTED, withEventValidator(agentRouterHandler.handleAgentSwapExecuted, 'agentSwapExecuted'));
 ponder.on(PonderEvents.AGENT_LIMIT_ORDER_PLACED, withEventValidator(agentRouterHandler.handleAgentLimitOrderPlaced, 'agentLimitOrderPlaced'));
 ponder.on(PonderEvents.AGENT_ORDER_CANCELLED, withEventValidator(agentRouterHandler.handleAgentOrderCancelled, 'agentOrderCancelled'));

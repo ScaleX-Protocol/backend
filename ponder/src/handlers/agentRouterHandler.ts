@@ -17,19 +17,19 @@ const logger = createLogger('agentRouterHandler.ts');
 async function upsertAgentStats(
 	db: any,
 	chainId: number,
-	owner: string,
+	user: string,
 	agentTokenId: bigint,
 	timestamp: number,
 	updates: any
 ) {
-	const statsId = `${chainId}-${owner}-${agentTokenId}`;
+	const statsId = `${chainId}-${user}-${agentTokenId}`;
 
 	await db
 		.insert(agentStats)
 		.values({
 			id: statsId,
 			chainId,
-			owner: owner as `0x${string}`,
+			owner: user as `0x${string}`,
 			agentTokenId,
 			firstActivityTimestamp: timestamp,
 			lastActivityTimestamp: timestamp,
@@ -71,20 +71,20 @@ async function upsertUserActivity(db: any, chainId: number, user: string, timest
 //           POLICYFACTORY EVENT HANDLERS
 // =============================================================
 
-export async function handleAgentInstalled({ event, context }: any) {
+export async function handlePolicyInstalled({ event, context }: any) {
 	try {
-		const { owner, agentTokenId, templateUsed, timestamp } = event.args;
+		const { user, strategyAgentId, templateUsed, timestamp } = event.args;
 		const chainId = context.network.chainId;
-		const installationId = `${chainId}-${owner}-${agentTokenId}`;
+		const installationId = `${chainId}-${user}-${strategyAgentId}`;
 
 		logger.info(
-			`Agent installed - Owner: ${owner}, AgentTokenId: ${agentTokenId}, Template: ${templateUsed}`,
+			`Policy installed - User: ${user}, StrategyAgentId: ${strategyAgentId}, Template: ${templateUsed}`,
 			LogLabel.EVENT_HANDLER,
-			'handleAgentInstalled'
+			'handlePolicyInstalled'
 		);
 
 		// Upsert user
-		await upsertUserActivity(context.db, chainId, owner, Number(timestamp));
+		await upsertUserActivity(context.db, chainId, user, Number(timestamp));
 
 		// Insert agent installation record
 		await context.db
@@ -92,8 +92,8 @@ export async function handleAgentInstalled({ event, context }: any) {
 			.values({
 				id: installationId,
 				chainId,
-				owner: owner as `0x${string}`,
-				agentTokenId,
+				owner: user as `0x${string}`,
+				agentTokenId: strategyAgentId,
 				templateUsed,
 				enabled: true,
 				installedAt: Number(timestamp),
@@ -106,7 +106,7 @@ export async function handleAgentInstalled({ event, context }: any) {
 			}));
 
 		// Initialize agent stats
-		await upsertAgentStats(context.db, chainId, owner, agentTokenId, Number(timestamp), {});
+		await upsertAgentStats(context.db, chainId, user, strategyAgentId, Number(timestamp), {});
 
 		// Update indexer status
 		await updateIndexerStatus(
@@ -114,29 +114,29 @@ export async function handleAgentInstalled({ event, context }: any) {
 			chainId,
 			BigInt(event.block.number),
 			Number(event.block.timestamp),
-			"AgentInstalled"
+			"PolicyInstalled"
 		);
 	} catch (error) {
 		logger.error(
-			`Failed to handle AgentInstalled event`,
+			`Failed to handle PolicyInstalled event`,
 			LogLabel.EVENT_HANDLER,
-			'handleAgentInstalled',
+			'handlePolicyInstalled',
 			{ error: error instanceof Error ? error.message : String(error) }
 		);
 		throw error;
 	}
 }
 
-export async function handleAgentUninstalled({ event, context }: any) {
+export async function handlePolicyUninstalled({ event, context }: any) {
 	try {
-		const { owner, agentTokenId, timestamp } = event.args;
+		const { user, strategyAgentId, timestamp } = event.args;
 		const chainId = context.network.chainId;
-		const installationId = `${chainId}-${owner}-${agentTokenId}`;
+		const installationId = `${chainId}-${user}-${strategyAgentId}`;
 
 		logger.info(
-			`Agent uninstalled - Owner: ${owner}, AgentTokenId: ${agentTokenId}`,
+			`Policy uninstalled - User: ${user}, StrategyAgentId: ${strategyAgentId}`,
 			LogLabel.EVENT_HANDLER,
-			'handleAgentUninstalled'
+			'handlePolicyUninstalled'
 		);
 
 		// Update agent installation record
@@ -160,13 +160,13 @@ export async function handleAgentUninstalled({ event, context }: any) {
 			chainId,
 			BigInt(event.block.number),
 			Number(event.block.timestamp),
-			"AgentUninstalled"
+			"PolicyUninstalled"
 		);
 	} catch (error) {
 		logger.error(
-			`Failed to handle AgentUninstalled event`,
+			`Failed to handle PolicyUninstalled event`,
 			LogLabel.EVENT_HANDLER,
-			'handleAgentUninstalled',
+			'handlePolicyUninstalled',
 			{ error: error instanceof Error ? error.message : String(error) }
 		);
 		throw error;
@@ -196,7 +196,7 @@ export async function handleAgentSwapExecuted({ event, context }: any) {
 		await context.db.insert(agentOrders).values({
 			id: orderId,
 			chainId,
-			owner: owner as `0x${string}`,
+			owner: user as `0x${string}`,
 			agentTokenId,
 			executor: executor as `0x${string}`,
 			orderId: null,
@@ -257,7 +257,7 @@ export async function handleAgentLimitOrderPlaced({ event, context }: any) {
 		await context.db.insert(agentOrders).values({
 			id: orderDbId,
 			chainId,
-			owner: owner as `0x${string}`,
+			owner: user as `0x${string}`,
 			agentTokenId,
 			executor: executor as `0x${string}`,
 			orderId: orderId as `0x${string}`,
@@ -360,7 +360,7 @@ export async function handleAgentBorrowExecuted({ event, context }: any) {
 		await context.db.insert(agentLendingEvents).values({
 			id: eventId,
 			chainId,
-			owner: owner as `0x${string}`,
+			owner: user as `0x${string}`,
 			agentTokenId,
 			executor: executor as `0x${string}`,
 			action: "BORROW",
@@ -415,7 +415,7 @@ export async function handleAgentRepayExecuted({ event, context }: any) {
 		await context.db.insert(agentLendingEvents).values({
 			id: eventId,
 			chainId,
-			owner: owner as `0x${string}`,
+			owner: user as `0x${string}`,
 			agentTokenId,
 			executor: executor as `0x${string}`,
 			action: "REPAY",
@@ -470,7 +470,7 @@ export async function handleAgentCollateralSupplied({ event, context }: any) {
 		await context.db.insert(agentLendingEvents).values({
 			id: eventId,
 			chainId,
-			owner: owner as `0x${string}`,
+			owner: user as `0x${string}`,
 			agentTokenId,
 			executor: executor as `0x${string}`,
 			action: "SUPPLY",
@@ -525,7 +525,7 @@ export async function handleAgentCollateralWithdrawn({ event, context }: any) {
 		await context.db.insert(agentLendingEvents).values({
 			id: eventId,
 			chainId,
-			owner: owner as `0x${string}`,
+			owner: user as `0x${string}`,
 			agentTokenId,
 			executor: executor as `0x${string}`,
 			action: "WITHDRAW",
@@ -584,7 +584,7 @@ export async function handleCircuitBreakerTriggered({ event, context }: any) {
 		await context.db.insert(agentCircuitBreakers).values({
 			id: eventId,
 			chainId,
-			owner: owner as `0x${string}`,
+			owner: user as `0x${string}`,
 			agentTokenId,
 			drawdownBps,
 			currentValue,
@@ -640,7 +640,7 @@ export async function handlePolicyViolation({ event, context }: any) {
 		await context.db.insert(agentPolicyViolations).values({
 			id: eventId,
 			chainId,
-			owner: owner as `0x${string}`,
+			owner: user as `0x${string}`,
 			agentTokenId,
 			reason,
 			timestamp: Number(timestamp),
@@ -661,6 +661,111 @@ export async function handlePolicyViolation({ event, context }: any) {
 			`Failed to handle PolicyViolation event`,
 			LogLabel.EVENT_HANDLER,
 			'handlePolicyViolation',
+			{ error: error instanceof Error ? error.message : String(error) }
+		);
+		throw error;
+	}
+}
+
+// =============================================================
+//           AGENTROUTER AUTHORIZATION EVENTS
+// =============================================================
+
+export async function handleStrategyAgentAuthorized({ event, context }: any) {
+	try {
+		const { user, strategyAgentId, timestamp } = event.args;
+		const chainId = context.network.chainId;
+		const installationId = `${chainId}-${user}-${strategyAgentId}`;
+
+		logger.info(
+			`Strategy agent authorized - User: ${user}, StrategyAgentId: ${strategyAgentId}`,
+			LogLabel.EVENT_HANDLER,
+			'handleStrategyAgentAuthorized'
+		);
+
+		// Upsert user
+		await upsertUserActivity(context.db, chainId, user, Number(timestamp));
+
+		// Update agent installation record to mark as authorized
+		await context.db
+			.insert(agentInstallations)
+			.values({
+				id: installationId,
+				chainId,
+				owner: user as `0x${string}`,
+				agentTokenId: strategyAgentId,
+				templateUsed: "",
+				enabled: true,
+				installedAt: Number(timestamp),
+				transactionId: event.transaction.hash,
+				blockNumber: BigInt(event.block.number),
+			})
+			.onConflictDoUpdate(() => ({
+				enabled: true,
+			}));
+
+		// Initialize agent stats
+		await upsertAgentStats(context.db, chainId, user, strategyAgentId, Number(timestamp), {});
+
+		// Update indexer status
+		await updateIndexerStatus(
+			context.db,
+			chainId,
+			BigInt(event.block.number),
+			Number(event.block.timestamp),
+			"StrategyAgentAuthorized"
+		);
+	} catch (error) {
+		logger.error(
+			`Failed to handle StrategyAgentAuthorized event`,
+			LogLabel.EVENT_HANDLER,
+			'handleStrategyAgentAuthorized',
+			{ error: error instanceof Error ? error.message : String(error) }
+		);
+		throw error;
+	}
+}
+
+export async function handleStrategyAgentRevoked({ event, context }: any) {
+	try {
+		const { user, strategyAgentId, timestamp } = event.args;
+		const chainId = context.network.chainId;
+		const installationId = `${chainId}-${user}-${strategyAgentId}`;
+
+		logger.info(
+			`Strategy agent revoked - User: ${user}, StrategyAgentId: ${strategyAgentId}`,
+			LogLabel.EVENT_HANDLER,
+			'handleStrategyAgentRevoked'
+		);
+
+		// Update agent installation record
+		await context.db
+			.update(agentInstallations, { id: installationId })
+			.set({
+				enabled: false,
+				uninstalledAt: Number(timestamp),
+			});
+
+		// Update agent stats
+		await context.db
+			.update(agentStats, { id: installationId })
+			.set({
+				isActive: false,
+			});
+
+		// Update indexer status
+		await updateIndexerStatus(
+			context.db,
+			chainId,
+			BigInt(event.block.number),
+			Number(event.block.timestamp),
+			"StrategyAgentRevoked"
+		);
+	} catch (error) {
+		logger.error(
+			`Failed to handle StrategyAgentRevoked event`,
+			LogLabel.EVENT_HANDLER,
+			'handleStrategyAgentRevoked',
 			{ error: error instanceof Error ? error.message : String(error) }
 		);
 		throw error;

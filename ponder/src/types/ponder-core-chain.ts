@@ -70,10 +70,14 @@ export const PonderEvents = {
 	ORACLE_PRICE_UPDATED: ponderEvent("Oracle:PriceUpdated"),
 
 	// PolicyFactory Events (AI Agents)
-	AGENT_INSTALLED: ponderEvent("PolicyFactory:AgentInstalled"),
-	AGENT_UNINSTALLED: ponderEvent("PolicyFactory:AgentUninstalled"),
+	POLICY_INSTALLED: ponderEvent("PolicyFactory:PolicyInstalled"),
+	POLICY_UNINSTALLED: ponderEvent("PolicyFactory:PolicyUninstalled"),
 
-	// AgentRouter Events (AI Agents)
+	// AgentRouter Authorization Events
+	STRATEGY_AGENT_AUTHORIZED: ponderEvent("AgentRouter:StrategyAgentAuthorized"),
+	STRATEGY_AGENT_REVOKED: ponderEvent("AgentRouter:StrategyAgentRevoked"),
+
+	// AgentRouter Trade/Lending Events (AI Agents)
 	AGENT_SWAP_EXECUTED: ponderEvent("AgentRouter:AgentSwapExecuted"),
 	AGENT_LIMIT_ORDER_PLACED: ponderEvent("AgentRouter:AgentLimitOrderPlaced"),
 	AGENT_ORDER_CANCELLED: ponderEvent("AgentRouter:AgentOrderCancelled"),
