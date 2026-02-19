@@ -8,7 +8,6 @@ import {
 	agentStats,
 	agentCircuitBreakers,
 	agentPolicyViolations,
-	users,
 } from "ponder:schema";
 
 const logger = createLogger('agentRouterHandler.ts');
@@ -47,26 +46,6 @@ async function upsertAgentStats(
 		}));
 }
 
-// Helper function to upsert user activity
-async function upsertUserActivity(db: any, chainId: number, user: string, timestamp: number) {
-	const userId = `${chainId}-${user}`;
-	await db
-		.insert(users)
-		.values({
-			id: userId,
-			chainId: chainId,
-			address: user as `0x${string}`,
-			firstSeenTimestamp: timestamp,
-			lastSeenTimestamp: timestamp,
-			totalOrders: 0,
-			totalDeposits: 0,
-			totalVolume: BigInt(0),
-		})
-		.onConflictDoUpdate((row: any) => ({
-			lastSeenTimestamp: timestamp,
-		}));
-}
-
 // =============================================================
 //           POLICYFACTORY EVENT HANDLERS
 // =============================================================
@@ -83,8 +62,6 @@ export async function handlePolicyInstalled({ event, context }: any) {
 			'handlePolicyInstalled'
 		);
 
-		// Upsert user
-		await upsertUserActivity(context.db, chainId, user, Number(timestamp));
 
 		// Insert agent installation record
 		await context.db
@@ -189,8 +166,6 @@ export async function handleAgentSwapExecuted({ event, context }: any) {
 			'handleAgentSwapExecuted'
 		);
 
-		// Upsert user
-		await upsertUserActivity(context.db, chainId, owner, Number(timestamp));
 
 		// Insert agent order record
 		await context.db.insert(agentOrders).values({
@@ -250,8 +225,6 @@ export async function handleAgentLimitOrderPlaced({ event, context }: any) {
 			'handleAgentLimitOrderPlaced'
 		);
 
-		// Upsert user
-		await upsertUserActivity(context.db, chainId, owner, Number(timestamp));
 
 		// Insert agent order record
 		await context.db.insert(agentOrders).values({
@@ -353,8 +326,6 @@ export async function handleAgentBorrowExecuted({ event, context }: any) {
 			'handleAgentBorrowExecuted'
 		);
 
-		// Upsert user
-		await upsertUserActivity(context.db, chainId, owner, Number(timestamp));
 
 		// Insert lending event
 		await context.db.insert(agentLendingEvents).values({
@@ -408,8 +379,6 @@ export async function handleAgentRepayExecuted({ event, context }: any) {
 			'handleAgentRepayExecuted'
 		);
 
-		// Upsert user
-		await upsertUserActivity(context.db, chainId, owner, Number(timestamp));
 
 		// Insert lending event
 		await context.db.insert(agentLendingEvents).values({
@@ -463,8 +432,6 @@ export async function handleAgentCollateralSupplied({ event, context }: any) {
 			'handleAgentCollateralSupplied'
 		);
 
-		// Upsert user
-		await upsertUserActivity(context.db, chainId, owner, Number(timestamp));
 
 		// Insert lending event
 		await context.db.insert(agentLendingEvents).values({
@@ -518,8 +485,6 @@ export async function handleAgentCollateralWithdrawn({ event, context }: any) {
 			'handleAgentCollateralWithdrawn'
 		);
 
-		// Upsert user
-		await upsertUserActivity(context.db, chainId, owner, Number(timestamp));
 
 		// Insert lending event
 		await context.db.insert(agentLendingEvents).values({
@@ -577,8 +542,6 @@ export async function handleCircuitBreakerTriggered({ event, context }: any) {
 			'handleCircuitBreakerTriggered'
 		);
 
-		// Upsert user
-		await upsertUserActivity(context.db, chainId, owner, Number(timestamp));
 
 		// Insert circuit breaker event
 		await context.db.insert(agentCircuitBreakers).values({
@@ -633,8 +596,6 @@ export async function handlePolicyViolation({ event, context }: any) {
 			'handlePolicyViolation'
 		);
 
-		// Upsert user
-		await upsertUserActivity(context.db, chainId, owner, Number(timestamp));
 
 		// Insert policy violation event
 		await context.db.insert(agentPolicyViolations).values({
@@ -683,8 +644,6 @@ export async function handleStrategyAgentAuthorized({ event, context }: any) {
 			'handleStrategyAgentAuthorized'
 		);
 
-		// Upsert user
-		await upsertUserActivity(context.db, chainId, user, Number(timestamp));
 
 		// Update agent installation record to mark as authorized
 		await context.db
