@@ -645,26 +645,12 @@ export async function handleStrategyAgentAuthorized({ event, context }: any) {
 		);
 
 
-		// Update agent installation record to mark as authorized
+		// Mark agent installation as authorized (PolicyInstalled always fires first and creates the record)
 		await context.db
-			.insert(agentInstallations)
-			.values({
-				id: installationId,
-				chainId,
-				owner: user as `0x${string}`,
-				agentTokenId: strategyAgentId,
-				templateUsed: "",
+			.update(agentInstallations, { id: installationId })
+			.set({
 				enabled: true,
-				installedAt: Number(timestamp),
-				transactionId: event.transaction.hash,
-				blockNumber: BigInt(event.block.number),
-			})
-			.onConflictDoUpdate(() => ({
-				enabled: true,
-			}));
-
-		// Initialize agent stats
-		await upsertAgentStats(context.db, chainId, user, strategyAgentId, Number(timestamp), {});
+			});
 
 		// Update indexer status
 		await updateIndexerStatus(
