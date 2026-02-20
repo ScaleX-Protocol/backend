@@ -4,6 +4,228 @@ Base URL: `https://base-sepolia-indexer.scalex.money`
 
 ---
 
+## Deployed Contracts — Base Sepolia (Chain ID: 84532)
+
+### Core Trading Contracts
+
+| Contract | Address |
+|---|---|
+| ScaleXRouter | `0xc882b5af2B1AFB37CDe4D1f696fb112979cf98EE` |
+| BalanceManager | `0xeeAd362bCdB544636ec3ae62A114d846981cEbaf` |
+| PoolManager | `0x630D8C79407CB90e0AFE68E3841eadd3F94Fc81F` |
+| LendingManager | `0x448d522C17A84aBFa00DED4b4dFd76c43251013D` |
+| Oracle | `0xbF1ec59A11dFd00C29a258216E890FA89253325b` |
+| TokenRegistry | `0x7917D5E85136a41937A8eca8816991b87893139A` |
+| SyntheticTokenFactory | `0x5F42e34E976C6655C0545890527B23702ad2fF8d` |
+
+### AI Agent System Contracts (Phase 5 — ERC-8004 Beacon Proxy)
+
+| Contract | Address |
+|---|---|
+| IdentityRegistry | `0xC2A65565d9E4D901B80a38872688B23B2F8d0975` |
+| ReputationRegistry | `0xc62a83231635e32f12A451D141670Af746716808` |
+| ValidationRegistry | `0xecC6FC85d5008344D0d0B38BA0d26Ce9CA8b396F` |
+| PolicyFactory | `0x8ea2e44C77F2fEB345D18ba2Be0dD00831E7274f` |
+| AgentRouter | `0xE9c1a6665364294194aa3B1CE89654926b338493` |
+| AutoBorrowHelper | `0xd22C3b2ceF6BcD601f371052208C7a283FCFaA4E` |
+
+### Token Addresses
+
+| Token | Address | Decimals |
+|---|---|---|
+| IDRX (quote currency) | `0xe7Cc2615374bbA52FC7bC8aF4aeF0E74f3D2559d` | 6 |
+
+> Contracts were deployed starting from block **37,555,440**. The indexer starts tracking agent events from block **37,778,599** (Phase 5 beacon proxy deployment block).
+
+---
+
+## How to Set Up an Agent from Scratch
+
+The agent system follows a 3-party model:
+
+| Party | Role |
+|---|---|
+| **Agent wallet** | Holds the ERC-8004 identity NFT. Signs transactions. Pays gas. |
+| **User wallet** | Owns funds in BalanceManager. Grants the agent permission via policy. |
+| **AgentRouter** | On-chain enforcer. Verifies NFT ownership + user authorization before executing any trade. |
+
+### Step 1 — Agent Wallet: Register Identity (Mint NFT)
+
+The agent wallet calls `IdentityRegistry.register()` to mint an ERC-8004 NFT. The resulting token ID (`strategyAgentId`) uniquely identifies the agent on-chain.
+
+Using the Forge script:
+
+```bash
+# Set env vars
+export AGENT1_PRIVATE_KEY=0x<agent_wallet_private_key>
+export AGENT2_PRIVATE_KEY=0x<optional_second_agent_key>
+export AGENT3_PRIVATE_KEY=0x<optional_third_agent_key>
+export SCALEX_CORE_RPC=https://base-sepolia.g.alchemy.com/v2/<key>
+
+# Register agent NFTs
+forge script script/agents/CreateMultipleAgents.s.sol:CreateMultipleAgents \
+    --rpc-url "$SCALEX_CORE_RPC" \
+    --broadcast \
+    --legacy
+```
+
+Or directly with `cast` for a single agent:
+
+```bash
+cast send 0xC2A65565d9E4D901B80a38872688B23B2F8d0975 \
+    "register()" \
+    --private-key $AGENT1_PRIVATE_KEY \
+    --rpc-url $SCALEX_CORE_RPC
+```
+
+The printed `strategyAgentId` (token ID) is what users need in the next step.
+
+### Step 2 — User Wallet: Authorize the Agent with a Policy
+
+The **user** wallet calls `AgentRouter.authorize(strategyAgentId, policy)` to:
+1. Grant the agent permission to trade using the user's BalanceManager funds
+2. Set the policy — the set of rules the agent must follow (order size limits, allowed actions, etc.)
+
+Using the shell script:
+
+```bash
+# From clob-dex repo root
+export USER_PRIVATE_KEY=0x<user_wallet_private_key>
+export STRATEGY_AGENT_ID=<token_id_from_step_1>
+export SCALEX_CORE_RPC=https://base-sepolia.g.alchemy.com/v2/<key>
+
+bash shellscripts/agents/user-authorize-agent.sh
+```
+
+Or using the Forge script directly:
+
+```bash
+USER_PRIVATE_KEY=0x... STRATEGY_AGENT_ID=0 \
+forge script script/agents/UserAuthorizeAgent.s.sol:UserAuthorizeAgent \
+    --rpc-url "$SCALEX_CORE_RPC" \
+    --broadcast \
+    --gas-estimate-multiplier 120 \
+    --legacy
+```
+
+The default policy installed by `UserAuthorizeAgent.s.sol` has all permissions enabled:
+
+| Policy Field | Default Value |
+|---|---|
+| `expiryTimestamp` | `uint256.max` (never expires) |
+| `maxOrderSize` | `uint128.max` (no cap) |
+| `allowMarketOrders` / `allowLimitOrders` | `true` |
+| `allowBorrow` / `allowRepay` | `true` |
+| `allowAutoBorrow` | `true`, up to `5,000 IDRX` per op |
+| `minHealthFactor` | `1.3e18` (130% — 30% safety buffer) |
+| `maxSlippageBps` | `500` (5%) |
+| `minTimeBetweenTrades` | `60` seconds |
+| `tradingEndHour` | `23` (UTC) |
+
+To verify authorization was set:
+
+```bash
+cast call 0xE9c1a6665364294194aa3B1CE89654926b338493 \
+    "isAuthorized(address,uint256)(bool)" \
+    <user_wallet> <strategy_agent_id> \
+    --rpc-url $SCALEX_CORE_RPC
+```
+
+### Step 3 — User Wallet: Deposit Funds into BalanceManager
+
+The agent draws from the **user's** BalanceManager balance. The user must deposit tokens first:
+
+```bash
+# Approve BalanceManager to spend IDRX
+cast send 0xe7Cc2615374bbA52FC7bC8aF4aeF0E74f3D2559d \
+    "approve(address,uint256)" \
+    0xeeAd362bCdB544636ec3ae62A114d846981cEbaf \
+    1000000000 \
+    --private-key $USER_PRIVATE_KEY \
+    --rpc-url $SCALEX_CORE_RPC
+
+# Deposit 1000 IDRX (6 decimals)
+cast send 0xeeAd362bCdB544636ec3ae62A114d846981cEbaf \
+    "deposit(address,uint256)" \
+    0xe7Cc2615374bbA52FC7bC8aF4aeF0E74f3D2559d \
+    1000000000 \
+    --private-key $USER_PRIVATE_KEY \
+    --rpc-url $SCALEX_CORE_RPC
+```
+
+Check the balance:
+
+```bash
+cast call 0xeeAd362bCdB544636ec3ae62A114d846981cEbaf \
+    "getBalance(address,address)(uint256)" \
+    <user_wallet> 0xe7Cc2615374bbA52FC7bC8aF4aeF0E74f3D2559d \
+    --rpc-url $SCALEX_CORE_RPC
+```
+
+### Step 4 — Agent Wallet: Execute a Trade
+
+The **agent** wallet signs and submits the transaction. Gas is paid by the agent wallet. Funds come from the user's BalanceManager balance.
+
+Using the shell script:
+
+```bash
+export AGENT_PRIVATE_KEY=0x<agent_wallet_private_key>
+export USER_ADDRESS=<user_wallet_address>
+export STRATEGY_AGENT_ID=<token_id_from_step_1>
+export SCALEX_CORE_RPC=https://base-sepolia.g.alchemy.com/v2/<key>
+
+bash shellscripts/agents/agent-executor-trade.sh
+```
+
+Or using Forge directly to place a limit order:
+
+```bash
+AGENT_PRIVATE_KEY=0x... USER_ADDRESS=0x... STRATEGY_AGENT_ID=0 QUOTE_SYMBOL=IDRX \
+forge script script/agents/AgentExecutorTrade.s.sol:AgentExecutorTrade \
+    --rpc-url "$SCALEX_CORE_RPC" \
+    --broadcast \
+    --gas-estimate-multiplier 120 \
+    --slow \
+    --legacy
+```
+
+The `AgentExecutorTrade` script places a LIMIT BUY GTC order for 0.01 WETH at 3000 IDRX.
+
+Internally this calls:
+
+```solidity
+AgentRouter.executeLimitOrder(
+    userWallet,    // user whose funds are used
+    agentId,       // strategyAgentId (NFT token ID)
+    pool,          // pool struct (baseCurrency, quoteCurrency, orderBook)
+    price,         // uint128 (quote token base units)
+    quantity,      // uint128 (base token base units)
+    side,          // BUY or SELL
+    timeInForce,   // GTC, IOC, FOK
+    autoRepay,     // bool
+    autoBorrow     // bool
+)
+```
+
+AgentRouter verifies on every call:
+1. `msg.sender == ownerOf(agentId)` — agent wallet owns the NFT
+2. `authorizedStrategyAgents[userWallet][agentId]` — user granted permission
+3. All policy constraints (order size, allowed actions, health factor, etc.)
+
+### Step 5 — Revoke Authorization (Optional)
+
+A user can revoke an agent's permission at any time:
+
+```bash
+cast send 0xE9c1a6665364294194aa3B1CE89654926b338493 \
+    "revoke(uint256)" \
+    <strategy_agent_id> \
+    --private-key $USER_PRIVATE_KEY \
+    --rpc-url $SCALEX_CORE_RPC
+```
+
+---
+
 ## Agent Fields on Order Endpoints
 
 The following standard order endpoints include agent identification fields on every order. Orders placed by an AI agent have `isAgentOrder: true`; regular user orders have `isAgentOrder: false`.
