@@ -39,6 +39,44 @@ Base URL: `https://base-sepolia-indexer.scalex.money`
 
 ---
 
+## Example Test Wallets (Base Sepolia)
+
+These are the wallets used for development and testing on Base Sepolia. **Do not use these wallets for mainnet or to hold real value.**
+
+### User Wallet (owns funds, grants authorization)
+
+| Field | Value |
+|---|---|
+| Address | `0x27dD1eBE7D826197FD163C134E79502402Fd7cB7` |
+| Private Key | `0x5d34b3f860c2b09c112d68a35d592dfb599841629c9b0ad8827269b94b57efca` |
+| Role | Deposits funds into BalanceManager; calls `AgentRouter.authorize()` |
+
+### Agent Wallet (executor, signs trades)
+
+| Field | Value |
+|---|---|
+| Address | `0x2dBf9D93e9Ec66e9E03FE484256EcC432E5681D3` |
+| Private Key | `0x8cc3690e2800c78cc7f8542024e9c3f603fe2dc91cfdd3ed34733785148781be` |
+| Strategy Agent ID (NFT token ID) | `0` |
+| Role | Owns the ERC-8004 NFT; signs and submits trades; pays gas |
+
+### Quick-start env vars
+
+```bash
+# User wallet
+export USER_PRIVATE_KEY=0x5d34b3f860c2b09c112d68a35d592dfb599841629c9b0ad8827269b94b57efca
+export USER_ADDRESS=0x27dD1eBE7D826197FD163C134E79502402Fd7cB7
+
+# Agent wallet
+export AGENT_PRIVATE_KEY=0x8cc3690e2800c78cc7f8542024e9c3f603fe2dc91cfdd3ed34733785148781be
+export STRATEGY_AGENT_ID=0
+
+# Network
+export SCALEX_CORE_RPC=https://base-sepolia.g.alchemy.com/v2/jBG4sMyhez7V13jNTeQKfVfgNa54nCmF
+```
+
+---
+
 ## How to Set Up an Agent from Scratch
 
 The agent system follows a 3-party model:
