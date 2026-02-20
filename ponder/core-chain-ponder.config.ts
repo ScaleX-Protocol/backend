@@ -34,18 +34,20 @@ const contracts: any = {
 	},
 
 	// PoolManager exists on ScaleX Anvil (core chain)
+	// Uses POOL_START_BLOCK (earlier) to capture PoolCreated events before Phase 5 deployment
 	PoolManager: {
 		abi: PoolManagerABI || [],
 		network: {
 			coreDevnet: {
 				address: getAddress((process.env.POOLMANAGER_CONTRACT_SCALEX_CORE_DEVNET_ADDRESS as `0x${string}`) || default_address),
-				startBlock: Number(process.env.SCALEX_CORE_DEVNET_START_BLOCK) || 0,
+				startBlock: Number(process.env.POOL_START_BLOCK) || Number(process.env.SCALEX_CORE_DEVNET_START_BLOCK) || 0,
 				endBlock: Number(process.env.SCALEX_CORE_DEVNET_END_BLOCK) || undefined,
 			},
 		},
 	},
 
 	// OrderBook exists on ScaleX Anvil (multiple OrderBooks for different pools)
+	// Uses POOL_START_BLOCK so factory discovers pools created before Phase 5
 	OrderBook: {
 		abi: OrderBookABI,
 		network: {
@@ -57,7 +59,7 @@ const contracts: any = {
 					),
 					parameter: "orderBook",
 				}),
-				startBlock: Number(process.env.SCALEX_CORE_DEVNET_START_BLOCK) || 0,
+				startBlock: Number(process.env.POOL_START_BLOCK) || Number(process.env.SCALEX_CORE_DEVNET_START_BLOCK) || 0,
 				endBlock: Number(process.env.SCALEX_CORE_DEVNET_END_BLOCK) || undefined,
 			},
 		},

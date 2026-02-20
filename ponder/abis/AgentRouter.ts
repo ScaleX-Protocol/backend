@@ -1,6 +1,26 @@
 export const AgentRouterABI = [
 	{
 		"type": "event",
+		"name": "StrategyAgentAuthorized",
+		"inputs": [
+			{ "name": "user", "type": "address", "indexed": true, "internalType": "address" },
+			{ "name": "strategyAgentId", "type": "uint256", "indexed": true, "internalType": "uint256" },
+			{ "name": "timestamp", "type": "uint256", "indexed": false, "internalType": "uint256" }
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "StrategyAgentRevoked",
+		"inputs": [
+			{ "name": "user", "type": "address", "indexed": true, "internalType": "address" },
+			{ "name": "strategyAgentId", "type": "uint256", "indexed": true, "internalType": "uint256" },
+			{ "name": "timestamp", "type": "uint256", "indexed": false, "internalType": "uint256" }
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
 		"name": "AgentSwapExecuted",
 		"inputs": [
 			{ "name": "owner", "type": "address", "indexed": true, "internalType": "address" },
