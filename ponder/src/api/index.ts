@@ -9,6 +9,7 @@ import schema, {
 	agentCircuitBreakers,
 	agentInstallations,
 	agentLendingEvents,
+	agentOrders,
 	agentPolicyViolations,
 	agentStats,
 	assetConfigurations,
@@ -1221,6 +1222,23 @@ app.get("/api/allOrders", async c => {
 		// Create a map for quick lookup
 		const poolsMap = new Map(poolsData.map(pool => [pool.orderBook, pool]));
 
+		// Fetch agent orders for this address to enrich with agent info
+		const userAgentOrders = await db
+			.select()
+			.from(agentOrders)
+			.where(eq(agentOrders.owner, address.toLowerCase() as `0x${string}`))
+			.execute();
+
+		// Map hex orderId → agent info (orderId in agent_orders is hex, in orders is bigint)
+		const agentOrderMap = new Map<bigint, { agentTokenId: bigint; executor: string }>();
+		for (const ao of userAgentOrders) {
+			if (ao.orderId) {
+				try {
+					agentOrderMap.set(BigInt(ao.orderId), { agentTokenId: ao.agentTokenId, executor: ao.executor });
+				} catch {}
+			}
+		}
+
 		const formattedOrders = userOrders.map(order => {
 			let decimals = 18;
 			let orderSymbol = "UNKNOWN";
@@ -1254,6 +1272,8 @@ app.get("/api/allOrders", async c => {
 				? ((filledBase * orderPrice) / BigInt(10 ** decimals)).toString()
 				: "0";
 
+			const agentInfo = agentOrderMap.get(order.orderId);
+
 			return {
 				symbol: orderSymbol,
 				orderId: order.orderId.toString(),
@@ -1273,6 +1293,9 @@ app.get("/api/allOrders", async c => {
 				updateTime: Number(order.timestamp) * 1000,
 				isWorking: order.status === "OPEN" || order.status === "PARTIALLY_FILLED",
 				origQuoteOrderQty,
+				isAgentOrder: !!agentInfo,
+				agentTokenId: agentInfo?.agentTokenId?.toString() ?? null,
+				agentExecutor: agentInfo?.executor ?? null,
 			};
 		});
 
@@ -1333,6 +1356,22 @@ app.get("/api/openOrders", async c => {
 		// Create a map for quick lookup
 		const poolsMap = new Map(poolsData.map(pool => [pool.orderBook, pool]));
 
+		// Fetch agent orders for this address to enrich with agent info
+		const userAgentOrders = await db
+			.select()
+			.from(agentOrders)
+			.where(eq(agentOrders.owner, address.toLowerCase() as `0x${string}`))
+			.execute();
+
+		const agentOrderMap = new Map<bigint, { agentTokenId: bigint; executor: string }>();
+		for (const ao of userAgentOrders) {
+			if (ao.orderId) {
+				try {
+					agentOrderMap.set(BigInt(ao.orderId), { agentTokenId: ao.agentTokenId, executor: ao.executor });
+				} catch {}
+			}
+		}
+
 		const formattedOrders = openOrders.map(order => {
 			let orderSymbol = symbol;
 			let decimals = 18;
@@ -1359,6 +1398,8 @@ app.get("/api/openOrders", async c => {
 				? ((filledBase * orderPrice) / BigInt(10 ** decimals)).toString()
 				: "0";
 
+			const agentInfo = agentOrderMap.get(order.orderId);
+
 			return {
 				symbol: orderSymbol,
 				orderId: order.orderId.toString(),
@@ -1378,6 +1419,9 @@ app.get("/api/openOrders", async c => {
 				updateTime: Number(order.timestamp) * 1000,
 				isWorking: true,
 				origQuoteOrderQty,
+				isAgentOrder: !!agentInfo,
+				agentTokenId: agentInfo?.agentTokenId?.toString() ?? null,
+				agentExecutor: agentInfo?.executor ?? null,
 			};
 		});
 
