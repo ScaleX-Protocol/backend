@@ -2753,7 +2753,7 @@ app.get("/api/agents", async c => {
 		const conditions = [eq(agentInstallations.chainId, targetChainId)];
 
 		if (owner) {
-			conditions.push(eq(agentInstallations.owner, owner as `0x${string}`));
+			conditions.push(eq(agentInstallations.owner, owner.toLowerCase() as `0x${string}`));
 		}
 
 		if (enabled !== undefined) {
@@ -2768,13 +2768,81 @@ app.get("/api/agents", async c => {
 			.offset(queryOffset)
 			.execute();
 
-		// Convert BigInt fields to strings for JSON serialization
+		// Fetch all policies for these agents in one query
+		const agentIds = agents.map(a => a.agentTokenId?.toString()).filter(Boolean);
+		const policiesData = agentIds.length > 0
+			? await db
+				.select()
+				.from(agentPolicies)
+				.where(and(
+					eq(agentPolicies.chainId, targetChainId),
+					inArray(agentPolicies.agentTokenId, agentIds)
+				))
+				.execute()
+			: [];
+
+		// Map agentTokenId → policy
+		const policyMap = new Map(policiesData.map(p => [p.agentTokenId?.toString(), p]));
+
+		const serializePolicy = (p: any) => p ? {
+			templateUsed: p.templateUsed,
+			enabled: p.enabled,
+			installedAt: p.installedAt?.toString(),
+			expiryTimestamp: p.expiryTimestamp?.toString(),
+			lastUpdatedAt: p.lastUpdatedAt,
+			maxOrderSize: p.maxOrderSize?.toString(),
+			minOrderSize: p.minOrderSize?.toString(),
+			whitelistedTokens: JSON.parse(p.whitelistedTokens || "[]"),
+			blacklistedTokens: JSON.parse(p.blacklistedTokens || "[]"),
+			allowMarketOrders: p.allowMarketOrders,
+			allowLimitOrders: p.allowLimitOrders,
+			allowSwap: p.allowSwap,
+			allowBorrow: p.allowBorrow,
+			allowRepay: p.allowRepay,
+			allowSupplyCollateral: p.allowSupplyCollateral,
+			allowWithdrawCollateral: p.allowWithdrawCollateral,
+			allowPlaceLimitOrder: p.allowPlaceLimitOrder,
+			allowCancelOrder: p.allowCancelOrder,
+			allowBuy: p.allowBuy,
+			allowSell: p.allowSell,
+			allowAutoBorrow: p.allowAutoBorrow,
+			maxAutoBorrowAmount: p.maxAutoBorrowAmount?.toString(),
+			allowAutoRepay: p.allowAutoRepay,
+			minDebtToRepay: p.minDebtToRepay?.toString(),
+			minHealthFactor: p.minHealthFactor?.toString(),
+			maxSlippageBps: p.maxSlippageBps?.toString(),
+			minTimeBetweenTrades: p.minTimeBetweenTrades?.toString(),
+			emergencyRecipient: p.emergencyRecipient,
+			dailyVolumeLimit: p.dailyVolumeLimit?.toString(),
+			weeklyVolumeLimit: p.weeklyVolumeLimit?.toString(),
+			maxDailyDrawdown: p.maxDailyDrawdown?.toString(),
+			maxWeeklyDrawdown: p.maxWeeklyDrawdown?.toString(),
+			maxTradeVsTVLBps: p.maxTradeVsTVLBps?.toString(),
+			minWinRateBps: p.minWinRateBps?.toString(),
+			minSharpeRatio: p.minSharpeRatio?.toString(),
+			maxPositionConcentrationBps: p.maxPositionConcentrationBps?.toString(),
+			maxCorrelationBps: p.maxCorrelationBps?.toString(),
+			maxTradesPerDay: p.maxTradesPerDay?.toString(),
+			maxTradesPerHour: p.maxTradesPerHour?.toString(),
+			tradingStartHour: p.tradingStartHour?.toString(),
+			tradingEndHour: p.tradingEndHour?.toString(),
+			minReputationScore: p.minReputationScore?.toString(),
+			useReputationMultiplier: p.useReputationMultiplier,
+			requiresChainlinkFunctions: p.requiresChainlinkFunctions,
+		} : null;
+
 		const serializedAgents = agents.map(agent => ({
-			...agent,
+			id: agent.id,
+			chainId: agent.chainId,
+			owner: agent.owner,
 			agentTokenId: agent.agentTokenId?.toString(),
-			blockNumber: agent.blockNumber?.toString(),
+			templateUsed: agent.templateUsed,
+			enabled: agent.enabled,
 			installedAt: agent.installedAt,
-			uninstalledAt: agent.uninstalledAt
+			uninstalledAt: agent.uninstalledAt,
+			transactionId: agent.transactionId,
+			blockNumber: agent.blockNumber?.toString(),
+			policy: serializePolicy(policyMap.get(agent.agentTokenId?.toString())),
 		}));
 
 		return c.json({
@@ -2802,40 +2870,95 @@ app.get("/api/agents", async c => {
  */
 app.get("/api/agents/:agentTokenId", async c => {
 	const { agentTokenId } = c.req.param();
-	const { chainId } = c.req.query();
+	const { chainId, owner } = c.req.query();
 
 	try {
 		const targetChainId = chainId ? Number(chainId) : 84532;
 
-		const agent = await db
-			.select()
-			.from(agentInstallations)
-			.where(and(
-				eq(agentInstallations.agentTokenId, agentTokenId),
-				eq(agentInstallations.chainId, targetChainId)
-			))
-			.limit(1)
-			.execute();
-
-		if (agent.length === 0) {
-			return c.json({
-				success: false,
-				error: "Agent not found"
-			}, 404);
+		const agentConditions: any[] = [
+			eq(agentInstallations.agentTokenId, agentTokenId),
+			eq(agentInstallations.chainId, targetChainId),
+		];
+		if (owner) {
+			agentConditions.push(eq(agentInstallations.owner, owner.toLowerCase() as `0x${string}`));
 		}
 
-		// Convert BigInt fields to strings
-		const serializedAgent = {
-			...agent[0],
-			agentTokenId: agent[0].agentTokenId?.toString(),
-			blockNumber: agent[0].blockNumber?.toString(),
-			installedAt: agent[0].installedAt,
-			uninstalledAt: agent[0].uninstalledAt
-		};
+		const [agentRows, policyRows] = await Promise.all([
+			db.select().from(agentInstallations).where(and(...agentConditions)).limit(1).execute(),
+			db.select().from(agentPolicies).where(and(
+				eq(agentPolicies.agentTokenId, agentTokenId),
+				eq(agentPolicies.chainId, targetChainId),
+				...(owner ? [eq(agentPolicies.owner, owner.toLowerCase() as `0x${string}`)] : [])
+			)).limit(1).execute(),
+		]);
+
+		if (agentRows.length === 0) {
+			return c.json({ success: false, error: "Agent not found" }, 404);
+		}
+
+		const a = agentRows[0]!;
+		const p = policyRows[0];
 
 		return c.json({
 			success: true,
-			data: serializedAgent
+			data: {
+				id: a.id,
+				chainId: a.chainId,
+				owner: a.owner,
+				agentTokenId: a.agentTokenId?.toString(),
+				templateUsed: a.templateUsed,
+				enabled: a.enabled,
+				installedAt: a.installedAt,
+				uninstalledAt: a.uninstalledAt,
+				transactionId: a.transactionId,
+				blockNumber: a.blockNumber?.toString(),
+				policy: p ? {
+					templateUsed: p.templateUsed,
+					enabled: p.enabled,
+					installedAt: p.installedAt?.toString(),
+					expiryTimestamp: p.expiryTimestamp?.toString(),
+					lastUpdatedAt: p.lastUpdatedAt,
+					maxOrderSize: p.maxOrderSize?.toString(),
+					minOrderSize: p.minOrderSize?.toString(),
+					whitelistedTokens: JSON.parse(p.whitelistedTokens || "[]"),
+					blacklistedTokens: JSON.parse(p.blacklistedTokens || "[]"),
+					allowMarketOrders: p.allowMarketOrders,
+					allowLimitOrders: p.allowLimitOrders,
+					allowSwap: p.allowSwap,
+					allowBorrow: p.allowBorrow,
+					allowRepay: p.allowRepay,
+					allowSupplyCollateral: p.allowSupplyCollateral,
+					allowWithdrawCollateral: p.allowWithdrawCollateral,
+					allowPlaceLimitOrder: p.allowPlaceLimitOrder,
+					allowCancelOrder: p.allowCancelOrder,
+					allowBuy: p.allowBuy,
+					allowSell: p.allowSell,
+					allowAutoBorrow: p.allowAutoBorrow,
+					maxAutoBorrowAmount: p.maxAutoBorrowAmount?.toString(),
+					allowAutoRepay: p.allowAutoRepay,
+					minDebtToRepay: p.minDebtToRepay?.toString(),
+					minHealthFactor: p.minHealthFactor?.toString(),
+					maxSlippageBps: p.maxSlippageBps?.toString(),
+					minTimeBetweenTrades: p.minTimeBetweenTrades?.toString(),
+					emergencyRecipient: p.emergencyRecipient,
+					dailyVolumeLimit: p.dailyVolumeLimit?.toString(),
+					weeklyVolumeLimit: p.weeklyVolumeLimit?.toString(),
+					maxDailyDrawdown: p.maxDailyDrawdown?.toString(),
+					maxWeeklyDrawdown: p.maxWeeklyDrawdown?.toString(),
+					maxTradeVsTVLBps: p.maxTradeVsTVLBps?.toString(),
+					minWinRateBps: p.minWinRateBps?.toString(),
+					minSharpeRatio: p.minSharpeRatio?.toString(),
+					maxPositionConcentrationBps: p.maxPositionConcentrationBps?.toString(),
+					maxCorrelationBps: p.maxCorrelationBps?.toString(),
+					maxTradesPerDay: p.maxTradesPerDay?.toString(),
+					maxTradesPerHour: p.maxTradesPerHour?.toString(),
+					tradingStartHour: p.tradingStartHour?.toString(),
+					tradingEndHour: p.tradingEndHour?.toString(),
+					minReputationScore: p.minReputationScore?.toString(),
+					useReputationMultiplier: p.useReputationMultiplier,
+					requiresChainlinkFunctions: p.requiresChainlinkFunctions,
+				} : null,
+			}
 		});
 	} catch (error) {
 		console.error("Error fetching agent:", error);
