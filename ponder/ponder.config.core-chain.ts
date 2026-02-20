@@ -2,9 +2,9 @@ import { createConfig } from "ponder";
 import { getCoreChainConfig } from "./core-chain-ponder.config";
 import dotenv from "dotenv";
 
-// Load core-chain-specific environment variables (override: true ensures
-// .env.core-chain values take precedence over any auto-loaded .env defaults)
-dotenv.config({ path: ".env.core-chain", override: true });
+// Load core-chain-specific environment variables as fallback defaults.
+// override: false ensures Docker-injected env vars take precedence over the file.
+dotenv.config({ path: ".env.core-chain", override: false });
 
 export default createConfig({
 	database: {
