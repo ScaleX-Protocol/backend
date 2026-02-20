@@ -5,6 +5,7 @@ import {
 	agentInstallations,
 	agentOrders,
 	agentLendingEvents,
+	agentPolicies,
 	agentStats,
 	agentCircuitBreakers,
 	agentPolicyViolations,
@@ -50,6 +51,96 @@ async function upsertAgentStats(
 //           POLICYFACTORY EVENT HANDLERS
 // =============================================================
 
+// Helper: read policy from contract and upsert into agentPolicies table
+async function upsertAgentPolicy(
+	db: any,
+	context: any,
+	chainId: number,
+	user: string,
+	strategyAgentId: bigint,
+	templateUsed: string,
+	timestamp: number
+) {
+	const policyId = `${chainId}-${user}-${strategyAgentId}`;
+
+	let policy: any = null;
+	try {
+		policy = await context.client.readContract({
+			address: context.contracts.PolicyFactory.address,
+			abi: context.contracts.PolicyFactory.abi,
+			functionName: "getPolicy",
+			args: [user as `0x${string}`, strategyAgentId],
+		});
+	} catch (err) {
+		logger.error(
+			`Failed to read policy from contract for ${user}/${strategyAgentId}`,
+			LogLabel.EVENT_HANDLER,
+			'upsertAgentPolicy',
+			{ error: err instanceof Error ? err.message : String(err) }
+		);
+		return; // don't block the handler if read fails
+	}
+
+	const values = {
+		id: policyId,
+		chainId,
+		owner: user as `0x${string}`,
+		agentTokenId: strategyAgentId,
+		templateUsed,
+		enabled: policy.enabled,
+		installedAt: BigInt(policy.installedAt),
+		expiryTimestamp: BigInt(policy.expiryTimestamp),
+		lastUpdatedAt: timestamp,
+		maxOrderSize: BigInt(policy.maxOrderSize),
+		minOrderSize: BigInt(policy.minOrderSize),
+		whitelistedTokens: JSON.stringify(policy.whitelistedTokens),
+		blacklistedTokens: JSON.stringify(policy.blacklistedTokens),
+		allowMarketOrders: policy.allowMarketOrders,
+		allowLimitOrders: policy.allowLimitOrders,
+		allowSwap: policy.allowSwap,
+		allowBorrow: policy.allowBorrow,
+		allowRepay: policy.allowRepay,
+		allowSupplyCollateral: policy.allowSupplyCollateral,
+		allowWithdrawCollateral: policy.allowWithdrawCollateral,
+		allowPlaceLimitOrder: policy.allowPlaceLimitOrder,
+		allowCancelOrder: policy.allowCancelOrder,
+		allowBuy: policy.allowBuy,
+		allowSell: policy.allowSell,
+		allowAutoBorrow: policy.allowAutoBorrow,
+		maxAutoBorrowAmount: BigInt(policy.maxAutoBorrowAmount),
+		allowAutoRepay: policy.allowAutoRepay,
+		minDebtToRepay: BigInt(policy.minDebtToRepay),
+		minHealthFactor: BigInt(policy.minHealthFactor),
+		maxSlippageBps: BigInt(policy.maxSlippageBps),
+		minTimeBetweenTrades: BigInt(policy.minTimeBetweenTrades),
+		emergencyRecipient: policy.emergencyRecipient as `0x${string}`,
+		dailyVolumeLimit: BigInt(policy.dailyVolumeLimit),
+		weeklyVolumeLimit: BigInt(policy.weeklyVolumeLimit),
+		maxDailyDrawdown: BigInt(policy.maxDailyDrawdown),
+		maxWeeklyDrawdown: BigInt(policy.maxWeeklyDrawdown),
+		maxTradeVsTVLBps: BigInt(policy.maxTradeVsTVLBps),
+		minWinRateBps: BigInt(policy.minWinRateBps),
+		minSharpeRatio: BigInt(policy.minSharpeRatio),
+		maxPositionConcentrationBps: BigInt(policy.maxPositionConcentrationBps),
+		maxCorrelationBps: BigInt(policy.maxCorrelationBps),
+		maxTradesPerDay: BigInt(policy.maxTradesPerDay),
+		maxTradesPerHour: BigInt(policy.maxTradesPerHour),
+		tradingStartHour: BigInt(policy.tradingStartHour),
+		tradingEndHour: BigInt(policy.tradingEndHour),
+		minReputationScore: BigInt(policy.minReputationScore),
+		useReputationMultiplier: policy.useReputationMultiplier,
+		requiresChainlinkFunctions: policy.requiresChainlinkFunctions,
+	};
+
+	const existing = await db.find(agentPolicies, { id: policyId });
+	if (existing) {
+		const { id, chainId: _c, owner: _o, agentTokenId: _a, installedAt: _i, ...updateFields } = values;
+		await db.update(agentPolicies, { id: policyId }).set(updateFields);
+	} else {
+		await db.insert(agentPolicies).values(values);
+	}
+}
+
 export async function handlePolicyInstalled({ event, context }: any) {
 	try {
 		const { user, strategyAgentId, templateUsed, timestamp } = event.args;
@@ -61,7 +152,6 @@ export async function handlePolicyInstalled({ event, context }: any) {
 			LogLabel.EVENT_HANDLER,
 			'handlePolicyInstalled'
 		);
-
 
 		// Insert or update agent installation record (avoid onConflictDoUpdate to prevent insertBuffer PK conflicts in Ponder 0.9.14)
 		const existingInstallation = await context.db.find(agentInstallations, { id: installationId });
@@ -88,6 +178,9 @@ export async function handlePolicyInstalled({ event, context }: any) {
 				});
 		}
 
+		// Read full policy from contract and index it
+		await upsertAgentPolicy(context.db, context, chainId, user, strategyAgentId, templateUsed, Number(timestamp));
+
 		// Initialize agent stats
 		await upsertAgentStats(context.db, chainId, user, strategyAgentId, Number(timestamp), {});
 
@@ -106,6 +199,55 @@ export async function handlePolicyInstalled({ event, context }: any) {
 			'handlePolicyInstalled',
 			{ error: error instanceof Error ? error.message : String(error) }
 		);
+		throw error;
+	}
+}
+
+export async function handlePolicyUpdated({ event, context }: any) {
+	try {
+		const { user, strategyAgentId, timestamp } = event.args;
+		const chainId = context.network.chainId;
+
+		// Re-read the full policy from contract to get updated values
+		const existing = await context.db.find(agentPolicies, { id: `${chainId}-${user}-${strategyAgentId}` });
+		const templateUsed = existing?.templateUsed || "custom";
+		await upsertAgentPolicy(context.db, context, chainId, user, strategyAgentId, templateUsed, Number(timestamp));
+
+		await updateIndexerStatus(context.db, chainId, BigInt(event.block.number), Number(event.block.timestamp), "PolicyUpdated");
+	} catch (error) {
+		logger.error(`Failed to handle PolicyUpdated event`, LogLabel.EVENT_HANDLER, 'handlePolicyUpdated', { error: error instanceof Error ? error.message : String(error) });
+		throw error;
+	}
+}
+
+export async function handlePolicyEnabled({ event, context }: any) {
+	try {
+		const { user, strategyAgentId, timestamp } = event.args;
+		const chainId = context.network.chainId;
+		const policyId = `${chainId}-${user}-${strategyAgentId}`;
+
+		await context.db.update(agentPolicies, { id: policyId }).set({ enabled: true, lastUpdatedAt: Number(timestamp) });
+		await context.db.update(agentInstallations, { id: policyId }).set({ enabled: true });
+
+		await updateIndexerStatus(context.db, chainId, BigInt(event.block.number), Number(event.block.timestamp), "PolicyEnabled");
+	} catch (error) {
+		logger.error(`Failed to handle PolicyEnabled event`, LogLabel.EVENT_HANDLER, 'handlePolicyEnabled', { error: error instanceof Error ? error.message : String(error) });
+		throw error;
+	}
+}
+
+export async function handlePolicyDisabled({ event, context }: any) {
+	try {
+		const { user, strategyAgentId, timestamp } = event.args;
+		const chainId = context.network.chainId;
+		const policyId = `${chainId}-${user}-${strategyAgentId}`;
+
+		await context.db.update(agentPolicies, { id: policyId }).set({ enabled: false, lastUpdatedAt: Number(timestamp) });
+		await context.db.update(agentInstallations, { id: policyId }).set({ enabled: false });
+
+		await updateIndexerStatus(context.db, chainId, BigInt(event.block.number), Number(event.block.timestamp), "PolicyDisabled");
+	} catch (error) {
+		logger.error(`Failed to handle PolicyDisabled event`, LogLabel.EVENT_HANDLER, 'handlePolicyDisabled', { error: error instanceof Error ? error.message : String(error) });
 		throw error;
 	}
 }

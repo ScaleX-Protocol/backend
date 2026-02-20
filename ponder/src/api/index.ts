@@ -10,6 +10,7 @@ import schema, {
 	agentInstallations,
 	agentLendingEvents,
 	agentOrders,
+	agentPolicies,
 	agentPolicyViolations,
 	agentStats,
 	assetConfigurations,
@@ -3168,6 +3169,143 @@ app.get("/api/agents/:agentTokenId/circuit-breakers", async c => {
 		return c.json({
 			success: false,
 			error: "Failed to fetch circuit breakers",
+			details: error instanceof Error ? error.message : String(error)
+		}, 500);
+	}
+});
+
+/**
+ * GET /api/agents/:agentTokenId/policy
+ * Get the indexed policy for a specific agent
+ */
+app.get("/api/agents/:agentTokenId/policy", async c => {
+	const { agentTokenId } = c.req.param();
+	const { chainId, owner } = c.req.query();
+
+	try {
+		const targetChainId = chainId ? Number(chainId) : 84532;
+
+		const conditions: any[] = [
+			eq(agentPolicies.agentTokenId, agentTokenId),
+			eq(agentPolicies.chainId, targetChainId),
+		];
+		if (owner) {
+			conditions.push(eq(agentPolicies.owner, owner.toLowerCase() as `0x${string}`));
+		}
+
+		const result = await db
+			.select()
+			.from(agentPolicies)
+			.where(and(...conditions))
+			.limit(1)
+			.execute();
+
+		if (result.length === 0) {
+			return c.json({ success: false, error: "Policy not found" }, 404);
+		}
+
+		const p = result[0]!;
+		return c.json({
+			success: true,
+			data: {
+				...p,
+				agentTokenId: p.agentTokenId?.toString(),
+				installedAt: p.installedAt?.toString(),
+				expiryTimestamp: p.expiryTimestamp?.toString(),
+				maxOrderSize: p.maxOrderSize?.toString(),
+				minOrderSize: p.minOrderSize?.toString(),
+				whitelistedTokens: JSON.parse(p.whitelistedTokens || "[]"),
+				blacklistedTokens: JSON.parse(p.blacklistedTokens || "[]"),
+				maxAutoBorrowAmount: p.maxAutoBorrowAmount?.toString(),
+				minDebtToRepay: p.minDebtToRepay?.toString(),
+				minHealthFactor: p.minHealthFactor?.toString(),
+				maxSlippageBps: p.maxSlippageBps?.toString(),
+				minTimeBetweenTrades: p.minTimeBetweenTrades?.toString(),
+				dailyVolumeLimit: p.dailyVolumeLimit?.toString(),
+				weeklyVolumeLimit: p.weeklyVolumeLimit?.toString(),
+				maxDailyDrawdown: p.maxDailyDrawdown?.toString(),
+				maxWeeklyDrawdown: p.maxWeeklyDrawdown?.toString(),
+				maxTradeVsTVLBps: p.maxTradeVsTVLBps?.toString(),
+				minWinRateBps: p.minWinRateBps?.toString(),
+				minSharpeRatio: p.minSharpeRatio?.toString(),
+				maxPositionConcentrationBps: p.maxPositionConcentrationBps?.toString(),
+				maxCorrelationBps: p.maxCorrelationBps?.toString(),
+				maxTradesPerDay: p.maxTradesPerDay?.toString(),
+				maxTradesPerHour: p.maxTradesPerHour?.toString(),
+				tradingStartHour: p.tradingStartHour?.toString(),
+				tradingEndHour: p.tradingEndHour?.toString(),
+				minReputationScore: p.minReputationScore?.toString(),
+			}
+		});
+	} catch (error) {
+		console.error("Error fetching agent policy:", error);
+		return c.json({
+			success: false,
+			error: "Failed to fetch agent policy",
+			details: error instanceof Error ? error.message : String(error)
+		}, 500);
+	}
+});
+
+/**
+ * GET /api/policies
+ * Get all policies for a user address (all their installed agents)
+ */
+app.get("/api/policies", async c => {
+	const { owner, chainId } = c.req.query();
+
+	if (!owner) {
+		return c.json({ success: false, error: "owner query parameter is required" }, 400);
+	}
+
+	try {
+		const targetChainId = chainId ? Number(chainId) : 84532;
+
+		const results = await db
+			.select()
+			.from(agentPolicies)
+			.where(and(
+				eq(agentPolicies.owner, owner.toLowerCase() as `0x${string}`),
+				eq(agentPolicies.chainId, targetChainId),
+			))
+			.execute();
+
+		const data = results.map(p => ({
+			...p,
+			agentTokenId: p.agentTokenId?.toString(),
+			installedAt: p.installedAt?.toString(),
+			expiryTimestamp: p.expiryTimestamp?.toString(),
+			maxOrderSize: p.maxOrderSize?.toString(),
+			minOrderSize: p.minOrderSize?.toString(),
+			whitelistedTokens: JSON.parse(p.whitelistedTokens || "[]"),
+			blacklistedTokens: JSON.parse(p.blacklistedTokens || "[]"),
+			maxAutoBorrowAmount: p.maxAutoBorrowAmount?.toString(),
+			minDebtToRepay: p.minDebtToRepay?.toString(),
+			minHealthFactor: p.minHealthFactor?.toString(),
+			maxSlippageBps: p.maxSlippageBps?.toString(),
+			minTimeBetweenTrades: p.minTimeBetweenTrades?.toString(),
+			dailyVolumeLimit: p.dailyVolumeLimit?.toString(),
+			weeklyVolumeLimit: p.weeklyVolumeLimit?.toString(),
+			maxDailyDrawdown: p.maxDailyDrawdown?.toString(),
+			maxWeeklyDrawdown: p.maxWeeklyDrawdown?.toString(),
+			maxTradeVsTVLBps: p.maxTradeVsTVLBps?.toString(),
+			minWinRateBps: p.minWinRateBps?.toString(),
+			minSharpeRatio: p.minSharpeRatio?.toString(),
+			maxPositionConcentrationBps: p.maxPositionConcentrationBps?.toString(),
+			maxCorrelationBps: p.maxCorrelationBps?.toString(),
+			maxTradesPerDay: p.maxTradesPerDay?.toString(),
+			maxTradesPerHour: p.maxTradesPerHour?.toString(),
+			tradingStartHour: p.tradingStartHour?.toString(),
+			tradingEndHour: p.tradingEndHour?.toString(),
+			minReputationScore: p.minReputationScore?.toString(),
+		}));
+
+		return c.json({ success: true, data, count: data.length });
+	} catch (error) {
+		console.error("Error fetching policies:", error);
+		return c.json({
+			success: false,
+			error: "Failed to fetch policies",
 			details: error instanceof Error ? error.message : String(error)
 		}, 500);
 	}

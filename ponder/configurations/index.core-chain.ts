@@ -54,6 +54,9 @@ ponder.on(PonderEvents.ORACLE_PRICE_UPDATED, oracleHandler.handleOraclePriceUpda
 // AI Agent Events - ERC-8004 Agent System
 ponder.on(PonderEvents.POLICY_INSTALLED, withEventValidator(agentRouterHandler.handlePolicyInstalled, 'policyInstalled'));
 ponder.on(PonderEvents.POLICY_UNINSTALLED, withEventValidator(agentRouterHandler.handlePolicyUninstalled, 'policyUninstalled'));
+ponder.on(PonderEvents.POLICY_UPDATED, withEventValidator(agentRouterHandler.handlePolicyUpdated, 'policyUpdated'));
+ponder.on(PonderEvents.POLICY_ENABLED, withEventValidator(agentRouterHandler.handlePolicyEnabled, 'policyEnabled'));
+ponder.on(PonderEvents.POLICY_DISABLED, withEventValidator(agentRouterHandler.handlePolicyDisabled, 'policyDisabled'));
 ponder.on(PonderEvents.STRATEGY_AGENT_AUTHORIZED, withEventValidator(agentRouterHandler.handleStrategyAgentAuthorized, 'strategyAgentAuthorized'));
 ponder.on(PonderEvents.STRATEGY_AGENT_REVOKED, withEventValidator(agentRouterHandler.handleStrategyAgentRevoked, 'strategyAgentRevoked'));
 

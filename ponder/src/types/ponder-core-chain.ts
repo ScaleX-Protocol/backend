@@ -72,6 +72,9 @@ export const PonderEvents = {
 	// PolicyFactory Events (AI Agents)
 	POLICY_INSTALLED: ponderEvent("PolicyFactory:PolicyInstalled"),
 	POLICY_UNINSTALLED: ponderEvent("PolicyFactory:PolicyUninstalled"),
+	POLICY_UPDATED: ponderEvent("PolicyFactory:PolicyUpdated"),
+	POLICY_ENABLED: ponderEvent("PolicyFactory:PolicyEnabled"),
+	POLICY_DISABLED: ponderEvent("PolicyFactory:PolicyDisabled"),
 
 	// AgentRouter Authorization Events
 	STRATEGY_AGENT_AUTHORIZED: ponderEvent("AgentRouter:StrategyAgentAuthorized"),

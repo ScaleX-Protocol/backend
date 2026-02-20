@@ -1297,6 +1297,104 @@ export const agentStats = onchainTable(
 	})
 );
 
+// Agent policies (indexed from PolicyFactory contract state on install/update)
+export const agentPolicies = onchainTable(
+	"agent_policies",
+	t => ({
+		id: t.text().primaryKey(), // chainId-owner-agentTokenId
+		chainId: t.integer().notNull(),
+		owner: t.hex().notNull(),
+		agentTokenId: t.bigint().notNull(),
+		templateUsed: t.varchar(),
+
+		// Metadata
+		enabled: t.boolean().notNull().default(true),
+		installedAt: t.bigint().notNull(),
+		expiryTimestamp: t.bigint().notNull(),
+		lastUpdatedAt: t.integer().notNull(),
+
+		// Order size
+		maxOrderSize: t.bigint().notNull(),
+		minOrderSize: t.bigint().notNull(),
+
+		// Token lists (stored as JSON arrays of hex addresses)
+		whitelistedTokens: t.text().notNull().default("[]"),
+		blacklistedTokens: t.text().notNull().default("[]"),
+
+		// Order types
+		allowMarketOrders: t.boolean().notNull(),
+		allowLimitOrders: t.boolean().notNull(),
+
+		// Operations
+		allowSwap: t.boolean().notNull(),
+		allowBorrow: t.boolean().notNull(),
+		allowRepay: t.boolean().notNull(),
+		allowSupplyCollateral: t.boolean().notNull(),
+		allowWithdrawCollateral: t.boolean().notNull(),
+		allowPlaceLimitOrder: t.boolean().notNull(),
+		allowCancelOrder: t.boolean().notNull(),
+
+		// Direction
+		allowBuy: t.boolean().notNull(),
+		allowSell: t.boolean().notNull(),
+
+		// Auto-borrow
+		allowAutoBorrow: t.boolean().notNull(),
+		maxAutoBorrowAmount: t.bigint().notNull(),
+
+		// Auto-repay
+		allowAutoRepay: t.boolean().notNull(),
+		minDebtToRepay: t.bigint().notNull(),
+
+		// Safety
+		minHealthFactor: t.bigint().notNull(),
+		maxSlippageBps: t.bigint().notNull(),
+		minTimeBetweenTrades: t.bigint().notNull(),
+		emergencyRecipient: t.hex(),
+
+		// Volume limits
+		dailyVolumeLimit: t.bigint().notNull(),
+		weeklyVolumeLimit: t.bigint().notNull(),
+
+		// Drawdown
+		maxDailyDrawdown: t.bigint().notNull(),
+		maxWeeklyDrawdown: t.bigint().notNull(),
+
+		// Market depth
+		maxTradeVsTVLBps: t.bigint().notNull(),
+
+		// Performance
+		minWinRateBps: t.bigint().notNull(),
+		minSharpeRatio: t.bigint().notNull(), // int256 stored as bigint
+
+		// Position management
+		maxPositionConcentrationBps: t.bigint().notNull(),
+		maxCorrelationBps: t.bigint().notNull(),
+
+		// Trade frequency
+		maxTradesPerDay: t.bigint().notNull(),
+		maxTradesPerHour: t.bigint().notNull(),
+
+		// Trading hours (UTC)
+		tradingStartHour: t.bigint().notNull(),
+		tradingEndHour: t.bigint().notNull(),
+
+		// Reputation
+		minReputationScore: t.bigint().notNull(),
+		useReputationMultiplier: t.boolean().notNull(),
+
+		// Flags
+		requiresChainlinkFunctions: t.boolean().notNull(),
+	}),
+	table => ({
+		chainIdIdx: index().on(table.chainId),
+		ownerIdx: index().on(table.owner),
+		agentTokenIdIdx: index().on(table.agentTokenId),
+		ownerAgentIdx: index().on(table.owner, table.agentTokenId),
+		enabledIdx: index().on(table.enabled),
+	})
+);
+
 // Agent circuit breaker events (risk management triggers)
 export const agentCircuitBreakers = onchainTable(
 	"agent_circuit_breakers",
