@@ -3299,11 +3299,45 @@ app.get("/api/agents/:agentTokenId/circuit-breakers", async c => {
 
 /**
  * GET /api/agents/:agentTokenId/policy
- * Get the indexed policy for a specific agent
+ * Get policies for a specific agent across all users (or scoped to one user via ?owner=).
+ *
+ * An agent NFT can be installed by many users, each with their own independent policy.
+ * - Without ?owner: returns all policies for this agentTokenId (one per installing user)
+ * - With ?owner: returns the single policy for that specific user's installation
  */
 app.get("/api/agents/:agentTokenId/policy", async c => {
 	const { agentTokenId } = c.req.param();
-	const { chainId, owner } = c.req.query();
+	const { chainId, owner, limit, offset } = c.req.query();
+
+	const serializePolicy = (p: any) => ({
+		...p,
+		agentTokenId: p.agentTokenId?.toString(),
+		installedAt: p.installedAt?.toString(),
+		expiryTimestamp: p.expiryTimestamp?.toString(),
+		maxOrderSize: p.maxOrderSize?.toString(),
+		minOrderSize: p.minOrderSize?.toString(),
+		whitelistedTokens: JSON.parse(p.whitelistedTokens || "[]"),
+		blacklistedTokens: JSON.parse(p.blacklistedTokens || "[]"),
+		maxAutoBorrowAmount: p.maxAutoBorrowAmount?.toString(),
+		minDebtToRepay: p.minDebtToRepay?.toString(),
+		minHealthFactor: p.minHealthFactor?.toString(),
+		maxSlippageBps: p.maxSlippageBps?.toString(),
+		minTimeBetweenTrades: p.minTimeBetweenTrades?.toString(),
+		dailyVolumeLimit: p.dailyVolumeLimit?.toString(),
+		weeklyVolumeLimit: p.weeklyVolumeLimit?.toString(),
+		maxDailyDrawdown: p.maxDailyDrawdown?.toString(),
+		maxWeeklyDrawdown: p.maxWeeklyDrawdown?.toString(),
+		maxTradeVsTVLBps: p.maxTradeVsTVLBps?.toString(),
+		minWinRateBps: p.minWinRateBps?.toString(),
+		minSharpeRatio: p.minSharpeRatio?.toString(),
+		maxPositionConcentrationBps: p.maxPositionConcentrationBps?.toString(),
+		maxCorrelationBps: p.maxCorrelationBps?.toString(),
+		maxTradesPerDay: p.maxTradesPerDay?.toString(),
+		maxTradesPerHour: p.maxTradesPerHour?.toString(),
+		tradingStartHour: p.tradingStartHour?.toString(),
+		tradingEndHour: p.tradingEndHour?.toString(),
+		minReputationScore: p.minReputationScore?.toString(),
+	});
 
 	try {
 		const targetChainId = chainId ? Number(chainId) : 84532;
@@ -3312,53 +3346,37 @@ app.get("/api/agents/:agentTokenId/policy", async c => {
 			eq(agentPolicies.agentTokenId, agentTokenId),
 			eq(agentPolicies.chainId, targetChainId),
 		];
+
 		if (owner) {
+			// Scoped to a single user — return one policy object (or 404)
 			conditions.push(eq(agentPolicies.owner, owner.toLowerCase() as `0x${string}`));
+
+			const result = await db.select().from(agentPolicies).where(and(...conditions)).limit(1).execute();
+
+			if (result.length === 0) {
+				return c.json({ success: false, error: "Policy not found" }, 404);
+			}
+
+			return c.json({ success: true, data: serializePolicy(result[0]!) });
 		}
 
-		const result = await db
+		// No owner filter — return all policies for this agent (one per user)
+		const queryLimit = limit ? Math.min(Number(limit), 100) : 50;
+		const queryOffset = offset ? Number(offset) : 0;
+
+		const results = await db
 			.select()
 			.from(agentPolicies)
 			.where(and(...conditions))
-			.limit(1)
+			.limit(queryLimit)
+			.offset(queryOffset)
 			.execute();
 
-		if (result.length === 0) {
-			return c.json({ success: false, error: "Policy not found" }, 404);
-		}
-
-		const p = result[0]!;
 		return c.json({
 			success: true,
-			data: {
-				...p,
-				agentTokenId: p.agentTokenId?.toString(),
-				installedAt: p.installedAt?.toString(),
-				expiryTimestamp: p.expiryTimestamp?.toString(),
-				maxOrderSize: p.maxOrderSize?.toString(),
-				minOrderSize: p.minOrderSize?.toString(),
-				whitelistedTokens: JSON.parse(p.whitelistedTokens || "[]"),
-				blacklistedTokens: JSON.parse(p.blacklistedTokens || "[]"),
-				maxAutoBorrowAmount: p.maxAutoBorrowAmount?.toString(),
-				minDebtToRepay: p.minDebtToRepay?.toString(),
-				minHealthFactor: p.minHealthFactor?.toString(),
-				maxSlippageBps: p.maxSlippageBps?.toString(),
-				minTimeBetweenTrades: p.minTimeBetweenTrades?.toString(),
-				dailyVolumeLimit: p.dailyVolumeLimit?.toString(),
-				weeklyVolumeLimit: p.weeklyVolumeLimit?.toString(),
-				maxDailyDrawdown: p.maxDailyDrawdown?.toString(),
-				maxWeeklyDrawdown: p.maxWeeklyDrawdown?.toString(),
-				maxTradeVsTVLBps: p.maxTradeVsTVLBps?.toString(),
-				minWinRateBps: p.minWinRateBps?.toString(),
-				minSharpeRatio: p.minSharpeRatio?.toString(),
-				maxPositionConcentrationBps: p.maxPositionConcentrationBps?.toString(),
-				maxCorrelationBps: p.maxCorrelationBps?.toString(),
-				maxTradesPerDay: p.maxTradesPerDay?.toString(),
-				maxTradesPerHour: p.maxTradesPerHour?.toString(),
-				tradingStartHour: p.tradingStartHour?.toString(),
-				tradingEndHour: p.tradingEndHour?.toString(),
-				minReputationScore: p.minReputationScore?.toString(),
-			}
+			data: results.map(serializePolicy),
+			count: results.length,
+			pagination: { limit: queryLimit, offset: queryOffset },
 		});
 	} catch (error) {
 		console.error("Error fetching agent policy:", error);
