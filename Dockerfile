@@ -18,4 +18,4 @@ COPY docker-entrypoint.sh ./
 # Expose ponder port
 EXPOSE 42070
 
-CMD ["pnpm", "run", "dev:core-chain"]
+CMD ["pnpm", "run", "start:core-chain"]
