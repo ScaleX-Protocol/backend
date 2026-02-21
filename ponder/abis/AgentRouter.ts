@@ -116,5 +116,65 @@ export const AgentRouterABI = [
 			{ "name": "timestamp", "type": "uint256", "indexed": false, "internalType": "uint256" }
 		],
 		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "AgentSelfTradeExecuted",
+		"inputs": [
+			{ "name": "strategyAgentId", "type": "uint256", "indexed": true, "internalType": "uint256" },
+			{ "name": "agentWallet", "type": "address", "indexed": true, "internalType": "address" },
+			{ "name": "orderBook", "type": "address", "indexed": true, "internalType": "address" },
+			{ "name": "side", "type": "uint8", "indexed": false, "internalType": "enum IOrderBook.Side" },
+			{ "name": "quantity", "type": "uint128", "indexed": false, "internalType": "uint128" },
+			{ "name": "filled", "type": "uint128", "indexed": false, "internalType": "uint128" }
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "AgentSelfLimitOrderPlaced",
+		"inputs": [
+			{ "name": "strategyAgentId", "type": "uint256", "indexed": true, "internalType": "uint256" },
+			{ "name": "agentWallet", "type": "address", "indexed": true, "internalType": "address" },
+			{ "name": "orderBook", "type": "address", "indexed": true, "internalType": "address" },
+			{ "name": "side", "type": "uint8", "indexed": false, "internalType": "enum IOrderBook.Side" },
+			{ "name": "price", "type": "uint128", "indexed": false, "internalType": "uint128" },
+			{ "name": "quantity", "type": "uint128", "indexed": false, "internalType": "uint128" },
+			{ "name": "orderId", "type": "uint48", "indexed": false, "internalType": "uint48" }
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "AgentSelfOrderCancelled",
+		"inputs": [
+			{ "name": "strategyAgentId", "type": "uint256", "indexed": true, "internalType": "uint256" },
+			{ "name": "agentWallet", "type": "address", "indexed": true, "internalType": "address" },
+			{ "name": "orderBook", "type": "address", "indexed": true, "internalType": "address" },
+			{ "name": "orderId", "type": "uint48", "indexed": false, "internalType": "uint48" }
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "AgentSelfBorrowExecuted",
+		"inputs": [
+			{ "name": "strategyAgentId", "type": "uint256", "indexed": true, "internalType": "uint256" },
+			{ "name": "agentWallet", "type": "address", "indexed": true, "internalType": "address" },
+			{ "name": "token", "type": "address", "indexed": false, "internalType": "address" },
+			{ "name": "amount", "type": "uint256", "indexed": false, "internalType": "uint256" }
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "AgentSelfRepayExecuted",
+		"inputs": [
+			{ "name": "strategyAgentId", "type": "uint256", "indexed": true, "internalType": "uint256" },
+			{ "name": "agentWallet", "type": "address", "indexed": true, "internalType": "address" },
+			{ "name": "token", "type": "address", "indexed": false, "internalType": "address" },
+			{ "name": "amount", "type": "uint256", "indexed": false, "internalType": "uint256" }
+		],
+		"anonymous": false
 	}
 ] as const;

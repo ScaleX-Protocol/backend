@@ -64,6 +64,14 @@ ponder.on(PonderEvents.AGENT_BORROW_EXECUTED, withEventValidator(agentRouterHand
 ponder.on(PonderEvents.AGENT_REPAY_EXECUTED, withEventValidator(agentRouterHandler.handleAgentRepayExecuted, 'agentRepayExecuted'));
 ponder.on(PonderEvents.AGENT_COLLATERAL_SUPPLIED, withEventValidator(agentRouterHandler.handleAgentCollateralSupplied, 'agentCollateralSupplied'));
 ponder.on(PonderEvents.AGENT_COLLATERAL_WITHDRAWN, withEventValidator(agentRouterHandler.handleAgentCollateralWithdrawn, 'agentCollateralWithdrawn'));
+
+// AgentRouter Self-Funded Trading Events (agent trades own capital, no policy constraints)
+ponder.on(PonderEvents.AGENT_SELF_TRADE_EXECUTED, withEventValidator(agentRouterHandler.handleAgentSelfTradeExecuted, 'agentSelfTradeExecuted'));
+ponder.on(PonderEvents.AGENT_SELF_LIMIT_ORDER_PLACED, withEventValidator(agentRouterHandler.handleAgentSelfLimitOrderPlaced, 'agentSelfLimitOrderPlaced'));
+ponder.on(PonderEvents.AGENT_SELF_ORDER_CANCELLED, withEventValidator(agentRouterHandler.handleAgentSelfOrderCancelled, 'agentSelfOrderCancelled'));
+ponder.on(PonderEvents.AGENT_SELF_BORROW_EXECUTED, withEventValidator(agentRouterHandler.handleAgentSelfBorrowExecuted, 'agentSelfBorrowExecuted'));
+ponder.on(PonderEvents.AGENT_SELF_REPAY_EXECUTED, withEventValidator(agentRouterHandler.handleAgentSelfRepayExecuted, 'agentSelfRepayExecuted'));
+
 // Note: CircuitBreakerTriggered and PolicyViolation events are not in the current AgentRouter ABI
 // ponder.on(PonderEvents.CIRCUIT_BREAKER_TRIGGERED, withEventValidator(agentRouterHandler.handleCircuitBreakerTriggered, 'circuitBreakerTriggered'));
 // ponder.on(PonderEvents.POLICY_VIOLATION, withEventValidator(agentRouterHandler.handlePolicyViolation, 'policyViolation'));

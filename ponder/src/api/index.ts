@@ -87,6 +87,57 @@ function formatSymbol(symbol: string): string {
 	return symbol;
 }
 
+// Serialize a policy row to a JSON-safe object (BigInt → string, JSON-encoded arrays parsed)
+function serializePolicy(p: any) {
+	if (!p) return null;
+	return {
+		templateUsed: p.templateUsed,
+		enabled: p.enabled,
+		installedAt: p.installedAt?.toString(),
+		expiryTimestamp: p.expiryTimestamp?.toString(),
+		lastUpdatedAt: p.lastUpdatedAt,
+		maxOrderSize: p.maxOrderSize?.toString(),
+		minOrderSize: p.minOrderSize?.toString(),
+		whitelistedTokens: JSON.parse(p.whitelistedTokens || "[]"),
+		blacklistedTokens: JSON.parse(p.blacklistedTokens || "[]"),
+		allowMarketOrders: p.allowMarketOrders,
+		allowLimitOrders: p.allowLimitOrders,
+		allowSwap: p.allowSwap,
+		allowBorrow: p.allowBorrow,
+		allowRepay: p.allowRepay,
+		allowSupplyCollateral: p.allowSupplyCollateral,
+		allowWithdrawCollateral: p.allowWithdrawCollateral,
+		allowPlaceLimitOrder: p.allowPlaceLimitOrder,
+		allowCancelOrder: p.allowCancelOrder,
+		allowBuy: p.allowBuy,
+		allowSell: p.allowSell,
+		allowAutoBorrow: p.allowAutoBorrow,
+		maxAutoBorrowAmount: p.maxAutoBorrowAmount?.toString(),
+		allowAutoRepay: p.allowAutoRepay,
+		minDebtToRepay: p.minDebtToRepay?.toString(),
+		minHealthFactor: p.minHealthFactor?.toString(),
+		maxSlippageBps: p.maxSlippageBps?.toString(),
+		minTimeBetweenTrades: p.minTimeBetweenTrades?.toString(),
+		emergencyRecipient: p.emergencyRecipient,
+		dailyVolumeLimit: p.dailyVolumeLimit?.toString(),
+		weeklyVolumeLimit: p.weeklyVolumeLimit?.toString(),
+		maxDailyDrawdown: p.maxDailyDrawdown?.toString(),
+		maxWeeklyDrawdown: p.maxWeeklyDrawdown?.toString(),
+		maxTradeVsTVLBps: p.maxTradeVsTVLBps?.toString(),
+		minWinRateBps: p.minWinRateBps?.toString(),
+		minSharpeRatio: p.minSharpeRatio?.toString(),
+		maxPositionConcentrationBps: p.maxPositionConcentrationBps?.toString(),
+		maxCorrelationBps: p.maxCorrelationBps?.toString(),
+		maxTradesPerDay: p.maxTradesPerDay?.toString(),
+		maxTradesPerHour: p.maxTradesPerHour?.toString(),
+		tradingStartHour: p.tradingStartHour?.toString(),
+		tradingEndHour: p.tradingEndHour?.toString(),
+		minReputationScore: p.minReputationScore?.toString(),
+		useReputationMultiplier: p.useReputationMultiplier,
+		requiresChainlinkFunctions: p.requiresChainlinkFunctions,
+	};
+}
+
 // Format USD with price conversion
 // Price decimals depend on the quote currency decimals in the pool
 function formatUSDWithPrice(value: string | bigint, tokenDecimals: number, price: number, quoteDecimals: number): string {
@@ -2739,120 +2790,102 @@ app.get("/api/lending/dashboard/:user", async c => {
 
 /**
  * GET /api/agents
- * Get all agent installations
- * Query params: chainId, limit, offset, owner, enabled
+ * List unique agents with aggregated summary across all users.
+ * Query params: chainId, limit, offset
  */
 app.get("/api/agents", async c => {
-	const { chainId, limit, offset, owner, enabled } = c.req.query();
+	const { chainId, limit, offset } = c.req.query();
 
 	try {
 		const targetChainId = chainId ? Number(chainId) : 84532;
 		const queryLimit = limit ? Math.min(Number(limit), 100) : 50;
 		const queryOffset = offset ? Number(offset) : 0;
 
-		const conditions = [eq(agentInstallations.chainId, targetChainId)];
-
-		if (owner) {
-			conditions.push(eq(agentInstallations.owner, owner.toLowerCase() as `0x${string}`));
-		}
-
-		if (enabled !== undefined) {
-			conditions.push(eq(agentInstallations.enabled, enabled === 'true'));
-		}
-
-		const agents = await db
-			.select()
+		// 1. Aggregate installations by agentTokenId
+		const installAgg = await db
+			.select({
+				agentTokenId: agentInstallations.agentTokenId,
+				totalUsers: sql<number>`count(*)::int`,
+				activeUsers: sql<number>`count(*) filter (where ${agentInstallations.enabled})::int`,
+				firstInstalledAt: sql<string>`min(${agentInstallations.installedAt})`,
+			})
 			.from(agentInstallations)
-			.where(and(...conditions))
+			.where(eq(agentInstallations.chainId, targetChainId))
+			.groupBy(agentInstallations.agentTokenId)
 			.limit(queryLimit)
 			.offset(queryOffset)
 			.execute();
 
-		// Fetch all policies for these agents in one query
-		const agentIds = agents.map(a => a.agentTokenId?.toString()).filter(Boolean);
-		const policiesData = agentIds.length > 0
-			? await db
-				.select()
-				.from(agentPolicies)
+		if (installAgg.length === 0) {
+			return c.json({
+				success: true,
+				data: [],
+				count: 0,
+				pagination: { limit: queryLimit, offset: queryOffset }
+			});
+		}
+
+		const tokenIds = installAgg.map(a => a.agentTokenId);
+
+		// 2. Aggregate stats and order counts in parallel
+		const [statsAgg, orderAgg, totalCount] = await Promise.all([
+			db
+				.select({
+					agentTokenId: agentStats.agentTokenId,
+					lastActivityAt: sql<number>`max(${agentStats.lastActivityTimestamp})`,
+					totalTradingVolume: sql<string>`coalesce(sum(${agentStats.totalTradingVolume}), 0)::text`,
+					totalMarketOrders: sql<number>`coalesce(sum(${agentStats.totalMarketOrders}), 0)::int`,
+					totalLimitOrders: sql<number>`coalesce(sum(${agentStats.totalLimitOrders}), 0)::int`,
+				})
+				.from(agentStats)
 				.where(and(
-					eq(agentPolicies.chainId, targetChainId),
-					inArray(agentPolicies.agentTokenId, agentIds)
+					eq(agentStats.chainId, targetChainId),
+					inArray(agentStats.agentTokenId, tokenIds)
 				))
-				.execute()
-			: [];
+				.groupBy(agentStats.agentTokenId)
+				.execute(),
+			db
+				.select({
+					agentTokenId: orders.agentTokenId,
+					totalOrders: sql<number>`count(*)::int`,
+				})
+				.from(orders)
+				.where(and(
+					eq(orders.chainId, targetChainId),
+					inArray(orders.agentTokenId, tokenIds.map(String))
+				))
+				.groupBy(orders.agentTokenId)
+				.execute(),
+			db
+				.select({ count: sql<number>`count(distinct ${agentInstallations.agentTokenId})::int` })
+				.from(agentInstallations)
+				.where(eq(agentInstallations.chainId, targetChainId))
+				.execute(),
+		]);
 
-		// Map agentTokenId → policy
-		const policyMap = new Map(policiesData.map(p => [p.agentTokenId?.toString(), p]));
+		const statsMap = new Map(statsAgg.map(s => [String(s.agentTokenId), s]));
+		const orderMap = new Map(orderAgg.map(o => [String(o.agentTokenId), o]));
 
-		const serializePolicy = (p: any) => p ? {
-			templateUsed: p.templateUsed,
-			enabled: p.enabled,
-			installedAt: p.installedAt?.toString(),
-			expiryTimestamp: p.expiryTimestamp?.toString(),
-			lastUpdatedAt: p.lastUpdatedAt,
-			maxOrderSize: p.maxOrderSize?.toString(),
-			minOrderSize: p.minOrderSize?.toString(),
-			whitelistedTokens: JSON.parse(p.whitelistedTokens || "[]"),
-			blacklistedTokens: JSON.parse(p.blacklistedTokens || "[]"),
-			allowMarketOrders: p.allowMarketOrders,
-			allowLimitOrders: p.allowLimitOrders,
-			allowSwap: p.allowSwap,
-			allowBorrow: p.allowBorrow,
-			allowRepay: p.allowRepay,
-			allowSupplyCollateral: p.allowSupplyCollateral,
-			allowWithdrawCollateral: p.allowWithdrawCollateral,
-			allowPlaceLimitOrder: p.allowPlaceLimitOrder,
-			allowCancelOrder: p.allowCancelOrder,
-			allowBuy: p.allowBuy,
-			allowSell: p.allowSell,
-			allowAutoBorrow: p.allowAutoBorrow,
-			maxAutoBorrowAmount: p.maxAutoBorrowAmount?.toString(),
-			allowAutoRepay: p.allowAutoRepay,
-			minDebtToRepay: p.minDebtToRepay?.toString(),
-			minHealthFactor: p.minHealthFactor?.toString(),
-			maxSlippageBps: p.maxSlippageBps?.toString(),
-			minTimeBetweenTrades: p.minTimeBetweenTrades?.toString(),
-			emergencyRecipient: p.emergencyRecipient,
-			dailyVolumeLimit: p.dailyVolumeLimit?.toString(),
-			weeklyVolumeLimit: p.weeklyVolumeLimit?.toString(),
-			maxDailyDrawdown: p.maxDailyDrawdown?.toString(),
-			maxWeeklyDrawdown: p.maxWeeklyDrawdown?.toString(),
-			maxTradeVsTVLBps: p.maxTradeVsTVLBps?.toString(),
-			minWinRateBps: p.minWinRateBps?.toString(),
-			minSharpeRatio: p.minSharpeRatio?.toString(),
-			maxPositionConcentrationBps: p.maxPositionConcentrationBps?.toString(),
-			maxCorrelationBps: p.maxCorrelationBps?.toString(),
-			maxTradesPerDay: p.maxTradesPerDay?.toString(),
-			maxTradesPerHour: p.maxTradesPerHour?.toString(),
-			tradingStartHour: p.tradingStartHour?.toString(),
-			tradingEndHour: p.tradingEndHour?.toString(),
-			minReputationScore: p.minReputationScore?.toString(),
-			useReputationMultiplier: p.useReputationMultiplier,
-			requiresChainlinkFunctions: p.requiresChainlinkFunctions,
-		} : null;
-
-		const serializedAgents = agents.map(agent => ({
-			id: agent.id,
-			chainId: agent.chainId,
-			owner: agent.owner,
-			agentTokenId: agent.agentTokenId?.toString(),
-			templateUsed: agent.templateUsed,
-			enabled: agent.enabled,
-			installedAt: agent.installedAt,
-			uninstalledAt: agent.uninstalledAt,
-			transactionId: agent.transactionId,
-			blockNumber: agent.blockNumber?.toString(),
-			policy: serializePolicy(policyMap.get(agent.agentTokenId?.toString())),
-		}));
+		const data = installAgg.map(agent => {
+			const key = String(agent.agentTokenId);
+			const stats = statsMap.get(key);
+			const orderCount = orderMap.get(key);
+			return {
+				agentTokenId: agent.agentTokenId?.toString(),
+				totalUsers: agent.totalUsers,
+				activeUsers: agent.activeUsers,
+				firstInstalledAt: agent.firstInstalledAt,
+				lastActivityAt: stats?.lastActivityAt ?? null,
+				totalOrders: (stats?.totalMarketOrders ?? 0) + (stats?.totalLimitOrders ?? 0),
+				totalVolume: stats?.totalTradingVolume ?? "0",
+			};
+		});
 
 		return c.json({
 			success: true,
-			data: serializedAgents,
-			count: agents.length,
-			pagination: {
-				limit: queryLimit,
-				offset: queryOffset
-			}
+			data,
+			count: totalCount[0]?.count ?? 0,
+			pagination: { limit: queryLimit, offset: queryOffset }
 		});
 	} catch (error) {
 		console.error("Error fetching agents:", error);
@@ -2866,98 +2899,94 @@ app.get("/api/agents", async c => {
 
 /**
  * GET /api/agents/:agentTokenId
- * Get specific agent installation details
+ * Get agent overview with aggregated stats across all users.
+ * Query params: chainId
  */
 app.get("/api/agents/:agentTokenId", async c => {
 	const { agentTokenId } = c.req.param();
-	const { chainId, owner } = c.req.query();
+	const { chainId } = c.req.query();
 
 	try {
 		const targetChainId = chainId ? Number(chainId) : 84532;
 
-		const agentConditions: any[] = [
-			eq(agentInstallations.agentTokenId, agentTokenId),
-			eq(agentInstallations.chainId, targetChainId),
-		];
-		if (owner) {
-			agentConditions.push(eq(agentInstallations.owner, owner.toLowerCase() as `0x${string}`));
-		}
-
-		const [agentRows, policyRows] = await Promise.all([
-			db.select().from(agentInstallations).where(and(...agentConditions)).limit(1).execute(),
-			db.select().from(agentPolicies).where(and(
-				eq(agentPolicies.agentTokenId, agentTokenId),
-				eq(agentPolicies.chainId, targetChainId),
-				...(owner ? [eq(agentPolicies.owner, owner.toLowerCase() as `0x${string}`)] : [])
-			)).limit(1).execute(),
+		const [installAgg, statsAgg, ordersByStatus] = await Promise.all([
+			// User counts from installations
+			db
+				.select({
+					totalUsers: sql<number>`count(*)::int`,
+					activeUsers: sql<number>`count(*) filter (where ${agentInstallations.enabled})::int`,
+					firstInstalledAt: sql<string>`min(${agentInstallations.installedAt})`,
+				})
+				.from(agentInstallations)
+				.where(and(
+					eq(agentInstallations.agentTokenId, agentTokenId),
+					eq(agentInstallations.chainId, targetChainId),
+				))
+				.execute(),
+			// Aggregate stats across all users
+			db
+				.select({
+					totalMarketOrders: sql<number>`coalesce(sum(${agentStats.totalMarketOrders}), 0)::int`,
+					totalLimitOrders: sql<number>`coalesce(sum(${agentStats.totalLimitOrders}), 0)::int`,
+					totalOrdersCancelled: sql<number>`coalesce(sum(${agentStats.totalOrdersCancelled}), 0)::int`,
+					totalTradingVolume: sql<string>`coalesce(sum(${agentStats.totalTradingVolume}), 0)::text`,
+					totalBorrowAmount: sql<string>`coalesce(sum(${agentStats.totalBorrowAmount}), 0)::text`,
+					totalRepayAmount: sql<string>`coalesce(sum(${agentStats.totalRepayAmount}), 0)::text`,
+					totalCollateralSupplied: sql<string>`coalesce(sum(${agentStats.totalCollateralSupplied}), 0)::text`,
+					totalCollateralWithdrawn: sql<string>`coalesce(sum(${agentStats.totalCollateralWithdrawn}), 0)::text`,
+					lastActivityAt: sql<number>`max(${agentStats.lastActivityTimestamp})`,
+				})
+				.from(agentStats)
+				.where(and(
+					eq(agentStats.agentTokenId, BigInt(agentTokenId)),
+					eq(agentStats.chainId, targetChainId),
+				))
+				.execute(),
+			// Orders grouped by status
+			db
+				.select({
+					status: orders.status,
+					count: sql<number>`count(*)::int`,
+				})
+				.from(orders)
+				.where(and(
+					eq(orders.agentTokenId, agentTokenId),
+					eq(orders.chainId, targetChainId),
+				))
+				.groupBy(orders.status)
+				.execute(),
 		]);
 
-		if (agentRows.length === 0) {
+		const install = installAgg[0];
+		if (!install || install.totalUsers === 0) {
 			return c.json({ success: false, error: "Agent not found" }, 404);
 		}
 
-		const a = agentRows[0]!;
-		const p = policyRows[0];
+		const stats = statsAgg[0];
 
 		return c.json({
 			success: true,
 			data: {
-				id: a.id,
-				chainId: a.chainId,
-				owner: a.owner,
-				agentTokenId: a.agentTokenId?.toString(),
-				templateUsed: a.templateUsed,
-				enabled: a.enabled,
-				installedAt: a.installedAt,
-				uninstalledAt: a.uninstalledAt,
-				transactionId: a.transactionId,
-				blockNumber: a.blockNumber?.toString(),
-				policy: p ? {
-					templateUsed: p.templateUsed,
-					enabled: p.enabled,
-					installedAt: p.installedAt?.toString(),
-					expiryTimestamp: p.expiryTimestamp?.toString(),
-					lastUpdatedAt: p.lastUpdatedAt,
-					maxOrderSize: p.maxOrderSize?.toString(),
-					minOrderSize: p.minOrderSize?.toString(),
-					whitelistedTokens: JSON.parse(p.whitelistedTokens || "[]"),
-					blacklistedTokens: JSON.parse(p.blacklistedTokens || "[]"),
-					allowMarketOrders: p.allowMarketOrders,
-					allowLimitOrders: p.allowLimitOrders,
-					allowSwap: p.allowSwap,
-					allowBorrow: p.allowBorrow,
-					allowRepay: p.allowRepay,
-					allowSupplyCollateral: p.allowSupplyCollateral,
-					allowWithdrawCollateral: p.allowWithdrawCollateral,
-					allowPlaceLimitOrder: p.allowPlaceLimitOrder,
-					allowCancelOrder: p.allowCancelOrder,
-					allowBuy: p.allowBuy,
-					allowSell: p.allowSell,
-					allowAutoBorrow: p.allowAutoBorrow,
-					maxAutoBorrowAmount: p.maxAutoBorrowAmount?.toString(),
-					allowAutoRepay: p.allowAutoRepay,
-					minDebtToRepay: p.minDebtToRepay?.toString(),
-					minHealthFactor: p.minHealthFactor?.toString(),
-					maxSlippageBps: p.maxSlippageBps?.toString(),
-					minTimeBetweenTrades: p.minTimeBetweenTrades?.toString(),
-					emergencyRecipient: p.emergencyRecipient,
-					dailyVolumeLimit: p.dailyVolumeLimit?.toString(),
-					weeklyVolumeLimit: p.weeklyVolumeLimit?.toString(),
-					maxDailyDrawdown: p.maxDailyDrawdown?.toString(),
-					maxWeeklyDrawdown: p.maxWeeklyDrawdown?.toString(),
-					maxTradeVsTVLBps: p.maxTradeVsTVLBps?.toString(),
-					minWinRateBps: p.minWinRateBps?.toString(),
-					minSharpeRatio: p.minSharpeRatio?.toString(),
-					maxPositionConcentrationBps: p.maxPositionConcentrationBps?.toString(),
-					maxCorrelationBps: p.maxCorrelationBps?.toString(),
-					maxTradesPerDay: p.maxTradesPerDay?.toString(),
-					maxTradesPerHour: p.maxTradesPerHour?.toString(),
-					tradingStartHour: p.tradingStartHour?.toString(),
-					tradingEndHour: p.tradingEndHour?.toString(),
-					minReputationScore: p.minReputationScore?.toString(),
-					useReputationMultiplier: p.useReputationMultiplier,
-					requiresChainlinkFunctions: p.requiresChainlinkFunctions,
-				} : null,
+				agentTokenId,
+				chainId: targetChainId,
+				totalUsers: install.totalUsers,
+				activeUsers: install.activeUsers,
+				firstInstalledAt: install.firstInstalledAt,
+				lastActivityAt: stats?.lastActivityAt ?? null,
+				aggregateStats: {
+					totalMarketOrders: stats?.totalMarketOrders ?? 0,
+					totalLimitOrders: stats?.totalLimitOrders ?? 0,
+					totalOrdersCancelled: stats?.totalOrdersCancelled ?? 0,
+					totalTradingVolume: stats?.totalTradingVolume ?? "0",
+					totalBorrowAmount: stats?.totalBorrowAmount ?? "0",
+					totalRepayAmount: stats?.totalRepayAmount ?? "0",
+					totalCollateralSupplied: stats?.totalCollateralSupplied ?? "0",
+					totalCollateralWithdrawn: stats?.totalCollateralWithdrawn ?? "0",
+				},
+				ordersByStatus: ordersByStatus.reduce((acc, item) => {
+					acc[item.status] = item.count;
+					return acc;
+				}, {} as Record<string, number>),
 			}
 		});
 	} catch (error) {
@@ -2965,6 +2994,90 @@ app.get("/api/agents/:agentTokenId", async c => {
 		return c.json({
 			success: false,
 			error: "Failed to fetch agent",
+			details: error instanceof Error ? error.message : String(error)
+		}, 500);
+	}
+});
+
+/**
+ * GET /api/agents/:agentTokenId/users
+ * List users who authorized this agent, with their policies.
+ * Query params: chainId, enabled, owner, limit, offset
+ */
+app.get("/api/agents/:agentTokenId/users", async c => {
+	const { agentTokenId } = c.req.param();
+	const { chainId, enabled, owner, limit, offset } = c.req.query();
+
+	try {
+		const targetChainId = chainId ? Number(chainId) : 84532;
+		const queryLimit = limit ? Math.min(Number(limit), 100) : 50;
+		const queryOffset = offset ? Number(offset) : 0;
+
+		const conditions: any[] = [
+			eq(agentInstallations.agentTokenId, agentTokenId),
+			eq(agentInstallations.chainId, targetChainId),
+		];
+
+		if (enabled !== undefined) {
+			conditions.push(eq(agentInstallations.enabled, enabled === 'true'));
+		}
+		if (owner) {
+			conditions.push(eq(agentInstallations.owner, owner.toLowerCase() as `0x${string}`));
+		}
+
+		const installations = await db
+			.select()
+			.from(agentInstallations)
+			.where(and(...conditions))
+			.limit(queryLimit)
+			.offset(queryOffset)
+			.execute();
+
+		// Batch-fetch policies for returned owners
+		const owners = installations.map(i => i.owner).filter(Boolean) as `0x${string}`[];
+		const policiesData = owners.length > 0
+			? await db
+				.select()
+				.from(agentPolicies)
+				.where(and(
+					eq(agentPolicies.agentTokenId, agentTokenId),
+					eq(agentPolicies.chainId, targetChainId),
+					inArray(agentPolicies.owner, owners)
+				))
+				.execute()
+			: [];
+
+		const policyMap = new Map(policiesData.map(p => [p.owner, p]));
+
+		const data = installations.map(inst => ({
+			owner: inst.owner,
+			enabled: inst.enabled,
+			installedAt: inst.installedAt,
+			uninstalledAt: inst.uninstalledAt,
+			templateUsed: inst.templateUsed,
+			transactionId: inst.transactionId,
+			blockNumber: inst.blockNumber?.toString(),
+			policy: serializePolicy(policyMap.get(inst.owner)),
+		}));
+
+		// Get total count for pagination
+		const totalCount = await db
+			.select({ count: sql<number>`count(*)::int` })
+			.from(agentInstallations)
+			.where(and(...conditions))
+			.execute();
+
+		return c.json({
+			success: true,
+			data,
+			count: totalCount[0]?.count ?? 0,
+			pagination: { limit: queryLimit, offset: queryOffset }
+		});
+	} catch (error) {
+		console.error("Error fetching agent users:", error);
+		return c.json({
+			success: false,
+			error: "Failed to fetch agent users",
 			details: error instanceof Error ? error.message : String(error)
 		}, 500);
 	}
@@ -3309,36 +3422,6 @@ app.get("/api/agents/:agentTokenId/policy", async c => {
 	const { agentTokenId } = c.req.param();
 	const { chainId, owner, limit, offset } = c.req.query();
 
-	const serializePolicy = (p: any) => ({
-		...p,
-		agentTokenId: p.agentTokenId?.toString(),
-		installedAt: p.installedAt?.toString(),
-		expiryTimestamp: p.expiryTimestamp?.toString(),
-		maxOrderSize: p.maxOrderSize?.toString(),
-		minOrderSize: p.minOrderSize?.toString(),
-		whitelistedTokens: JSON.parse(p.whitelistedTokens || "[]"),
-		blacklistedTokens: JSON.parse(p.blacklistedTokens || "[]"),
-		maxAutoBorrowAmount: p.maxAutoBorrowAmount?.toString(),
-		minDebtToRepay: p.minDebtToRepay?.toString(),
-		minHealthFactor: p.minHealthFactor?.toString(),
-		maxSlippageBps: p.maxSlippageBps?.toString(),
-		minTimeBetweenTrades: p.minTimeBetweenTrades?.toString(),
-		dailyVolumeLimit: p.dailyVolumeLimit?.toString(),
-		weeklyVolumeLimit: p.weeklyVolumeLimit?.toString(),
-		maxDailyDrawdown: p.maxDailyDrawdown?.toString(),
-		maxWeeklyDrawdown: p.maxWeeklyDrawdown?.toString(),
-		maxTradeVsTVLBps: p.maxTradeVsTVLBps?.toString(),
-		minWinRateBps: p.minWinRateBps?.toString(),
-		minSharpeRatio: p.minSharpeRatio?.toString(),
-		maxPositionConcentrationBps: p.maxPositionConcentrationBps?.toString(),
-		maxCorrelationBps: p.maxCorrelationBps?.toString(),
-		maxTradesPerDay: p.maxTradesPerDay?.toString(),
-		maxTradesPerHour: p.maxTradesPerHour?.toString(),
-		tradingStartHour: p.tradingStartHour?.toString(),
-		tradingEndHour: p.tradingEndHour?.toString(),
-		minReputationScore: p.minReputationScore?.toString(),
-	});
-
 	try {
 		const targetChainId = chainId ? Number(chainId) : 84532;
 
@@ -3357,7 +3440,8 @@ app.get("/api/agents/:agentTokenId/policy", async c => {
 				return c.json({ success: false, error: "Policy not found" }, 404);
 			}
 
-			return c.json({ success: true, data: serializePolicy(result[0]!) });
+			const row = result[0]!;
+			return c.json({ success: true, data: { id: row.id, owner: row.owner, chainId: row.chainId, agentTokenId: row.agentTokenId?.toString(), ...serializePolicy(row) } });
 		}
 
 		// No owner filter — return all policies for this agent (one per user)
@@ -3374,7 +3458,7 @@ app.get("/api/agents/:agentTokenId/policy", async c => {
 
 		return c.json({
 			success: true,
-			data: results.map(serializePolicy),
+			data: results.map(r => ({ id: r.id, owner: r.owner, chainId: r.chainId, agentTokenId: r.agentTokenId?.toString(), ...serializePolicy(r) })),
 			count: results.length,
 			pagination: { limit: queryLimit, offset: queryOffset },
 		});

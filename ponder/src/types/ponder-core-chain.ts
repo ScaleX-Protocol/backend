@@ -88,6 +88,14 @@ export const PonderEvents = {
 	AGENT_REPAY_EXECUTED: ponderEvent("AgentRouter:AgentRepayExecuted"),
 	AGENT_COLLATERAL_SUPPLIED: ponderEvent("AgentRouter:AgentCollateralSupplied"),
 	AGENT_COLLATERAL_WITHDRAWN: ponderEvent("AgentRouter:AgentCollateralWithdrawn"),
+
+	// AgentRouter Self-Funded Trading Events (agent trades own capital, no policy constraints)
+	AGENT_SELF_TRADE_EXECUTED: ponderEvent("AgentRouter:AgentSelfTradeExecuted"),
+	AGENT_SELF_LIMIT_ORDER_PLACED: ponderEvent("AgentRouter:AgentSelfLimitOrderPlaced"),
+	AGENT_SELF_ORDER_CANCELLED: ponderEvent("AgentRouter:AgentSelfOrderCancelled"),
+	AGENT_SELF_BORROW_EXECUTED: ponderEvent("AgentRouter:AgentSelfBorrowExecuted"),
+	AGENT_SELF_REPAY_EXECUTED: ponderEvent("AgentRouter:AgentSelfRepayExecuted"),
+
 	CIRCUIT_BREAKER_TRIGGERED: ponderEvent("AgentRouter:CircuitBreakerTriggered"),
 	POLICY_VIOLATION: ponderEvent("AgentRouter:PolicyViolation"),
 };

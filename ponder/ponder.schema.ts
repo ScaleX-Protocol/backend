@@ -1209,8 +1209,8 @@ export const agentOrders = onchainTable(
 		orderId: t.text(), // hex bytes32
 		orderType: t.varchar().notNull(), // "MARKET" or "LIMIT"
 		side: t.varchar(), // "BUY" or "SELL"
-		tokenIn: t.hex().notNull(),
-		tokenOut: t.hex().notNull(),
+		tokenIn: t.hex(), // null for self-trade orders (no token info in event)
+		tokenOut: t.hex(), // null for self-trade orders (no token info in event)
 		amountIn: t.bigint().notNull(),
 		amountOut: t.bigint(), // For market orders
 		limitPrice: t.bigint(), // For limit orders

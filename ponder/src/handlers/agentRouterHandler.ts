@@ -675,6 +675,260 @@ export async function handleAgentCollateralWithdrawn({ event, context }: any) {
 }
 
 // =============================================================
+//        AGENT SELF-FUNDED TRADING EVENTS (No Policy Constraints)
+// =============================================================
+
+export async function handleAgentSelfTradeExecuted({ event, context }: any) {
+	try {
+		const { strategyAgentId, agentWallet, orderBook, side, quantity, filled } = event.args;
+		const chainId = context.network.chainId;
+		const orderId = `${chainId}-${event.transaction.hash}-${event.log.logIndex}`;
+		const timestamp = Number(event.block.timestamp);
+
+		logger.info(
+			`Agent self market order - AgentWallet: ${agentWallet}, StrategyAgentId: ${strategyAgentId}, Quantity: ${quantity}, Filled: ${filled}`,
+			LogLabel.EVENT_HANDLER,
+			'handleAgentSelfTradeExecuted'
+		);
+
+		await context.db.insert(agentOrders).values({
+			id: orderId,
+			chainId,
+			owner: agentWallet as `0x${string}`,
+			agentTokenId: strategyAgentId,
+			executor: agentWallet as `0x${string}`,
+			orderId: null,
+			orderType: "MARKET",
+			side: side === 0 ? "BUY" : "SELL",
+			tokenIn: null,
+			tokenOut: null,
+			amountIn: quantity,
+			amountOut: filled,
+			limitPrice: null,
+			timestamp,
+			transactionId: event.transaction.hash,
+			blockNumber: BigInt(event.block.number),
+			status: "FILLED",
+		});
+
+		await upsertAgentStats(context.db, chainId, agentWallet, strategyAgentId, timestamp, {
+			totalMarketOrders: 1,
+			totalTradingVolume: quantity,
+		});
+
+		await updateIndexerStatus(
+			context.db,
+			chainId,
+			BigInt(event.block.number),
+			timestamp,
+			"AgentSelfTradeExecuted"
+		);
+	} catch (error) {
+		logger.error(
+			`Failed to handle AgentSelfTradeExecuted event`,
+			LogLabel.EVENT_HANDLER,
+			'handleAgentSelfTradeExecuted',
+			{ error: error instanceof Error ? error.message : String(error) }
+		);
+		throw error;
+	}
+}
+
+export async function handleAgentSelfLimitOrderPlaced({ event, context }: any) {
+	try {
+		const { strategyAgentId, agentWallet, orderBook, side, price, quantity, orderId } = event.args;
+		const chainId = context.network.chainId;
+		const orderDbId = `${chainId}-self-${orderId}`;
+		const timestamp = Number(event.block.timestamp);
+
+		logger.info(
+			`Agent self limit order - AgentWallet: ${agentWallet}, StrategyAgentId: ${strategyAgentId}, OrderId: ${orderId}, Price: ${price}, Quantity: ${quantity}`,
+			LogLabel.EVENT_HANDLER,
+			'handleAgentSelfLimitOrderPlaced'
+		);
+
+		await context.db.insert(agentOrders).values({
+			id: orderDbId,
+			chainId,
+			owner: agentWallet as `0x${string}`,
+			agentTokenId: strategyAgentId,
+			executor: agentWallet as `0x${string}`,
+			orderId: orderId.toString(),
+			orderType: "LIMIT",
+			side: side === 0 ? "BUY" : "SELL",
+			tokenIn: null,
+			tokenOut: null,
+			amountIn: quantity,
+			amountOut: null,
+			limitPrice: price,
+			timestamp,
+			transactionId: event.transaction.hash,
+			blockNumber: BigInt(event.block.number),
+			status: "ACTIVE",
+		});
+
+		await upsertAgentStats(context.db, chainId, agentWallet, strategyAgentId, timestamp, {
+			totalLimitOrders: 1,
+		});
+
+		await updateIndexerStatus(
+			context.db,
+			chainId,
+			BigInt(event.block.number),
+			timestamp,
+			"AgentSelfLimitOrderPlaced"
+		);
+	} catch (error) {
+		logger.error(
+			`Failed to handle AgentSelfLimitOrderPlaced event`,
+			LogLabel.EVENT_HANDLER,
+			'handleAgentSelfLimitOrderPlaced',
+			{ error: error instanceof Error ? error.message : String(error) }
+		);
+		throw error;
+	}
+}
+
+export async function handleAgentSelfOrderCancelled({ event, context }: any) {
+	try {
+		const { strategyAgentId, agentWallet, orderBook, orderId } = event.args;
+		const chainId = context.network.chainId;
+		const orderDbId = `${chainId}-self-${orderId}`;
+		const timestamp = Number(event.block.timestamp);
+
+		logger.info(
+			`Agent self order cancelled - AgentWallet: ${agentWallet}, StrategyAgentId: ${strategyAgentId}, OrderId: ${orderId}`,
+			LogLabel.EVENT_HANDLER,
+			'handleAgentSelfOrderCancelled'
+		);
+
+		await context.db
+			.update(agentOrders, { id: orderDbId })
+			.set({ status: "CANCELLED" });
+
+		await upsertAgentStats(context.db, chainId, agentWallet, strategyAgentId, timestamp, {
+			totalOrdersCancelled: 1,
+		});
+
+		await updateIndexerStatus(
+			context.db,
+			chainId,
+			BigInt(event.block.number),
+			timestamp,
+			"AgentSelfOrderCancelled"
+		);
+	} catch (error) {
+		logger.error(
+			`Failed to handle AgentSelfOrderCancelled event`,
+			LogLabel.EVENT_HANDLER,
+			'handleAgentSelfOrderCancelled',
+			{ error: error instanceof Error ? error.message : String(error) }
+		);
+		throw error;
+	}
+}
+
+export async function handleAgentSelfBorrowExecuted({ event, context }: any) {
+	try {
+		const { strategyAgentId, agentWallet, token, amount } = event.args;
+		const chainId = context.network.chainId;
+		const eventId = `${chainId}-${event.transaction.hash}-${event.log.logIndex}`;
+		const timestamp = Number(event.block.timestamp);
+
+		logger.info(
+			`Agent self borrow - AgentWallet: ${agentWallet}, StrategyAgentId: ${strategyAgentId}, Token: ${token}, Amount: ${amount}`,
+			LogLabel.EVENT_HANDLER,
+			'handleAgentSelfBorrowExecuted'
+		);
+
+		await context.db.insert(agentLendingEvents).values({
+			id: eventId,
+			chainId,
+			owner: agentWallet as `0x${string}`,
+			agentTokenId: strategyAgentId,
+			executor: agentWallet as `0x${string}`,
+			action: "BORROW",
+			token: token as `0x${string}`,
+			amount,
+			newHealthFactor: null,
+			timestamp,
+			transactionId: event.transaction.hash,
+			blockNumber: BigInt(event.block.number),
+		});
+
+		await upsertAgentStats(context.db, chainId, agentWallet, strategyAgentId, timestamp, {
+			totalBorrowAmount: amount,
+		});
+
+		await updateIndexerStatus(
+			context.db,
+			chainId,
+			BigInt(event.block.number),
+			timestamp,
+			"AgentSelfBorrowExecuted"
+		);
+	} catch (error) {
+		logger.error(
+			`Failed to handle AgentSelfBorrowExecuted event`,
+			LogLabel.EVENT_HANDLER,
+			'handleAgentSelfBorrowExecuted',
+			{ error: error instanceof Error ? error.message : String(error) }
+		);
+		throw error;
+	}
+}
+
+export async function handleAgentSelfRepayExecuted({ event, context }: any) {
+	try {
+		const { strategyAgentId, agentWallet, token, amount } = event.args;
+		const chainId = context.network.chainId;
+		const eventId = `${chainId}-${event.transaction.hash}-${event.log.logIndex}`;
+		const timestamp = Number(event.block.timestamp);
+
+		logger.info(
+			`Agent self repay - AgentWallet: ${agentWallet}, StrategyAgentId: ${strategyAgentId}, Token: ${token}, Amount: ${amount}`,
+			LogLabel.EVENT_HANDLER,
+			'handleAgentSelfRepayExecuted'
+		);
+
+		await context.db.insert(agentLendingEvents).values({
+			id: eventId,
+			chainId,
+			owner: agentWallet as `0x${string}`,
+			agentTokenId: strategyAgentId,
+			executor: agentWallet as `0x${string}`,
+			action: "REPAY",
+			token: token as `0x${string}`,
+			amount,
+			newHealthFactor: null,
+			timestamp,
+			transactionId: event.transaction.hash,
+			blockNumber: BigInt(event.block.number),
+		});
+
+		await upsertAgentStats(context.db, chainId, agentWallet, strategyAgentId, timestamp, {
+			totalRepayAmount: amount,
+		});
+
+		await updateIndexerStatus(
+			context.db,
+			chainId,
+			BigInt(event.block.number),
+			timestamp,
+			"AgentSelfRepayExecuted"
+		);
+	} catch (error) {
+		logger.error(
+			`Failed to handle AgentSelfRepayExecuted event`,
+			LogLabel.EVENT_HANDLER,
+			'handleAgentSelfRepayExecuted',
+			{ error: error instanceof Error ? error.message : String(error) }
+		);
+		throw error;
+	}
+}
+
+// =============================================================
 //           AGENT MONITORING EVENTS
 // =============================================================
 
