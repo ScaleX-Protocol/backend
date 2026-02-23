@@ -2918,7 +2918,21 @@ app.get("/api/agents/:agentTokenId", async c => {
 	try {
 		const targetChainId = chainId ? Number(chainId) : 84532;
 
-		const [installAgg, statsAgg, ordersByStatus] = await Promise.all([
+		const [registryResult, installAgg, statsAgg, ordersByStatus] = await Promise.all([
+			// Check agent exists in registry
+			db
+				.select({
+					tokenId: agentRegistry.tokenId,
+					owner: agentRegistry.owner,
+					metadataURI: agentRegistry.metadataURI,
+					registeredAt: agentRegistry.registeredAt,
+				})
+				.from(agentRegistry)
+				.where(and(
+					eq(agentRegistry.tokenId, BigInt(agentTokenId)),
+					eq(agentRegistry.chainId, targetChainId),
+				))
+				.execute(),
 			// User counts from installations
 			db
 				.select({
@@ -2966,8 +2980,11 @@ app.get("/api/agents/:agentTokenId", async c => {
 				.execute(),
 		]);
 
+		const registry = registryResult[0];
 		const install = installAgg[0];
-		if (!install || install.totalUsers === 0) {
+
+		// Agent must exist in registry OR have installations
+		if (!registry && (!install || install.totalUsers === 0)) {
 			return c.json({ success: false, error: "Agent not found" }, 404);
 		}
 
@@ -2978,9 +2995,9 @@ app.get("/api/agents/:agentTokenId", async c => {
 			data: {
 				agentTokenId,
 				chainId: targetChainId,
-				totalUsers: install.totalUsers,
-				activeUsers: install.activeUsers,
-				firstInstalledAt: install.firstInstalledAt,
+				totalUsers: install?.totalUsers ?? 0,
+				activeUsers: install?.activeUsers ?? 0,
+				firstInstalledAt: install?.firstInstalledAt ?? null,
 				lastActivityAt: stats?.lastActivityAt ?? null,
 				aggregateStats: {
 					totalMarketOrders: stats?.totalMarketOrders ?? 0,
