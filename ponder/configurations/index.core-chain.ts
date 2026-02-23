@@ -7,6 +7,7 @@ import * as tokenRegistryHandler from "../src/handlers/tokenRegistryHandler";
 import * as lendingManagerHandler from "../src/handlers/lendingManagerHandler";
 import * as oracleHandler from "../src/handlers/oracleHandler";
 import * as agentRouterHandler from "../src/handlers/agentRouterHandler";
+import * as identityRegistryHandler from "../src/handlers/identityRegistryHandler";
 import { PonderEvents } from "../src/types/ponder-core-chain";
 import { withEventValidator } from "../src/utils/eventValidator";
 
@@ -71,7 +72,11 @@ ponder.on(PonderEvents.AGENT_COLLATERAL_WITHDRAWN, withEventValidator(agentRoute
 // ponder.on(PonderEvents.CIRCUIT_BREAKER_TRIGGERED, withEventValidator(agentRouterHandler.handleCircuitBreakerTriggered, 'circuitBreakerTriggered'));
 // ponder.on(PonderEvents.POLICY_VIOLATION, withEventValidator(agentRouterHandler.handlePolicyViolation, 'policyViolation'));
 
+// IdentityRegistry Events - Agent Registration (ERC-8004)
+ponder.on(PonderEvents.AGENT_REGISTERED, withEventValidator(identityRegistryHandler.handleRegistered, 'agentRegistered'));
+ponder.on(PonderEvents.AGENT_URI_UPDATED, withEventValidator(identityRegistryHandler.handleURIUpdated, 'agentURIUpdated'));
+
 console.log("✅ Core Chain indexer initialized - Chain ID: 84532");
 console.log("📊 Monitoring: OrderBook, PoolManager, Hyperlane cross-chain events, TokenRegistry mappings");
 console.log("🏦 Monitoring: LendingManager and Oracle events for lending protocol data");
-console.log("🤖 Monitoring: AI Agent system (ERC-8004) - installations, orders, lending, violations");
+console.log("🤖 Monitoring: AI Agent system (ERC-8004) - identity registry, installations, orders, lending, violations");

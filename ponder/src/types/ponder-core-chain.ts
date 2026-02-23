@@ -98,6 +98,10 @@ export const PonderEvents = {
 
 	CIRCUIT_BREAKER_TRIGGERED: ponderEvent("AgentRouter:CircuitBreakerTriggered"),
 	POLICY_VIOLATION: ponderEvent("AgentRouter:PolicyViolation"),
+
+	// IdentityRegistry Events (ERC-8004 Agent Identity)
+	AGENT_REGISTERED: ponderEvent("IdentityRegistry:Registered"),
+	AGENT_URI_UPDATED: ponderEvent("IdentityRegistry:URIUpdated"),
 };
 
 /**

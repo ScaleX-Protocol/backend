@@ -8,6 +8,7 @@ import { db } from "ponder:api";
 import schema, {
 	agentCircuitBreakers,
 	agentInstallations,
+	agentRegistry,
 	agentLendingEvents,
 	agentOrders,
 	agentPolicies,
@@ -2791,7 +2792,8 @@ app.get("/api/lending/dashboard/:user", async c => {
 
 /**
  * GET /api/agents
- * List unique agents with aggregated summary across all users.
+ * List all registered agents with aggregated summary across all users.
+ * Uses agentRegistry (IdentityRegistry) as primary source, enriched with installation/stats data.
  * Query params: chainId, limit, offset
  */
 app.get("/api/agents", async c => {
@@ -2802,22 +2804,22 @@ app.get("/api/agents", async c => {
 		const queryLimit = limit ? Math.min(Number(limit), 100) : 50;
 		const queryOffset = offset ? Number(offset) : 0;
 
-		// 1. Aggregate installations by agentTokenId
-		const installAgg = await db
+		// 1. Get all registered agents from IdentityRegistry (primary source)
+		const registeredAgents = await db
 			.select({
-				agentTokenId: agentInstallations.agentTokenId,
-				totalUsers: sql<number>`count(*)::int`,
-				activeUsers: sql<number>`count(*) filter (where ${agentInstallations.enabled})::int`,
-				firstInstalledAt: sql<string>`min(${agentInstallations.installedAt})`,
+				tokenId: agentRegistry.tokenId,
+				owner: agentRegistry.owner,
+				metadataURI: agentRegistry.metadataURI,
+				registeredAt: agentRegistry.registeredAt,
 			})
-			.from(agentInstallations)
-			.where(eq(agentInstallations.chainId, targetChainId))
-			.groupBy(agentInstallations.agentTokenId)
+			.from(agentRegistry)
+			.where(eq(agentRegistry.chainId, targetChainId))
+			.orderBy(asc(agentRegistry.tokenId))
 			.limit(queryLimit)
 			.offset(queryOffset)
 			.execute();
 
-		if (installAgg.length === 0) {
+		if (registeredAgents.length === 0) {
 			return c.json({
 				success: true,
 				data: [],
@@ -2826,10 +2828,24 @@ app.get("/api/agents", async c => {
 			});
 		}
 
-		const tokenIds = installAgg.map(a => a.agentTokenId);
+		const tokenIds = registeredAgents.map(a => a.tokenId);
 
-		// 2. Aggregate stats and order counts in parallel
-		const [statsAgg, orderAgg, totalCount] = await Promise.all([
+		// 2. Get installation counts, stats, and total count in parallel
+		const [installAgg, statsAgg, totalCount] = await Promise.all([
+			db
+				.select({
+					agentTokenId: agentInstallations.agentTokenId,
+					totalUsers: sql<number>`count(*)::int`,
+					activeUsers: sql<number>`count(*) filter (where ${agentInstallations.enabled})::int`,
+					firstInstalledAt: sql<string>`min(${agentInstallations.installedAt})`,
+				})
+				.from(agentInstallations)
+				.where(and(
+					eq(agentInstallations.chainId, targetChainId),
+					inArray(agentInstallations.agentTokenId, tokenIds)
+				))
+				.groupBy(agentInstallations.agentTokenId)
+				.execute(),
 			db
 				.select({
 					agentTokenId: agentStats.agentTokenId,
@@ -2846,36 +2862,28 @@ app.get("/api/agents", async c => {
 				.groupBy(agentStats.agentTokenId)
 				.execute(),
 			db
-				.select({
-					agentTokenId: orders.agentTokenId,
-					totalOrders: sql<number>`count(*)::int`,
-				})
-				.from(orders)
-				.where(and(
-					eq(orders.chainId, targetChainId),
-					inArray(orders.agentTokenId, tokenIds.map(String))
-				))
-				.groupBy(orders.agentTokenId)
-				.execute(),
-			db
-				.select({ count: sql<number>`count(distinct ${agentInstallations.agentTokenId})::int` })
-				.from(agentInstallations)
-				.where(eq(agentInstallations.chainId, targetChainId))
+				.select({ count: sql<number>`count(*)::int` })
+				.from(agentRegistry)
+				.where(eq(agentRegistry.chainId, targetChainId))
 				.execute(),
 		]);
 
+		const installMap = new Map(installAgg.map(i => [String(i.agentTokenId), i]));
 		const statsMap = new Map(statsAgg.map(s => [String(s.agentTokenId), s]));
-		const orderMap = new Map(orderAgg.map(o => [String(o.agentTokenId), o]));
 
-		const data = installAgg.map(agent => {
-			const key = String(agent.agentTokenId);
+		// 3. Merge: all registered agents + stats where available
+		const data = registeredAgents.map(agent => {
+			const key = String(agent.tokenId);
+			const install = installMap.get(key);
 			const stats = statsMap.get(key);
-			const orderCount = orderMap.get(key);
 			return {
-				agentTokenId: agent.agentTokenId?.toString(),
-				totalUsers: agent.totalUsers,
-				activeUsers: agent.activeUsers,
-				firstInstalledAt: agent.firstInstalledAt,
+				agentTokenId: agent.tokenId?.toString(),
+				owner: agent.owner,
+				metadataURI: agent.metadataURI,
+				registeredAt: agent.registeredAt,
+				totalUsers: install?.totalUsers ?? 0,
+				activeUsers: install?.activeUsers ?? 0,
+				firstInstalledAt: install?.firstInstalledAt ?? null,
 				lastActivityAt: stats?.lastActivityAt ?? null,
 				totalOrders: (stats?.totalMarketOrders ?? 0) + (stats?.totalLimitOrders ?? 0),
 				totalVolume: stats?.totalTradingVolume ?? "0",

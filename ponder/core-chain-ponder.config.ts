@@ -2,7 +2,7 @@
 import dotenv from "dotenv";
 import { factory } from "ponder";
 import { fallback, getAddress, http, parseAbiItem } from "viem";
-import { AgentRouterABI, BalanceManagerABI, LendingManagerABI, MailboxABI, OracleABI, OrderBookABI, PolicyFactoryABI, PoolManagerABI, SCALEXRouterABI, SyntheticTokenFactoryABI, TokenRegistryABI } from "./abis";
+import { AgentRouterABI, BalanceManagerABI, IdentityRegistryABI, LendingManagerABI, MailboxABI, OracleABI, OrderBookABI, PolicyFactoryABI, PoolManagerABI, SCALEXRouterABI, SyntheticTokenFactoryABI, TokenRegistryABI } from "./abis";
 
 dotenv.config({ path: ".env.core-chain" });
 
@@ -160,6 +160,18 @@ const contracts: any = {
 			},
 		},
 	},
+
+	// IdentityRegistry (ERC-8004) - Agent identity NFTs
+	IdentityRegistry: {
+		abi: IdentityRegistryABI || [],
+		network: {
+			coreDevnet: {
+				address: getAddress((process.env.IDENTITYREGISTRY_CONTRACT_SCALEX_CORE_DEVNET_ADDRESS as `0x${string}`) || default_address),
+				startBlock: Number(process.env.SCALEX_CORE_DEVNET_START_BLOCK) || 0,
+				endBlock: Number(process.env.SCALEX_CORE_DEVNET_END_BLOCK) || undefined,
+			},
+		},
+	},
 };
 
 export function getCoreChainConfig() {
@@ -220,6 +232,7 @@ export function validateCoreChainEnvironment(): boolean {
 		"LENDINGMANAGER_CONTRACT_SCALEX_CORE_DEVNET_ADDRESS",
 		"AGENTROUTER_CONTRACT_SCALEX_CORE_DEVNET_ADDRESS",
 		"POLICYFACTORY_CONTRACT_SCALEX_CORE_DEVNET_ADDRESS",
+		"IDENTITYREGISTRY_CONTRACT_SCALEX_CORE_DEVNET_ADDRESS",
 	];
 
 	const missing = requiredVars.filter(varName => !process.env[varName]);

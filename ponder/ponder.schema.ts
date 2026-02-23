@@ -1171,6 +1171,27 @@ export const crossChainMessageLinks = onchainTable(
 //                   AI AGENT SYSTEM TABLES
 // =============================================================
 
+// Agent registry (tracking all registered agent identities from IdentityRegistry)
+export const agentRegistry = onchainTable(
+	"agent_registry",
+	t => ({
+		id: t.text().primaryKey(), // chainId-tokenId
+		chainId: t.integer().notNull(),
+		tokenId: t.bigint().notNull(),
+		owner: t.hex().notNull(),
+		metadataURI: t.text(),
+		registeredAt: t.integer().notNull(),
+		transactionId: t.text().notNull(),
+		blockNumber: t.bigint().notNull(),
+	}),
+	table => ({
+		chainIdIdx: index().on(table.chainId),
+		tokenIdIdx: index().on(table.tokenId),
+		ownerIdx: index().on(table.owner),
+		registeredAtIdx: index().on(table.registeredAt),
+	})
+);
+
 // Agent installations (tracking which agents are enabled for which users)
 export const agentInstallations = onchainTable(
 	"agent_installations",

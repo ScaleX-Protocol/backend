@@ -15,3 +15,4 @@ export { MailboxABI } from './Mailbox';
 export { SCALEXRouterABI } from './ScaleXRouter';
 export { AgentRouterABI } from './AgentRouter';
 export { PolicyFactoryABI } from './PolicyFactory';
+export { IdentityRegistryABI } from './IdentityRegistry';
