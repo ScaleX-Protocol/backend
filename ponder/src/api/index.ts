@@ -35,6 +35,7 @@ import schema, {
 	pools,
 	thirtyMinuteBuckets,
 	tokenMappings,
+	trades,
 	unlockEvents,
 	withdrawals
 } from "ponder:schema";
@@ -3532,6 +3533,354 @@ app.get("/api/policies", async c => {
 			success: false,
 			error: "Failed to fetch policies",
 			details: error instanceof Error ? error.message : String(error)
+		}, 500);
+	}
+});
+
+// ============================================================================
+// ANALYTICS ENDPOINTS
+// ============================================================================
+
+const VALID_WINDOWS = ["24h", "7d", "30d", "all"] as const;
+type AnalyticsWindow = typeof VALID_WINDOWS[number];
+
+function windowToTimestamp(window: AnalyticsWindow): number | null {
+	if (window === "all") return null;
+	const now = Math.floor(Date.now() / 1000);
+	const durations: Record<string, number> = {
+		"24h": 86400,
+		"7d": 604800,
+		"30d": 2592000,
+	};
+	return now - (durations[window] ?? 0);
+}
+
+async function computeAnalytics(
+	filterConditions: ReturnType<typeof and>[],
+	chainId: number,
+	windowStart: number | null,
+) {
+	const now = Math.floor(Date.now() / 1000);
+
+	// Build time filter for trades/orders
+	const timeFilter = windowStart ? gte(trades.timestamp, windowStart) : undefined;
+	const orderTimeFilter = windowStart ? gte(orders.timestamp, windowStart) : undefined;
+
+	// Query 1: PnL data — trades joined with orders and pools
+	const pnlConditions = [
+		eq(orders.chainId, chainId),
+		...filterConditions,
+		or(eq(orders.status, "FILLED"), eq(orders.status, "PARTIALLY_FILLED")),
+	];
+	if (timeFilter) pnlConditions.push(timeFilter);
+
+	const pnlData = await db
+		.select({
+			poolId: orders.poolId,
+			side: orders.side,
+			totalQuantity: sql<string>`coalesce(sum(${trades.quantity}), 0)::text`,
+			totalQuoteValue: sql<string>`coalesce(sum(${trades.quantity} * ${trades.price}), 0)::text`,
+			tradeCount: sql<number>`count(*)::int`,
+			baseDecimals: pools.baseDecimals,
+			quoteDecimals: pools.quoteDecimals,
+			lastPrice: pools.price,
+			symbol: pools.coin,
+		})
+		.from(trades)
+		.innerJoin(orders, eq(trades.orderId, orders.id))
+		.innerJoin(pools, eq(orders.poolId, pools.orderBook))
+		.where(and(...pnlConditions))
+		.groupBy(orders.poolId, orders.side, pools.baseDecimals, pools.quoteDecimals, pools.price, pools.coin)
+		.execute();
+
+	// Query 2: Fill rate data — orders grouped by status
+	const fillConditions = [
+		eq(orders.chainId, chainId),
+		...filterConditions,
+	];
+	if (orderTimeFilter) fillConditions.push(orderTimeFilter);
+
+	const fillData = await db
+		.select({
+			status: orders.status,
+			count: sql<number>`count(*)::int`,
+		})
+		.from(orders)
+		.where(and(...fillConditions))
+		.groupBy(orders.status)
+		.execute();
+
+	// Group PnL data by poolId
+	const poolMap = new Map<string, {
+		poolId: string;
+		symbol: string | null;
+		baseDecimals: number | null;
+		quoteDecimals: number | null;
+		lastPrice: bigint | null;
+		buyQuantity: bigint;
+		buyQuoteValue: bigint;
+		sellQuantity: bigint;
+		sellQuoteValue: bigint;
+		tradeCount: number;
+	}>();
+
+	for (const row of pnlData) {
+		const key = row.poolId;
+		if (!poolMap.has(key)) {
+			poolMap.set(key, {
+				poolId: key,
+				symbol: row.symbol,
+				baseDecimals: row.baseDecimals,
+				quoteDecimals: row.quoteDecimals,
+				lastPrice: row.lastPrice,
+				buyQuantity: 0n,
+				buyQuoteValue: 0n,
+				sellQuantity: 0n,
+				sellQuoteValue: 0n,
+				tradeCount: 0,
+			});
+		}
+		const pool = poolMap.get(key)!;
+		const qty = BigInt(row.totalQuantity);
+		const quoteVal = BigInt(row.totalQuoteValue);
+		pool.tradeCount += row.tradeCount;
+
+		if (row.side === "Buy") {
+			pool.buyQuantity += qty;
+			pool.buyQuoteValue += quoteVal;
+		} else if (row.side === "Sell") {
+			pool.sellQuantity += qty;
+			pool.sellQuoteValue += quoteVal;
+		}
+	}
+
+	// Compute per-pool analytics
+	let totalRealizedPnl = 0;
+	let totalUnrealizedPnl = 0;
+	let totalVolume = 0;
+	let totalTradeCount = 0;
+	let winningPools = 0;
+	let losingPools = 0;
+	let poolsWithBothSides = 0;
+
+	const poolResults: any[] = [];
+
+	for (const [, pool] of poolMap) {
+		const baseDec = pool.baseDecimals ?? 18;
+		const quoteDec = pool.quoteDecimals ?? 6;
+		const baseMultiplier = 10 ** baseDec;
+		const quoteMultiplier = 10 ** quoteDec;
+
+		// Average prices: totalQuoteValue / totalQuantity gives price in raw units
+		// price is quote_raw_per_base_raw, so actual price = (raw_price * 10^baseDec) / 10^quoteDec ... no
+		// Actually: trades.price is in quote token smallest units per base token smallest unit scaled
+		// quoteValue = quantity * price => this is in (base_raw * price_raw) units
+		// To get human quote amount: quoteValue / 10^baseDecimals / 10^quoteDecimals ... no
+		// Let me trace the math from the codebase:
+		// From orderHelpers.ts candlestick: quoteVolume = Number(quantity) * Number(price) / 10^(baseDecimals + quoteDecimals)
+		// So totalQuoteValue (in raw) / 10^(baseDec + quoteDec) = human quote amount
+
+		const decimalDivisor = baseMultiplier * quoteMultiplier;
+
+		const avgBuyPrice = pool.buyQuantity > 0n
+			? pool.buyQuoteValue / pool.buyQuantity
+			: 0n;
+		const avgSellPrice = pool.sellQuantity > 0n
+			? pool.sellQuoteValue / pool.sellQuantity
+			: 0n;
+
+		// Realized PnL: (avgSellPrice - avgBuyPrice) * min(bought, sold)
+		const matchedQty = pool.buyQuantity < pool.sellQuantity ? pool.buyQuantity : pool.sellQuantity;
+		const hasBothSides = pool.buyQuantity > 0n && pool.sellQuantity > 0n;
+
+		let realizedPnlHuman = 0;
+		if (hasBothSides && matchedQty > 0n) {
+			const realizedPnlRaw = (avgSellPrice - avgBuyPrice) * matchedQty;
+			realizedPnlHuman = Number(realizedPnlRaw) / decimalDivisor;
+		}
+
+		// Net position (in base units)
+		const netPosition = pool.buyQuantity - pool.sellQuantity;
+		let unrealizedPnlHuman = 0;
+		const lastPrice = pool.lastPrice ?? 0n;
+
+		if (netPosition > 0n && lastPrice > 0n && avgBuyPrice > 0n) {
+			const unrealizedPnlRaw = (lastPrice - avgBuyPrice) * netPosition;
+			unrealizedPnlHuman = Number(unrealizedPnlRaw) / decimalDivisor;
+		}
+
+		// Volume in quote terms
+		const poolVolume = Number(pool.buyQuoteValue + pool.sellQuoteValue) / decimalDivisor;
+
+		totalRealizedPnl += realizedPnlHuman;
+		totalUnrealizedPnl += unrealizedPnlHuman;
+		totalVolume += poolVolume;
+		totalTradeCount += pool.tradeCount;
+
+		if (hasBothSides) {
+			poolsWithBothSides++;
+			if (realizedPnlHuman > 0) winningPools++;
+			else losingPools++;
+		}
+
+		poolResults.push({
+			poolId: pool.poolId,
+			symbol: pool.symbol ?? "UNKNOWN",
+			realizedPnl: realizedPnlHuman.toFixed(6),
+			unrealizedPnl: unrealizedPnlHuman.toFixed(6),
+			totalBuyQuantity: (Number(pool.buyQuantity) / baseMultiplier).toFixed(baseDec),
+			totalSellQuantity: (Number(pool.sellQuantity) / baseMultiplier).toFixed(baseDec),
+			openPositionSize: netPosition > 0n
+				? (Number(netPosition) / baseMultiplier).toFixed(baseDec)
+				: "0",
+			avgEntryPrice: avgBuyPrice > 0n
+				? (Number(avgBuyPrice) / quoteMultiplier).toFixed(quoteDec)
+				: "0",
+			avgExitPrice: avgSellPrice > 0n
+				? (Number(avgSellPrice) / quoteMultiplier).toFixed(quoteDec)
+				: "0",
+			lastPrice: lastPrice > 0n
+				? (Number(lastPrice) / quoteMultiplier).toFixed(quoteDec)
+				: "0",
+			tradeCount: pool.tradeCount,
+		});
+	}
+
+	// Sort pools by absolute realized PnL descending
+	poolResults.sort((a, b) => Math.abs(Number(b.realizedPnl)) - Math.abs(Number(a.realizedPnl)));
+
+	// Compute fill rate from status counts
+	const statusCounts: Record<string, number> = {};
+	for (const row of fillData) {
+		if (row.status) statusCounts[row.status] = row.count;
+	}
+
+	const filledCount = (statusCounts["FILLED"] ?? 0) + (statusCounts["PARTIALLY_FILLED"] ?? 0);
+	const totalOrders = Object.entries(statusCounts)
+		.filter(([status]) => status !== "REJECTED")
+		.reduce((sum, [, count]) => sum + count, 0);
+	const fillRate = totalOrders > 0 ? filledCount / totalOrders : 0;
+
+	const winRate = poolsWithBothSides > 0 ? winningPools / poolsWithBothSides : 0;
+	const totalPnl = totalRealizedPnl + totalUnrealizedPnl;
+
+	return {
+		realizedPnl: totalRealizedPnl.toFixed(6),
+		unrealizedPnl: totalUnrealizedPnl.toFixed(6),
+		totalPnl: totalPnl.toFixed(6),
+		winRate: Math.round(winRate * 10000) / 10000,
+		fillRate: Math.round(fillRate * 10000) / 10000,
+		totalTrades: totalTradeCount,
+		winningPools,
+		losingPools,
+		totalPoolsTraded: poolMap.size,
+		totalOrdersPlaced: totalOrders,
+		totalOrdersFilled: filledCount,
+		totalVolume: totalVolume.toFixed(6),
+		avgTradeSize: totalTradeCount > 0 ? (totalVolume / totalTradeCount).toFixed(6) : "0",
+		periodStart: windowStart ?? 0,
+		periodEnd: now,
+		pools: poolResults,
+	};
+}
+
+/**
+ * GET /api/agents/:agentTokenId/analytics
+ * Compute PnL, win rate, fill rate for an agent
+ * Query params: window (24h|7d|30d|all), chainId
+ */
+app.get("/api/agents/:agentTokenId/analytics", async c => {
+	const { agentTokenId } = c.req.param();
+	const { window: windowParam, chainId } = c.req.query();
+
+	// Validate agent ID
+	try {
+		BigInt(agentTokenId);
+	} catch {
+		return c.json({ success: false, error: "Invalid agent ID" }, 400);
+	}
+
+	// Validate window
+	const window = (windowParam || "all") as AnalyticsWindow;
+	if (!VALID_WINDOWS.includes(window)) {
+		return c.json({ success: false, error: "Invalid window. Must be: 24h, 7d, 30d, all" }, 400);
+	}
+
+	try {
+		const targetChainId = chainId ? Number(chainId) : 84532;
+		const windowStart = windowToTimestamp(window);
+
+		const analytics = await computeAnalytics(
+			[eq(orders.agentTokenId, BigInt(agentTokenId))],
+			targetChainId,
+			windowStart,
+		);
+
+		return c.json({
+			success: true,
+			data: {
+				agentTokenId,
+				chainId: targetChainId,
+				window,
+				...analytics,
+			},
+		});
+	} catch (error) {
+		console.error("Error computing agent analytics:", error);
+		return c.json({
+			success: false,
+			error: "Failed to compute agent analytics",
+			details: error instanceof Error ? error.message : String(error),
+		}, 500);
+	}
+});
+
+/**
+ * GET /api/users/:address/analytics
+ * Compute PnL, win rate, fill rate for a user address
+ * Query params: window (24h|7d|30d|all), chainId
+ */
+app.get("/api/users/:address/analytics", async c => {
+	const { address } = c.req.param();
+	const { window: windowParam, chainId } = c.req.query();
+
+	// Validate address format
+	if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
+		return c.json({ success: false, error: "Invalid address format" }, 400);
+	}
+
+	// Validate window
+	const window = (windowParam || "all") as AnalyticsWindow;
+	if (!VALID_WINDOWS.includes(window)) {
+		return c.json({ success: false, error: "Invalid window. Must be: 24h, 7d, 30d, all" }, 400);
+	}
+
+	try {
+		const targetChainId = chainId ? Number(chainId) : 84532;
+		const windowStart = windowToTimestamp(window);
+		const normalizedAddress = address.toLowerCase();
+
+		const analytics = await computeAnalytics(
+			[sql`lower(${orders.userAddress}) = ${normalizedAddress}`],
+			targetChainId,
+			windowStart,
+		);
+
+		return c.json({
+			success: true,
+			data: {
+				address: normalizedAddress,
+				chainId: targetChainId,
+				window,
+				...analytics,
+			},
+		});
+	} catch (error) {
+		console.error("Error computing user analytics:", error);
+		return c.json({
+			success: false,
+			error: "Failed to compute user analytics",
+			details: error instanceof Error ? error.message : String(error),
 		}, 500);
 	}
 });
