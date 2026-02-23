@@ -22,7 +22,6 @@
     "stream-monitor": "tsx ./cli/stream-monitor.ts",
     "setup:anvil": "tsx ./scripts/setup-anvil.ts",
     "dev:core-chain": "pkill -f 'ponder.config.core-chain.ts' 2>/dev/null || true; sleep 1; rm -f src/index.ts && rm -rf .ponder/ && cp configurations/index.core-chain.ts src/index.ts && ponder dev --config ponder.config.core-chain.ts --port 42070 --hostname 0.0.0.0 --disable-ui",
-    "start:core-chain": "rm -f src/index.ts && cp configurations/index.core-chain.ts src/index.ts && ponder start --config ponder.config.core-chain.ts --port 42070 --hostname 0.0.0.0",
     "start:core-chain": "rm -f src/index.ts && cp configurations/index.core-chain.ts src/index.ts && ponder start --config ponder.config.core-chain.ts --schema ponder.schema.ts --port 42070",
     "db:core-chain": "rm -f src/index.ts && cp configurations/index.core-chain.ts src/index.ts && ponder db --config ponder.config.core-chain.ts",
     "codegen:core-chain": "rm -f src/index.ts && cp configurations/index.core-chain.ts src/index.ts && ponder codegen --config ponder.config.core-chain.ts",
