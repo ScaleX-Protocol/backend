@@ -3,3 +3,4 @@ export * from './market.routes';
 export * from './faucet.routes';
 export * from './currencies.routes';
 export * from './wallet.routes';
+export * from './leaderboard.routes';

@@ -3,7 +3,7 @@ import { swagger } from '@elysiajs/swagger';
 import { Elysia, ValidationError } from "elysia";
 import { app as appConfig } from './config/app';
 import { HttpStatus } from './enums';
-import { faucetRoutes, marketRoutes, tradeRoutes, walletRoutes } from './routes';
+import { faucetRoutes, leaderboardRoutes, marketRoutes, tradeRoutes, walletRoutes } from './routes';
 import { currenciesRoutes } from './routes/currencies.routes';
 import { createLogger, LogLabel, ServiceName } from './utils/logger';
 import { createErrorResponse } from './utils/response.utils';
@@ -133,6 +133,7 @@ app.use(marketRoutes);
 app.use(faucetRoutes);
 app.use(currenciesRoutes);
 app.use(walletRoutes);
+app.use(leaderboardRoutes);
 
 app.listen(appConfig.port);
 

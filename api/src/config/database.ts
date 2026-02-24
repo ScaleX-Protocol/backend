@@ -24,7 +24,7 @@ export const db = drizzle(pool, { schema });
 // Secondary database for Ponder data (currencies, etc.)
 const ponderConnectionString = process.env.PONDER_DATABASE_URL || 'postgresql://postgres:password@localhost:5433/ponder_core';
 
-const ponderPool = new Pool({
+export const ponderPool = new Pool({
   connectionString: ponderConnectionString,
   ...sslConfig,
 });
