@@ -501,6 +501,124 @@ export class MarketService {
         };
     }
 
+    static async getAllTickers24Hr() {
+        const now = Math.floor(Date.now() / 1000);
+        const oneDayAgo = now - 86400;
+
+        // 1. All pools (1 query)
+        const allPools = await db.select().from(pools).execute();
+        if (allPools.length === 0) return [];
+
+        const poolIds = allPools.map(p => p.orderBook).filter(Boolean) as string[];
+
+        // 2. Batch all 4 data queries in parallel — DISTINCT ON gives best row per pool
+        const [allDailyStats, allLatestTrades, allBestBids, allBestAsks] = await Promise.all([
+            // Latest daily bucket per pool within last 24h
+            db.selectDistinctOn([dailyBuckets.poolId])
+                .from(dailyBuckets)
+                .where(and(inArray(dailyBuckets.poolId, poolIds), gte(dailyBuckets.openTime, oneDayAgo)))
+                .orderBy(dailyBuckets.poolId, desc(dailyBuckets.openTime))
+                .execute(),
+
+            // Latest trade per pool
+            db.selectDistinctOn([orderBookTrades.poolId], {
+                poolId: orderBookTrades.poolId,
+                price: orderBookTrades.price,
+                quantity: orderBookTrades.quantity,
+                id: orderBookTrades.id,
+            })
+                .from(orderBookTrades)
+                .where(inArray(orderBookTrades.poolId, poolIds))
+                .orderBy(orderBookTrades.poolId, desc(orderBookTrades.timestamp))
+                .execute(),
+
+            // Best bid per pool (highest buy price)
+            db.selectDistinctOn([orders.poolId], {
+                poolId: orders.poolId,
+                price: orders.price,
+            })
+                .from(orders)
+                .where(and(
+                    gt(orders.price, 0n),
+                    inArray(orders.poolId, poolIds),
+                    eq(orders.side, "Buy"),
+                    or(eq(orders.status, "OPEN"), eq(orders.status, "PARTIALLY_FILLED"))
+                ))
+                .orderBy(orders.poolId, desc(orders.price))
+                .execute(),
+
+            // Best ask per pool (lowest sell price)
+            db.selectDistinctOn([orders.poolId], {
+                poolId: orders.poolId,
+                price: orders.price,
+            })
+                .from(orders)
+                .where(and(
+                    gt(orders.price, 0n),
+                    inArray(orders.poolId, poolIds),
+                    eq(orders.side, "Sell"),
+                    or(eq(orders.status, "OPEN"), eq(orders.status, "PARTIALLY_FILLED"))
+                ))
+                .orderBy(orders.poolId, asc(orders.price))
+                .execute(),
+        ]);
+
+        // 3. Build lookup maps from results
+        const dailyStatsByPool = new Map(allDailyStats.map(s => [s.poolId, s]));
+        const latestTradeByPool = new Map(allLatestTrades.map(t => [t.poolId, t]));
+        const bestBidByPool = new Map(allBestBids.map(b => [b.poolId, b.price]));
+        const bestAskByPool = new Map(allBestAsks.map(a => [a.poolId, a.price]));
+
+        // 4. Build response array
+        return allPools
+            .filter(pool => pool.orderBook)
+            .map(pool => {
+                const symbol = pool.coin || "";
+                const poolId = pool.orderBook!;
+                const stats = dailyStatsByPool.get(poolId) as any;
+                const latestTrade = latestTradeByPool.get(poolId);
+
+                const lastPrice = latestTrade?.price?.toString() || "0";
+                const openPrice = stats?.open?.toString() ?? "0";
+                const highPrice = stats?.high?.toString() ?? "0";
+                const lowPrice = stats?.low?.toString() ?? "0";
+                const volumeValue = stats?.volume?.toString() ?? "0";
+                const quoteVolumeValue = stats?.quoteVolume?.toString() ?? "0";
+                const openTimeValue = stats?.openTime ? stats.openTime * 1000 : oneDayAgo * 1000;
+                const countValue = stats?.count ?? 0;
+                const averageValue = stats?.average?.toString() ?? "0";
+
+                const prevClosePrice = openPrice || lastPrice;
+                const priceChange = (parseFloat(lastPrice) - parseFloat(prevClosePrice)).toString();
+                const priceChangePercent =
+                    parseFloat(prevClosePrice) > 0
+                        ? (((parseFloat(lastPrice) - parseFloat(prevClosePrice)) / parseFloat(prevClosePrice)) * 100).toFixed(2)
+                        : "0.00";
+
+                return {
+                    symbol: symbol.replace("/", ""),
+                    priceChange,
+                    priceChangePercent,
+                    weightedAvgPrice: averageValue,
+                    prevClosePrice,
+                    lastPrice,
+                    lastQty: latestTrade?.quantity?.toString() || "0",
+                    bidPrice: bestBidByPool.get(poolId)?.toString() || "0",
+                    askPrice: bestAskByPool.get(poolId)?.toString() || "0",
+                    openPrice,
+                    highPrice,
+                    lowPrice,
+                    volume: volumeValue,
+                    quoteVolume: quoteVolumeValue,
+                    openTime: openTimeValue,
+                    closeTime: now * 1000,
+                    firstId: "0",
+                    lastId: latestTrade?.id || "0",
+                    count: countValue,
+                };
+            });
+    }
+
     static async getTickerPrice(params: { symbol: string }) {
         const { symbol } = params;
 

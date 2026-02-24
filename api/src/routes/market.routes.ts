@@ -25,6 +25,7 @@ export const marketRoutes = new Elysia({ prefix: '/api' })
             orderBy: t.Optional(t.String())
         })
     })
+    .get('/ticker/24hr/all', MarketController.getAllTickers24Hr)
     .get('/ticker/24hr', MarketController.getTicker24Hr, {
         query: t.Object({
             symbol: t.String()

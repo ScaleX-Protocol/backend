@@ -146,6 +146,15 @@ export class MarketController {
         }
     }
 
+    static async getAllTickers24Hr(ctx: Context) {
+        try {
+            const response = await MarketService.getAllTickers24Hr();
+            return response;
+        } catch (error) {
+            return { error: `Failed to fetch all 24hr ticker data: ${error}` };
+        }
+    }
+
     static async getTickerPrice(ctx: Context) {
         try {
             const symbol = ctx.query.symbol;
