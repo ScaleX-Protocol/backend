@@ -7,6 +7,7 @@ import * as tokenRegistryHandler from "../src/handlers/tokenRegistryHandler";
 import * as lendingManagerHandler from "../src/handlers/lendingManagerHandler";
 import * as oracleHandler from "../src/handlers/oracleHandler";
 import * as agentRouterHandler from "../src/handlers/agentRouterHandler";
+import * as identityRegistryHandler from "../src/handlers/identityRegistryHandler";
 import { PonderEvents } from "../src/types/ponder-core-chain";
 import { withEventValidator } from "../src/utils/eventValidator";
 
@@ -54,6 +55,9 @@ ponder.on(PonderEvents.ORACLE_PRICE_UPDATED, oracleHandler.handleOraclePriceUpda
 // AI Agent Events - ERC-8004 Agent System
 ponder.on(PonderEvents.POLICY_INSTALLED, withEventValidator(agentRouterHandler.handlePolicyInstalled, 'policyInstalled'));
 ponder.on(PonderEvents.POLICY_UNINSTALLED, withEventValidator(agentRouterHandler.handlePolicyUninstalled, 'policyUninstalled'));
+ponder.on(PonderEvents.POLICY_UPDATED, withEventValidator(agentRouterHandler.handlePolicyUpdated, 'policyUpdated'));
+ponder.on(PonderEvents.POLICY_ENABLED, withEventValidator(agentRouterHandler.handlePolicyEnabled, 'policyEnabled'));
+ponder.on(PonderEvents.POLICY_DISABLED, withEventValidator(agentRouterHandler.handlePolicyDisabled, 'policyDisabled'));
 ponder.on(PonderEvents.STRATEGY_AGENT_AUTHORIZED, withEventValidator(agentRouterHandler.handleStrategyAgentAuthorized, 'strategyAgentAuthorized'));
 ponder.on(PonderEvents.STRATEGY_AGENT_REVOKED, withEventValidator(agentRouterHandler.handleStrategyAgentRevoked, 'strategyAgentRevoked'));
 
@@ -64,19 +68,15 @@ ponder.on(PonderEvents.AGENT_BORROW_EXECUTED, withEventValidator(agentRouterHand
 ponder.on(PonderEvents.AGENT_REPAY_EXECUTED, withEventValidator(agentRouterHandler.handleAgentRepayExecuted, 'agentRepayExecuted'));
 ponder.on(PonderEvents.AGENT_COLLATERAL_SUPPLIED, withEventValidator(agentRouterHandler.handleAgentCollateralSupplied, 'agentCollateralSupplied'));
 ponder.on(PonderEvents.AGENT_COLLATERAL_WITHDRAWN, withEventValidator(agentRouterHandler.handleAgentCollateralWithdrawn, 'agentCollateralWithdrawn'));
-
-// AgentRouter Self-Funded Trading Events (agent trades own capital, no policy constraints)
-ponder.on(PonderEvents.AGENT_SELF_TRADE_EXECUTED, withEventValidator(agentRouterHandler.handleAgentSelfTradeExecuted, 'agentSelfTradeExecuted'));
-ponder.on(PonderEvents.AGENT_SELF_LIMIT_ORDER_PLACED, withEventValidator(agentRouterHandler.handleAgentSelfLimitOrderPlaced, 'agentSelfLimitOrderPlaced'));
-ponder.on(PonderEvents.AGENT_SELF_ORDER_CANCELLED, withEventValidator(agentRouterHandler.handleAgentSelfOrderCancelled, 'agentSelfOrderCancelled'));
-ponder.on(PonderEvents.AGENT_SELF_BORROW_EXECUTED, withEventValidator(agentRouterHandler.handleAgentSelfBorrowExecuted, 'agentSelfBorrowExecuted'));
-ponder.on(PonderEvents.AGENT_SELF_REPAY_EXECUTED, withEventValidator(agentRouterHandler.handleAgentSelfRepayExecuted, 'agentSelfRepayExecuted'));
-
 // Note: CircuitBreakerTriggered and PolicyViolation events are not in the current AgentRouter ABI
 // ponder.on(PonderEvents.CIRCUIT_BREAKER_TRIGGERED, withEventValidator(agentRouterHandler.handleCircuitBreakerTriggered, 'circuitBreakerTriggered'));
 // ponder.on(PonderEvents.POLICY_VIOLATION, withEventValidator(agentRouterHandler.handlePolicyViolation, 'policyViolation'));
 
+// IdentityRegistry Events - Agent Registration (ERC-8004)
+ponder.on(PonderEvents.AGENT_REGISTERED, withEventValidator(identityRegistryHandler.handleRegistered, 'agentRegistered'));
+ponder.on(PonderEvents.AGENT_URI_UPDATED, withEventValidator(identityRegistryHandler.handleURIUpdated, 'agentURIUpdated'));
+
 console.log("✅ Core Chain indexer initialized - Chain ID: 84532");
 console.log("📊 Monitoring: OrderBook, PoolManager, Hyperlane cross-chain events, TokenRegistry mappings");
 console.log("🏦 Monitoring: LendingManager and Oracle events for lending protocol data");
-console.log("🤖 Monitoring: AI Agent system (ERC-8004) - installations, orders, lending, violations");
+console.log("🤖 Monitoring: AI Agent system (ERC-8004) - identity registry, installations, orders, lending, violations");
