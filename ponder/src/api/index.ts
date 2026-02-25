@@ -1106,17 +1106,31 @@ app.get("/api/ticker/24hr/all", async c => {
 						.limit(1)
 						.execute(),
 					db
-						.select()
-						.from(orderBookDepth)
-						.where(and(eq(orderBookDepth.poolId, poolId), eq(orderBookDepth.side, "Buy")))
-						.orderBy(desc(orderBookDepth.price))
+						.select({ price: orders.price })
+						.from(orders)
+						.where(
+							and(
+								eq(orders.poolId, poolId),
+								eq(orders.side, "Buy"),
+								or(eq(orders.status, "OPEN"), eq(orders.status, "PARTIALLY_FILLED")),
+								gt(orders.price, BigInt(0))
+							)
+						)
+						.orderBy(desc(orders.price))
 						.limit(1)
 						.execute(),
 					db
-						.select()
-						.from(orderBookDepth)
-						.where(and(eq(orderBookDepth.poolId, poolId), eq(orderBookDepth.side, "Sell")))
-						.orderBy(asc(orderBookDepth.price))
+						.select({ price: orders.price })
+						.from(orders)
+						.where(
+							and(
+								eq(orders.poolId, poolId),
+								eq(orders.side, "Sell"),
+								or(eq(orders.status, "OPEN"), eq(orders.status, "PARTIALLY_FILLED")),
+								gt(orders.price, BigInt(0))
+							)
+						)
+						.orderBy(asc(orders.price))
 						.limit(1)
 						.execute(),
 				]);
@@ -1214,20 +1228,34 @@ app.get("/api/ticker/24hr", async c => {
 				.execute(),
 
 			db
-				.select()
-				.from(orderBookDepth)
-				.where(and(eq(orderBookDepth.poolId, poolId), eq(orderBookDepth.side, "Buy")))
-				.orderBy(desc(orderBookDepth.price))
+				.select({ price: orders.price })
+				.from(orders)
+				.where(
+					and(
+						eq(orders.poolId, poolId),
+						eq(orders.side, "Buy"),
+						or(eq(orders.status, "OPEN"), eq(orders.status, "PARTIALLY_FILLED")),
+						gt(orders.price, BigInt(0))
+					)
+				)
+				.orderBy(desc(orders.price))
 				.limit(1)
 				.execute(),
 
 			db
-				.select()
-				.from(orderBookDepth)
-				.where(and(eq(orderBookDepth.poolId, poolId), eq(orderBookDepth.side, "Sell")))
-				.orderBy(asc(orderBookDepth.price))
+				.select({ price: orders.price })
+				.from(orders)
+				.where(
+					and(
+						eq(orders.poolId, poolId),
+						eq(orders.side, "Sell"),
+						or(eq(orders.status, "OPEN"), eq(orders.status, "PARTIALLY_FILLED")),
+						gt(orders.price, BigInt(0))
+					)
+				)
+				.orderBy(asc(orders.price))
 				.limit(1)
-				.execute()
+				.execute(),
 		]);
 
 		interface DailyStats {
