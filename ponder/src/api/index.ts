@@ -1072,6 +1072,106 @@ app.get("/api/trades", async c => {
 	}
 });
 
+app.get("/api/ticker/24hr/all", async c => {
+	try {
+		const allPools = await db.select().from(pools).execute();
+
+		if (!allPools || allPools.length === 0) {
+			return c.json([]);
+		}
+
+		const now = Math.floor(Date.now() / 1000);
+		const oneDayAgo = now - 86400;
+
+		const tickers = await Promise.all(
+			allPools.map(async pool => {
+				const symbol = pool.coin || "";
+				const poolId = pool.orderBook;
+
+				if (!poolId) return null;
+
+				const [dailyStats, latestTrade, bestBids, bestAsks] = await Promise.all([
+					db
+						.select()
+						.from(dailyBuckets)
+						.where(and(eq(dailyBuckets.poolId, poolId), gte(dailyBuckets.openTime, oneDayAgo)))
+						.orderBy(desc(dailyBuckets.openTime))
+						.limit(1)
+						.execute(),
+					db
+						.select()
+						.from(orderBookTrades)
+						.where(eq(orderBookTrades.poolId, poolId))
+						.orderBy(desc(orderBookTrades.timestamp))
+						.limit(1)
+						.execute(),
+					db
+						.select()
+						.from(orderBookDepth)
+						.where(and(eq(orderBookDepth.poolId, poolId), eq(orderBookDepth.side, "Buy")))
+						.orderBy(desc(orderBookDepth.price))
+						.limit(1)
+						.execute(),
+					db
+						.select()
+						.from(orderBookDepth)
+						.where(and(eq(orderBookDepth.poolId, poolId), eq(orderBookDepth.side, "Sell")))
+						.orderBy(asc(orderBookDepth.price))
+						.limit(1)
+						.execute(),
+				]);
+
+				interface DailyStats {
+					open?: bigint | null;
+					high?: bigint | null;
+					low?: bigint | null;
+					volume?: bigint | null;
+					quoteVolume?: bigint | null;
+					openTime?: number | null;
+					count?: number | null;
+					average?: bigint | null;
+				}
+
+				const stats = (dailyStats[0] || {}) as DailyStats;
+				const lastPrice = latestTrade[0]?.price?.toString() || "0";
+				const openPrice = stats.open?.toString() ?? "0";
+				const prevClosePrice = openPrice || lastPrice;
+				const priceChange = (parseFloat(lastPrice) - parseFloat(prevClosePrice)).toString();
+				const priceChangePercent =
+					parseFloat(prevClosePrice) > 0
+						? (((parseFloat(lastPrice) - parseFloat(prevClosePrice)) / parseFloat(prevClosePrice)) * 100).toFixed(2)
+						: "0.00";
+
+				return {
+					symbol,
+					priceChange,
+					priceChangePercent,
+					weightedAvgPrice: stats.average?.toString() ?? "0",
+					prevClosePrice,
+					lastPrice,
+					lastQty: latestTrade[0]?.quantity?.toString() || "0",
+					bidPrice: bestBids[0]?.price?.toString() || "0",
+					askPrice: bestAsks[0]?.price?.toString() || "0",
+					openPrice,
+					highPrice: stats.high?.toString() ?? "0",
+					lowPrice: stats.low?.toString() ?? "0",
+					volume: stats.volume?.toString() ?? "0",
+					quoteVolume: stats.quoteVolume?.toString() ?? "0",
+					openTime: stats.openTime ? stats.openTime * 1000 : oneDayAgo * 1000,
+					closeTime: now * 1000,
+					firstId: "0",
+					lastId: latestTrade[0]?.id || "0",
+					count: stats.count ?? 0,
+				};
+			})
+		);
+
+		return c.json(tickers.filter(t => t !== null));
+	} catch (error) {
+		return c.json({ error: `Failed to fetch all 24hr ticker data: ${error}` }, 500);
+	}
+});
+
 app.get("/api/ticker/24hr", async c => {
 	const symbol = c.req.query("symbol");
 
