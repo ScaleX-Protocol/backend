@@ -1,4 +1,4 @@
-import { db } from '../config/database';
+import { ponderDb as db } from '../config/database';
 import { orders, pools, orderBookTrades, dailyBuckets, orderBookDepth } from '../schema';
 import { and, asc, desc, eq, gte, gt, or, sql, inArray } from 'drizzle-orm';
 import { 
@@ -32,7 +32,7 @@ export class TradeService {
       let query = baseQuery.where(eq(orders.user, address as `0x${string}`));
 
       if (symbol) {
-        const queriedPools = await db.select().from(pools).where(eq(pools.coin, symbol));
+        const queriedPools = await ponderDb.select().from(pools).where(eq(pools.coin, symbol));
         
         if (!queriedPools || queriedPools.length === 0) {
           throw new Error("Pool not found");
@@ -115,7 +115,7 @@ export class TradeService {
       );
 
       if (symbol) {
-        const queriedPools = await db.select().from(pools).where(eq(pools.coin, symbol));
+        const queriedPools = await ponderDb.select().from(pools).where(eq(pools.coin, symbol));
         
         if (!queriedPools || queriedPools.length === 0) {
           throw new Error("Pool not found");
@@ -192,7 +192,7 @@ export class TradeService {
 
   static async getTickerPrice({ symbol }: TickerPriceParams) {
     try {
-      const queriedPools = await db.select().from(pools).where(eq(pools.coin, symbol));
+      const queriedPools = await ponderDb.select().from(pools).where(eq(pools.coin, symbol));
 
       if (!queriedPools || queriedPools.length === 0) {
         throw new Error("Pool not found");
@@ -231,7 +231,7 @@ export class TradeService {
 
   static async getTicker24Hr({ symbol }: Ticker24HrParams) {
     try {
-      const queriedPools = await db.select().from(pools).where(eq(pools.coin, symbol));
+      const queriedPools = await ponderDb.select().from(pools).where(eq(pools.coin, symbol));
 
       if (!queriedPools || queriedPools.length === 0) {
         throw new Error("Pool not found");

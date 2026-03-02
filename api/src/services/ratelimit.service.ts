@@ -157,7 +157,7 @@ export class RateLimitService {
   public async setCooldown(identifier: string, identifierType: 'address' | 'ip', cooldownMs: number): Promise<void> {
     const cooldownUntil = new Date(Date.now() + cooldownMs);
     
-    await db.insert(faucetRateLimits)
+    await ponderDb.insert(faucetRateLimits)
       .values({
         identifier: identifierType === 'address' ? identifier.toLowerCase() : identifier,
         identifierType,
@@ -182,7 +182,7 @@ export class RateLimitService {
     windowStart: Date,
     now: Date
   ): Promise<{ allowed: boolean; remaining: number; resetTime: number }> {
-    const record = await db.query.faucetRateLimits.findFirst({
+    const record = await ponderDb.query.faucetRateLimits.findFirst({
       where: and(
         eq(faucetRateLimits.identifier, identifierType === 'address' ? identifier.toLowerCase() : identifier),
         eq(faucetRateLimits.identifierType, identifierType)
@@ -220,7 +220,7 @@ export class RateLimitService {
     windowStart: Date,
     now: Date
   ): Promise<{ allowed: boolean; remaining: number; resetTime: number }> {
-    const record = await db.query.faucetRateLimits.findFirst({
+    const record = await ponderDb.query.faucetRateLimits.findFirst({
       where: and(
         eq(faucetRateLimits.identifier, identifierType === 'address' ? identifier.toLowerCase() : identifier),
         eq(faucetRateLimits.identifierType, identifierType)
@@ -229,7 +229,7 @@ export class RateLimitService {
 
     if (!record || record.windowStart < windowStart) {
       // First request or window expired
-      await db.insert(faucetRateLimits)
+      await ponderDb.insert(faucetRateLimits)
         .values({
           identifier: identifierType === 'address' ? identifier.toLowerCase() : identifier,
           identifierType,
@@ -262,7 +262,7 @@ export class RateLimitService {
     }
 
     // Increment counter
-    await db.update(faucetRateLimits)
+    await ponderDb.update(faucetRateLimits)
       .set({
         requestCount: record.requestCount + 1,
         lastRequestTime: now
@@ -284,7 +284,7 @@ export class RateLimitService {
     identifierType: 'address' | 'ip',
     now: Date
   ): Promise<{ allowed: boolean; remainingTime: number }> {
-    const record = await db.query.faucetRateLimits.findFirst({
+    const record = await ponderDb.query.faucetRateLimits.findFirst({
       where: and(
         eq(faucetRateLimits.identifier, identifierType === 'address' ? identifier.toLowerCase() : identifier),
         eq(faucetRateLimits.identifierType, identifierType)

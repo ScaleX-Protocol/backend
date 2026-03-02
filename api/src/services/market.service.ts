@@ -1,5 +1,5 @@
 import { and, desc, eq, gte, lte, asc, or, inArray, sql, gt } from 'drizzle-orm';
-import { db } from '../config/database';
+import { ponderDb } from '../config/database';
 import { 
     pools, 
     orders, 
@@ -49,6 +49,49 @@ type BinanceKlineData = [
 ];
 
 export class MarketService {
+    // Helper to find pool by symbol (coin name), pool address (order_book), or pool id
+    private static async findPool(symbol: string) {
+        // First try by coin name (e.g., "sxWETH/sxIDRX" or "sxWETHsxIDRX")
+        let queriedPools = await ponderDb.select().from(pools).where(eq(pools.coin, symbol)).orderBy(desc(pools.timestamp));
+        
+        // Try normalized coin (remove slash)
+        if (!queriedPools || queriedPools.length === 0) {
+            const normalizedCoin = symbol.replace('/', '');
+            queriedPools = await ponderDb.select().from(pools).where(eq(pools.coin, normalizedCoin)).orderBy(desc(pools.timestamp));
+        }
+        
+        // If not found, try by order_book address (poolId as returned from /pairs)
+        if (!queriedPools || queriedPools.length === 0) {
+            queriedPools = await ponderDb.select().from(pools).where(eq(pools.orderBook, symbol.toLowerCase())).orderBy(desc(pools.timestamp));
+        }
+        
+        // Try by pool id
+        if (!queriedPools || queriedPools.length === 0) {
+            queriedPools = await ponderDb.select().from(pools).where(eq(pools.id, symbol)).orderBy(desc(pools.timestamp));
+        }
+        
+        // If still not found, try with 0x prefix normalized
+        if (!queriedPools || queriedPools.length === 0) {
+            const addr = symbol.toLowerCase().startsWith('0x') ? symbol.toLowerCase() : `0x${symbol.toLowerCase()}`;
+            queriedPools = await ponderDb.select().from(pools).where(eq(pools.orderBook, addr)).orderBy(desc(pools.timestamp));
+            // Also try by id with normalized address
+            if (!queriedPools || queriedPools.length === 0) {
+                queriedPools = await ponderDb.select().from(pools).where(eq(pools.id, addr)).orderBy(desc(pools.timestamp));
+            }
+        }
+
+        if (!queriedPools || queriedPools.length === 0) {
+            throw new Error("Pool not found");
+        }
+        
+        const pool = queriedPools[0]!;
+        // Return pool with normalized fields
+        return {
+            ...pool,
+            orderBook: pool.orderBook || pool.id  // Ensure orderBook is always set
+        };
+    }
+
     static async getKlineData(params: {
         symbol: string;
         interval: string;
@@ -58,9 +101,9 @@ export class MarketService {
     }) {
         const { symbol, interval, startTime, endTime, limit } = params;
 
-        const queriedPools = await db.select().from(pools).where(eq(pools.coin, symbol)).orderBy(desc(pools.timestamp));
+        const pool = await this.findPool(symbol);
 
-        if (!queriedPools || queriedPools.length === 0) {
+        if (!pool) {
             throw new Error("Pool not found");
         }
 
@@ -73,7 +116,7 @@ export class MarketService {
         };
 
         const bucketTable = intervalTableMap[interval as IntervalType] || minuteBuckets;
-        const poolId = queriedPools[0]!.orderBook;
+        const poolId = pool.orderBook;
 
         const klineData = await db
             .select()
@@ -95,13 +138,13 @@ export class MarketService {
     static async getDepth(params: { symbol: string; limit: number }) {
         const { symbol, limit } = params;
 
-        const queriedPools = await db.select().from(pools).where(eq(pools.coin, symbol)).orderBy(desc(pools.timestamp));
+        const pool = await this.findPool(symbol);
 
-        if (!queriedPools || queriedPools.length === 0) {
+        if (!pool) {
             throw new Error("Pool not found");
         }
 
-        const poolId = queriedPools[0]!.orderBook;
+        const poolId = pool.orderBook;
 
         if (!poolId) {
             throw new Error("Pool order book address not found");
@@ -164,13 +207,13 @@ export class MarketService {
     }) {
         const { symbol, limit, user, orderBy } = params;
 
-        const queriedPools = await db.select().from(pools).where(eq(pools.coin, symbol)).orderBy(desc(pools.timestamp));
+        const pool = await this.findPool(symbol);
 
-        if (!queriedPools || queriedPools.length === 0) {
+        if (!pool) {
             throw new Error("Pool not found");
         }
 
-        const poolId = queriedPools[0]!.orderBook;
+        const poolId = pool.orderBook;
 
         if (!poolId) {
             throw new Error("Pool order book address not found");
@@ -222,18 +265,18 @@ export class MarketService {
     }) {
         const { symbol, limit, address } = params;
 
-        let query = db.select().from(orders).where(eq(orders.user, address.toLowerCase() as `0x${string}`));
+        let query = ponderDb.select().from(orders).where(eq(orders.user, address.toLowerCase() as `0x${string}`));
 
         if (symbol) {
-            const queriedPools = await db.select().from(pools).where(eq(pools.coin, symbol)).orderBy(desc(pools.timestamp));
+            const pool = await this.findPool(symbol);
 
-            if (!queriedPools || queriedPools.length === 0) {
+            if (!pool) {
                 throw new Error("Pool not found");
             }
 
-            const poolId = queriedPools[0]!.orderBook;
+            const poolId = pool.orderBook;
             if (poolId) {
-                query = db.select().from(orders).where(and(eq(orders.user, address.toLowerCase() as `0x${string}`), eq(orders.poolId, poolId)));
+                query = ponderDb.select().from(orders).where(and(eq(orders.user, address.toLowerCase() as `0x${string}`), eq(orders.poolId, poolId)));
             }
         }
 
@@ -353,7 +396,7 @@ export class MarketService {
     }
 
     static async getPairs() {
-        const allPools = await db.select().from(pools).execute();
+        const allPools = await ponderDb.select().from(pools).execute();
 
         return allPools.map(pool => {
             const symbol = pool.coin || "";
@@ -362,8 +405,8 @@ export class MarketService {
             return {
                 symbol: symbol.replace("/", ""),
                 baseAsset: symbolParts[0] || symbol,
-                quoteAsset: symbolParts[1] || "USDT",
-                poolId: pool.id,
+                quoteAsset: symbolParts[1] || "IDRX",
+                poolId: pool.orderBook || pool.id,  // Use order_book as poolId (pool address)
                 baseDecimals: pool.baseDecimals,
                 quoteDecimals: pool.quoteDecimals,
             };
@@ -371,7 +414,7 @@ export class MarketService {
     }
 
     static async getMarkets() {
-        const allPools = await db.select().from(pools).execute();
+        const allPools = await ponderDb.select().from(pools).execute();
 
         return allPools.map(pool => {
             const symbol = pool.coin || "";
@@ -380,8 +423,8 @@ export class MarketService {
             return {
                 symbol: symbol.replace("/", ""),
                 baseAsset: symbolParts[0] || symbol,
-                quoteAsset: symbolParts[1] || "USDT",
-                poolId: pool.id,
+                quoteAsset: symbolParts[1] || "IDRX",
+                poolId: pool.orderBook || pool.id,  // Use order_book as poolId (pool address)
                 baseDecimals: pool.baseDecimals,
                 quoteDecimals: pool.quoteDecimals,
                 volume: pool.volume?.toString() || "0",
@@ -394,13 +437,13 @@ export class MarketService {
     static async getTicker24Hr(params: { symbol: string }) {
         const { symbol } = params;
 
-        const queriedPools = await db.select().from(pools).where(eq(pools.coin, symbol)).orderBy(desc(pools.timestamp));
+        const pool = await this.findPool(symbol);
 
-        if (!queriedPools || queriedPools.length === 0) {
+        if (!pool) {
             throw new Error("Pool not found");
         }
 
-        const poolId = queriedPools[0]!.orderBook;
+        const poolId = pool.orderBook;
 
         if (!poolId) {
             throw new Error("Pool order book address not found");
@@ -506,7 +549,7 @@ export class MarketService {
         const oneDayAgo = now - 86400;
 
         // 1. All pools (1 query)
-        const allPools = await db.select().from(pools).execute();
+        const allPools = await ponderDb.select().from(pools).execute();
         if (allPools.length === 0) return [];
 
         const poolIds = allPools.map(p => p.orderBook).filter(Boolean) as string[];
@@ -514,14 +557,14 @@ export class MarketService {
         // 2. Batch all 4 data queries in parallel — DISTINCT ON gives best row per pool
         const [allDailyStats, allLatestTrades, allBestBids, allBestAsks] = await Promise.all([
             // Latest daily bucket per pool within last 24h
-            db.selectDistinctOn([dailyBuckets.poolId])
+            ponderDb.selectDistinctOn([dailyBuckets.poolId])
                 .from(dailyBuckets)
                 .where(and(inArray(dailyBuckets.poolId, poolIds), gte(dailyBuckets.openTime, oneDayAgo)))
                 .orderBy(dailyBuckets.poolId, desc(dailyBuckets.openTime))
                 .execute(),
 
             // Latest trade per pool
-            db.selectDistinctOn([orderBookTrades.poolId], {
+            ponderDb.selectDistinctOn([orderBookTrades.poolId], {
                 poolId: orderBookTrades.poolId,
                 price: orderBookTrades.price,
                 quantity: orderBookTrades.quantity,
@@ -533,7 +576,7 @@ export class MarketService {
                 .execute(),
 
             // Best bid per pool (highest buy price)
-            db.selectDistinctOn([orders.poolId], {
+            ponderDb.selectDistinctOn([orders.poolId], {
                 poolId: orders.poolId,
                 price: orders.price,
             })
@@ -548,7 +591,7 @@ export class MarketService {
                 .execute(),
 
             // Best ask per pool (lowest sell price)
-            db.selectDistinctOn([orders.poolId], {
+            ponderDb.selectDistinctOn([orders.poolId], {
                 poolId: orders.poolId,
                 price: orders.price,
             })
@@ -622,13 +665,13 @@ export class MarketService {
     static async getTickerPrice(params: { symbol: string }) {
         const { symbol } = params;
 
-        const queriedPools = await db.select().from(pools).where(eq(pools.coin, symbol)).orderBy(desc(pools.timestamp));
+        const pool = await this.findPool(symbol);
 
-        if (!queriedPools || queriedPools.length === 0) {
+        if (!pool) {
             throw new Error("Pool not found");
         }
 
-        const poolId = queriedPools[0]!.orderBook;
+        const poolId = pool.orderBook;
 
         if (!poolId) {
             throw new Error("Pool order book address not found");
@@ -646,7 +689,7 @@ export class MarketService {
         if (latestTrade.length > 0 && latestTrade[0]?.price) {
             price = latestTrade[0].price.toString();
         } else if (queriedPools[0]?.price) {
-            price = queriedPools[0].price.toString();
+            price = pool.price.toString();
         }
 
         return {
@@ -658,7 +701,7 @@ export class MarketService {
     static async getOpenOrders(params: { symbol?: string; address: string }) {
         const { symbol, address } = params;
 
-        let query = db.select().from(orders).where(
+        let query = ponderDb.select().from(orders).where(
             and(
                 eq(orders.user, address.toLowerCase() as `0x${string}`),
                 or(eq(orders.status, "NEW"), eq(orders.status, "PARTIALLY_FILLED"), eq(orders.status, "OPEN"))
@@ -666,15 +709,15 @@ export class MarketService {
         );
 
         if (symbol) {
-            const queriedPools = await db.select().from(pools).where(eq(pools.coin, symbol)).orderBy(desc(pools.timestamp));
+            const pool = await this.findPool(symbol);
 
-            if (!queriedPools || queriedPools.length === 0) {
+            if (!pool) {
                 throw new Error("Pool not found");
             }
 
-            const poolId = queriedPools[0]!.orderBook;
+            const poolId = pool.orderBook;
             if (poolId) {
-                query = db.select().from(orders).where(
+                query = ponderDb.select().from(orders).where(
                     and(
                         eq(orders.user, address.toLowerCase() as `0x${string}`),
                         or(eq(orders.status, "NEW"), eq(orders.status, "PARTIALLY_FILLED"), eq(orders.status, "OPEN")),

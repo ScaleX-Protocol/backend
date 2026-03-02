@@ -69,7 +69,8 @@ function calculatePositionsFromEvents(events: any[]): any[] {
 }
 
 // Format amount from wei
-function formatAmount(amount: string | bigint, decimals: number = 18): string {
+function formatAmount(amount: string | bigint | undefined | null, decimals: number = 18): string {
+    if (!amount) return '0';
     const amountStr = amount.toString();
     if (amountStr === '0') return '0';
     
@@ -103,12 +104,12 @@ export const lendingRoutes = new Elysia({ prefix: '/api' })
 
             // Get user's lending events
             const userLendingEvents = await runQuery<any>(`
-                SELECT DISTINCT ON (id, "chainId", "userAddress", action, token, amount, "timestamp", "transactionId", "blockNumber")
-                    "chainId", "userAddress", action, token, amount, "collateralToken", "debtToken", 
-                    "healthFactor", "timestamp", "transactionId", "blockNumber", liquidator, "liquidatedAmount", "agentTokenId", executor
+                SELECT DISTINCT ON (id, chain_id, user_address, action, token, amount, "timestamp", transaction_id, block_number)
+                    chain_id, user_address, action, token, amount, collateral_token, debt_token, 
+                    health_factor, "timestamp", transaction_id, block_number, liquidator, liquidated_amount, agent_token_id, executor
                 FROM lending_events
-                WHERE LOWER("userAddress") = LOWER($1) AND "chainId" = $2
-                ORDER BY id, "chainId", "userAddress", action, token, amount, "timestamp", "transactionId", "blockNumber"
+                WHERE LOWER(user_address) = LOWER($1) AND chain_id = $2
+                ORDER BY id, chain_id, user_address, action, token, amount, "timestamp", transaction_id, block_number
             `, [user, chainId]);
 
             // Calculate net positions from events
@@ -116,52 +117,52 @@ export const lendingRoutes = new Elysia({ prefix: '/api' })
 
             // Get pool lending stats
             const poolStats = await runQuery<any>(`
-                SELECT DISTINCT ON (token, "chainId")
-                    token, "totalSupply", "totalBorrow", "supplyRate", "borrowRate", "utilizationRate"
+                SELECT DISTINCT ON (token, chain_id)
+                    token, total_supply as "totalSupply", total_borrow as "totalBorrow", supply_rate as "supplyRate", borrow_rate as "borrowRate", utilization_rate as "utilizationRate"
                 FROM pool_lending_stats
-                WHERE "chainId" = $1
+                WHERE chain_id = $1
             `, [chainId]);
 
             // Get asset configurations
             const assetConfigs = await runQuery<any>(`
-                SELECT DISTINCT ON (token, "chainId")
-                    token, "collateralFactor", "liquidationThreshold", "liquidationBonus", "reserveFactor", "isActive", "timestamp"
+                SELECT DISTINCT ON (token, chain_id)
+                    token, collateral_factor as "collateralFactor", liquidation_threshold as "liquidationThreshold", liquidation_bonus as "liquidationBonus", reserve_factor as "reserveFactor", is_active as "isActive", timestamp as "timestamp"
                 FROM asset_configurations
-                WHERE "chainId" = $1 AND "isActive" = true
+                WHERE chain_id = $1 AND is_active = true
             `, [chainId]);
 
             // Get interest rate parameters
             const interestRateParams = await runQuery<any>(`
-                SELECT DISTINCT ON (token, "chainId")
-                    token, "baseRate", "optimalUtilization", "rateSlope1", "rateSlope2", "timestamp", "isActive"
+                SELECT DISTINCT ON (token, chain_id)
+                    token, base_rate as "baseRate", optimal_utilization as "optimalUtilization", rate_slope1 as "rateSlope1", rate_slope2 as "rateSlope2", timestamp as "timestamp", is_active as "isActive"
                 FROM interest_rate_parameters
-                WHERE "chainId" = $1 AND "isActive" = true
+                WHERE chain_id = $1 AND is_active = true
             `, [chainId]);
 
             // Get user activity history
             const activityHistory = await runQuery<any>(`
-                SELECT DISTINCT ON (id, "timestamp", "transactionId")
-                    action, token, amount, "timestamp", "blockNumber", "transactionId"
+                SELECT DISTINCT ON (id, "timestamp", transaction_id)
+                    action, token, amount, "timestamp", block_number, transaction_id
                 FROM lending_events
-                WHERE LOWER("userAddress") = LOWER($1) AND "chainId" = $2
-                ORDER BY id, "timestamp" DESC, "transactionId" DESC
+                WHERE LOWER(user_address) = LOWER($1) AND chain_id = $2
+                ORDER BY id, "timestamp" DESC, transaction_id DESC
                 LIMIT 50
             `, [user, chainId]);
 
             // Get indexed lending positions
             const indexedPositions = await runQuery<any>(`
                 SELECT DISTINCT ON (id)
-                    id, "collateralToken", "debtToken", "collateralAmount", "debtAmount", "lastUpdated", "isActive"
+                    id, collateral_token, debt_token, collateral_amount as "collateralAmount", debt_amount as "debtAmount", last_updated as "lastUpdated", is_active as "isActive"
                 FROM lending_positions
-                WHERE LOWER("userAddress") = LOWER($1) AND "chainId" = $2 AND "isActive" = true
+                WHERE LOWER(user_address) = LOWER($1) AND chain_id = $2 AND is_active = true
             `, [user, chainId]);
 
             // Get currencies for token info
             const currencies = await runQuery<any>(`
-                SELECT DISTINCT ON (address, "chainId")
+                SELECT DISTINCT ON (address, chain_id)
                     address, symbol, decimals, name
                 FROM currencies
-                WHERE "chainId" = $1
+                WHERE chain_id = $1
             `, [chainId]);
 
             // Create maps for efficient lookup
@@ -284,7 +285,7 @@ export const lendingRoutes = new Elysia({ prefix: '/api' })
                     assetAddress: token,
                     userBalance: '0',
                     suppliedAmount: formatAmount(stat.totalSupply, currency.decimals),
-                    availableAmount: formatAmount(BigInt(Number(stat.totalSupply) - Number(stat.totalBorrow)), currency.decimals),
+                    availableAmount: formatAmount(BigInt(Math.floor(Number(stat.totalSupply))) - BigInt(Math.floor(Number(stat.totalBorrow))), currency.decimals),
                     apy: (Number(stat.supplyRate) / 100).toString(),
                     utilizationRate: (Number(stat.utilizationRate) / 10000).toString(),
                     projectedEarnings: null,
@@ -302,8 +303,8 @@ export const lendingRoutes = new Elysia({ prefix: '/api' })
                 return {
                     asset: formatSymbol(currency.symbol),
                     assetAddress: token,
-                    availableAmount: formatAmount(BigInt(Number(stat.totalSupply) - Number(stat.totalBorrow)), currency.decimals),
-                    availableLiquidity: formatAmount(BigInt(Number(stat.totalSupply) - Number(stat.totalBorrow)), currency.decimals),
+                    availableAmount: formatAmount(BigInt(Math.floor(Number(stat.totalSupply))) - BigInt(Math.floor(Number(stat.totalBorrow))), currency.decimals),
+                    availableLiquidity: formatAmount(BigInt(Math.floor(Number(stat.totalSupply))) - BigInt(Math.floor(Number(stat.totalBorrow))), currency.decimals),
                     currentBorrowed: formatAmount(stat.totalBorrow, currency.decimals),
                     apy: (Number(stat.borrowRate) / 100).toString(),
                     utilizationRate: (Number(stat.utilizationRate) / 10000).toString(),

@@ -118,7 +118,7 @@ async function fetchPnlRows(
 
     const entityFilter = entityType === 'user'
         ? 'AND (o.agent_token_id IS NULL OR o.agent_token_id = 0)'
-        : 'AND o.agent_token_id > 0';
+        : 'AND o.agent_token_id >= 0';
 
     const params: unknown[] = [chainId];
     let windowFilter = '';
@@ -163,7 +163,7 @@ async function fetchFillRows(
 
     const entityFilter = entityType === 'user'
         ? 'AND (o.agent_token_id IS NULL OR o.agent_token_id = 0)'
-        : 'AND o.agent_token_id > 0';
+        : 'AND o.agent_token_id >= 0';
 
     const params: unknown[] = [chainId];
     let windowFilter = '';

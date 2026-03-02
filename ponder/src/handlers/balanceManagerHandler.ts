@@ -107,19 +107,7 @@ async function recordLendingTransferEvents(
 			blockNumber,
 			agentTokenId: agentTokenId ?? BigInt(0),
 			executor: executor ?? null,
-		}).onConflictDoUpdate({
-			id: transferOutEventId,
-			chainId,
-			userAddress: sender,
-			action: "TRANSFER_OUT",
-			token: underlyingToken,
-			amount: amount,
-			timestamp,
-			transactionId: txHash,
-			blockNumber,
-			agentTokenId: agentTokenId ?? BigInt(0),
-			executor: executor ?? null,
-		});
+		}).onConflictDoNothing();
 
 		// Record TRANSFER_IN event for receiver (increases their supply)
 		const transferInEventId = `${txHash}-transfer-in-${receiver}-${logIndex}`;
@@ -135,21 +123,9 @@ async function recordLendingTransferEvents(
 			blockNumber,
 			agentTokenId: agentTokenId ?? BigInt(0),
 			executor: executor ?? null,
-		}).onConflictDoUpdate({
-			id: transferInEventId,
-			chainId,
-			userAddress: receiver,
-			action: "TRANSFER_IN",
-			token: underlyingToken,
-			amount: netAmount,
-			timestamp,
-			transactionId: txHash,
-			blockNumber,
-			agentTokenId: agentTokenId ?? BigInt(0),
-			executor: executor ?? null,
-		});
+		}).onConflictDoNothing();
 
-		logger.info(`Recorded lending transfer events: ${sender} -> ${receiver}, amount: ${amount.toString()}, underlying: ${underlyingToken}`, LogLabel.EVENT_HANDLER, 'recordLendingTransferEvents', {
+		logger.info(`Recorded lending transfer events: ${sender} -> ${receiver}`, LogLabel.EVENT_HANDLER, 'recordLendingTransferEvents', {
 			sender,
 			receiver,
 			currency,

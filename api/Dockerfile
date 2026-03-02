@@ -24,6 +24,9 @@ COPY tsconfig.json ./
 RUN addgroup -g 1001 -S nodejs \
     && adduser -S bunjs -u 1001 -G nodejs
 
+# Create logs directory with correct permissions
+RUN mkdir -p /app/logs && chown -R bunjs:nodejs /app/logs
+
 USER bunjs
 
 EXPOSE 3000
