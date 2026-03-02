@@ -29,4 +29,9 @@ export const ponderPool = new Pool({
   ...sslConfig,
 });
 
+// Set search_path to include ponder schema
+ponderPool.on('connect', async (client) => {
+  await client.query('SET search_path TO public');
+});
+
 export const ponderDb = drizzle(ponderPool, { schema });
