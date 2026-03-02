@@ -4,3 +4,6 @@ export * from './faucet.routes';
 export * from './currencies.routes';
 export * from './wallet.routes';
 export * from './leaderboard.routes';
+export * from './agents.routes';
+export * from './lending.routes';
+export * from './policies.routes';
