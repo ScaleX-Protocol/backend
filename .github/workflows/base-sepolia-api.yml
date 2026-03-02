@@ -95,6 +95,9 @@ jobs:
         API_ENV_FILE=./api/.env.base-sepolia \
         docker-compose -f docker-compose.api.yml -p base-sepolia-api down --remove-orphans || true
 
+        # Force remove any remaining containers to avoid conflicts
+        docker rm -f base-sepolia-api base-sepolia-envio-api 2>/dev/null || true
+
         # Start API services
         echo "=== Starting Base Sepolia API services ==="
         CHAIN_NAME=base-sepolia \
