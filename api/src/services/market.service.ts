@@ -503,7 +503,7 @@ export class MarketService {
         ]);
 
         const stats = (dailyStats[0] || {}) as any;
-        const lastPrice = latestTrade[0]?.price?.toString() || "0";
+        const lastPrice = latestTrade[0]?.price?.toString() || bestBids[0]?.price?.toString() || "0";
 
         const openPrice = stats.open?.toString() ?? "0";
         const highPrice = stats.high?.toString() ?? "0";
@@ -528,7 +528,7 @@ export class MarketService {
             weightedAvgPrice: averageValue,
             prevClosePrice: prevClosePrice,
             lastPrice: lastPrice,
-            lastQty: latestTrade[0]?.quantity?.toString() || "0",
+            lastQty: latestTrade[0]?.quantity?.toString() || bestBids[0]?.quantity?.toString() || "0",
             bidPrice: bestBids[0]?.price?.toString() || "0",
             askPrice: bestAsks[0]?.price?.toString() || "0",
             openPrice: openPrice,
