@@ -44,10 +44,10 @@ export class AgentsService {
             }
 
             const agents = await runQuery<AgentRegistryRow>(`
-                SELECT id, chain_id, token_id, owner, metadata_uri, registered_at
+                SELECT id, "chainId", "tokenId", owner, "metadataURI", "registeredAt"
                 FROM agent_registry
-                WHERE chain_id = $1 ${ownerFilter}
-                ORDER BY token_id ASC
+                WHERE "chainId" = $1 ${ownerFilter}
+                ORDER BY "tokenId" ASC
                 LIMIT $${params.length + 1} OFFSET $${params.length + 2}
             `, [...params, limit, offset]);
 
@@ -55,33 +55,33 @@ export class AgentsService {
                 return { success: true, data: [], count: 0, pagination: { limit, offset } };
             }
 
-            const agentTokenIds = agents.map(a => a.token_id);
+            const agentTokenIds = agents.map(a => a.tokenId);
             const installations = await runQuery<{ agent_token_id: string; total_users: number; active_users: number; first_installed_at: number | null }>(`
                 SELECT 
-                    agent_token_id::text,
+                    "agentTokenId"::text,
                     COUNT(DISTINCT owner)::int as total_users,
                     COUNT(DISTINCT CASE WHEN enabled = true THEN owner END)::int as active_users,
-                    MIN(installed_at)::integer as first_installed_at
+                    MIN("installedAt")::integer as first_installed_at
                 FROM agent_installations
-                WHERE chain_id = $1 AND agent_token_id = ANY($2::numeric[])
-                GROUP BY agent_token_id
+                WHERE "chainId" = $1 AND "agentTokenId" = ANY($2::numeric[])
+                GROUP BY "agentTokenId"
             `, [chainId, `{${agentTokenIds.join(',')}}`]);
 
             const activityStats = await runQuery<{ agent_token_id: string; last_activity_at: number | null; total_trading_volume: string }>(`
                 SELECT 
-                    agent_token_id::text,
-                    MAX(last_activity_timestamp)::integer as last_activity_at,
-                    COALESCE(SUM(total_trading_volume), 0)::text as total_trading_volume
+                    "agentTokenId"::text,
+                    MAX("lastActivityTimestamp")::integer as last_activity_at,
+                    COALESCE(SUM("totalTradingVolume"), 0)::text as total_trading_volume
                 FROM agent_stats
-                WHERE chain_id = $1 AND agent_token_id = ANY($2::numeric[])
-                GROUP BY agent_token_id
+                WHERE "chainId" = $1 AND "agentTokenId" = ANY($2::numeric[])
+                GROUP BY "agentTokenId"
             `, [chainId, `{${agentTokenIds.join(',')}}`]);
 
             const orderCounts = await runQuery<AgentOrdersRow>(`
-                SELECT agent_token_id::text, COUNT(*)::int as order_count
+                SELECT "agentTokenId"::text, COUNT(*)::int as order_count
                 FROM orders
-                WHERE chain_id = $1 AND agent_token_id = ANY($2::numeric[]) AND agent_token_id > 0
-                GROUP BY agent_token_id
+                WHERE "chainId" = $1 AND "agentTokenId" = ANY($2::numeric[]) AND "agentTokenId" > 0
+                GROUP BY "agentTokenId"
             `, [chainId, `{${agentTokenIds.join(',')}}`]);
 
             const installationsMap = new Map(installations.map(i => [i.agent_token_id, i]));
@@ -89,14 +89,14 @@ export class AgentsService {
             const ordersMap = new Map(orderCounts.map(o => [o.agent_token_id, o.order_count]));
 
             const data = agents.map(Agent => {
-                const install = installationsMap.get(Agent.token_id);
-                const activity = activityStatsMap.get(Agent.token_id);
-                const orderCount = ordersMap.get(Agent.token_id) || 0;
+                const install = installationsMap.get(Agent.tokenId);
+                const activity = activityStatsMap.get(Agent.tokenId);
+                const orderCount = ordersMap.get(Agent.tokenId) || 0;
                 return {
-                    agentTokenId: Agent.token_id,
+                    agentTokenId: Agent.tokenId,
                     owner: Agent.owner,
-                    metadataURI: Agent.metadata_uri,
-                    registeredAt: Agent.registered_at,
+                    metadataURI: Agent.metadataURI,
+                    registeredAt: Agent.registeredAt,
                     totalUsers: install?.total_users || 0,
                     activeUsers: install?.active_users || 0,
                     firstInstalledAt: install?.first_installed_at || null,
@@ -107,7 +107,7 @@ export class AgentsService {
             });
 
             const countResult = await runQuery<{ count: string }>(`
-                SELECT COUNT(*)::text as count FROM agent_registry WHERE chain_id = $1 ${ownerFilter}
+                SELECT COUNT(*)::text as count FROM agent_registry WHERE "chainId" = $1 ${ownerFilter}
             `, owner ? [chainId, owner.toLowerCase()] : [chainId]);
             const count = parseInt(countResult[0]?.count || '0');
 
@@ -127,8 +127,8 @@ export class AgentsService {
 
             // Check agent exists in registry
             const agents = await runQuery<AgentRegistryRow>(`
-                SELECT id, chain_id, token_id, owner, metadata_uri, registered_at
-                FROM agent_registry WHERE chain_id = $1 AND token_id = $2
+                SELECT id, "chainId", "tokenId", owner, "metadataURI", "registeredAt"
+                FROM agent_registry WHERE "chainId" = $1 AND "tokenId" = $2
             `, [chainId, agentTokenId]);
 
             // User counts from installations
@@ -136,9 +136,9 @@ export class AgentsService {
                 SELECT 
                     COUNT(*)::int as total_users,
                     COUNT(*) FILTER (WHERE enabled = true)::int as active_users,
-                    MIN(installed_at)::integer as first_installed_at
+                    MIN("installedAt")::integer as first_installed_at
                 FROM agent_installations
-                WHERE chain_id = $1 AND agent_token_id = $2
+                WHERE "chainId" = $1 AND "agentTokenId" = $2
             `, [chainId, agentTokenId]);
 
             // Aggregate stats across all users
@@ -154,24 +154,24 @@ export class AgentsService {
                 last_activity_at: number | null;
             }>(`
                 SELECT 
-                    COALESCE(SUM(total_market_orders), 0)::int as total_market_orders,
-                    COALESCE(SUM(total_limit_orders), 0)::int as total_limit_orders,
-                    COALESCE(SUM(total_orders_cancelled), 0)::int as total_orders_cancelled,
-                    COALESCE(SUM(total_trading_volume), 0)::text as total_trading_volume,
-                    COALESCE(SUM(total_borrow_amount), 0)::text as total_borrow_amount,
-                    COALESCE(SUM(total_repay_amount), 0)::text as total_repay_amount,
-                    COALESCE(SUM(total_collateral_supplied), 0)::text as total_collateral_supplied,
-                    COALESCE(SUM(total_collateral_withdrawn), 0)::text as total_collateral_withdrawn,
-                    MAX(last_activity_timestamp)::integer as last_activity_at
+                    COALESCE(SUM("totalMarketOrders"), 0)::int as total_market_orders,
+                    COALESCE(SUM("totalLimitOrders"), 0)::int as total_limit_orders,
+                    COALESCE(SUM("totalOrdersCancelled"), 0)::int as total_orders_cancelled,
+                    COALESCE(SUM("totalTradingVolume"), 0)::text as total_trading_volume,
+                    COALESCE(SUM("totalBorrowAmount"), 0)::text as total_borrow_amount,
+                    COALESCE(SUM("totalRepayAmount"), 0)::text as total_repay_amount,
+                    COALESCE(SUM("totalCollateralSupplied"), 0)::text as total_collateral_supplied,
+                    COALESCE(SUM("totalCollateralWithdrawn"), 0)::text as total_collateral_withdrawn,
+                    MAX("lastActivityTimestamp")::integer as last_activity_at
                 FROM agent_stats
-                WHERE chain_id = $1 AND agent_token_id = $2
+                WHERE "chainId" = $1 AND "agentTokenId" = $2
             `, [chainId, agentTokenId]);
 
             // Orders grouped by status
             const ordersByStatus = await runQuery<{ status: string; count: number }>(`
                 SELECT status, COUNT(*)::int as count
                 FROM orders
-                WHERE chain_id = $1 AND agent_token_id = $2
+                WHERE "chainId" = $1 AND "agentTokenId" = $2
                 GROUP BY status
             `, [chainId, agentTokenId]);
 
@@ -193,7 +193,7 @@ export class AgentsService {
             return {
                 success: true,
                 data: {
-                    agentTokenId: registry?.token_id || agentTokenId,
+                    agentTokenId: registry?.tokenId || agentTokenId,
                     chainId,
                     totalUsers: install?.total_users || 0,
                     activeUsers: install?.active_users || 0,
@@ -231,13 +231,13 @@ export class AgentsService {
                     COUNT(*) FILTER (WHERE status = 'FILLED')::text as filled_orders,
                     COUNT(*) FILTER (WHERE status = 'PARTIALLY_FILLED')::text as partial_orders,
                     COUNT(*) FILTER (WHERE status = 'REJECTED')::text as rejected_orders
-                FROM orders WHERE chain_id = $1 AND agent_token_id = $2
+                FROM orders WHERE "chainId" = $1 AND "agentTokenId" = $2
             `, [chainId, agentTokenId]);
 
             const tradeStats = await runQuery<{ total_trades: string; total_volume: string }>(`
                 SELECT COUNT(*)::text as total_trades, COALESCE(SUM(t.quantity * t.price), 0)::text as total_volume
-                FROM trades t INNER JOIN orders o ON t.order_id = o.id
-                WHERE o.chain_id = $1 AND o.agent_token_id = $2
+                FROM trades t INNER JOIN orders o ON t."orderId" = o.id
+                WHERE o."chainId" = $1 AND o."agentTokenId" = $2
             `, [chainId, agentTokenId]);
 
             const stats = orderStats[0] || { total_orders: '0', filled_orders: '0', partial_orders: '0', rejected_orders: '0' };
@@ -272,30 +272,30 @@ export class AgentsService {
 
             const lendingEvents = await runQuery<any>(`
                 SELECT * FROM agent_lending_events
-                WHERE agent_token_id = $1 AND chain_id = $2
-                ORDER BY timestamp DESC
+                WHERE "agentTokenId" = $1 AND "chainId" = $2
+                ORDER BY "timestamp" DESC
                 LIMIT $3 OFFSET $4
             `, [agentTokenId, chainId, limit, offset]);
 
             const data = lendingEvents.map(event => ({
                 ...event,
                 id: event.id,
-                chainId: event.chain_id,
-                agentTokenId: event.agent_token_id?.toString(),
+                chainId: event.chainId,
+                agentTokenId: event.agentTokenId?.toString(),
                 owner: event.owner,
                 executor: event.executor,
                 action: event.action,
                 token: event.token,
                 amount: event.amount?.toString(),
-                newHealthFactor: event.new_health_factor?.toString(),
+                newHealthFactor: event.newHealthFactor?.toString(),
                 timestamp: event.timestamp,
-                transactionId: event.transaction_id,
-                blockNumber: event.block_number?.toString(),
+                transactionId: event.transactionId,
+                blockNumber: event.blockNumber?.toString(),
             }));
 
             const countResult = await runQuery<{ count: string }>(`
                 SELECT COUNT(*)::text as count FROM agent_lending_events 
-                WHERE agent_token_id = $1 AND chain_id = $2
+                WHERE "agentTokenId" = $1 AND "chainId" = $2
             `, [agentTokenId, chainId]);
 
             return {
@@ -317,7 +317,7 @@ export class AgentsService {
             const chainId = parseInt(query?.chainId as string) || 84532;
             const owner = query?.owner as string | undefined;
 
-            let conditions = `WHERE agent_token_id = $1 AND chain_id = $2`;
+            let conditions = `WHERE "agentTokenId" = $1 AND "chainId" = $2`;
             const paramsArr: any[] = [agentTokenId, chainId];
 
             if (owner) {
@@ -342,13 +342,13 @@ export class AgentsService {
             const data = policies.map(p => ({
                 id: p.id,
                 owner: p.owner,
-                chainId: p.chain_id,
-                agentTokenId: p.agent_token_id?.toString(),
-                maxTradeSize: p.max_trade_size?.toString() || null,
-                maxDailyVolume: p.max_daily_volume?.toString() || null,
-                allowedPools: p.allowed_pools || [],
-                restrictedPools: p.restricted_pools || [],
-                enableCircuitBreaker: p.enable_circuit_breaker ?? true,
+                chainId: p.chainId,
+                agentTokenId: p.agentTokenId?.toString(),
+                maxTradeSize: p.maxTradeSize?.toString() || null,
+                maxDailyVolume: p.maxDailyVolume?.toString() || null,
+                allowedPools: p.allowedPools || [],
+                restrictedPools: p.restrictedPools || [],
+                enableCircuitBreaker: p.enableCircuitBreaker ?? true,
             }));
 
             return {
@@ -373,7 +373,7 @@ export class AgentsService {
             const limit = Math.min(Math.max(parseInt(query?.limit as string ?? '50') || 50, 1), 100);
             const offset = Math.max(parseInt(query?.offset as string ?? '0') || 0, 0);
 
-            let conditions = `WHERE agent_token_id = $1 AND chain_id = $2`;
+            let conditions = `WHERE "agentTokenId" = $1 AND "chainId" = $2`;
             const paramsArr: any[] = [agentTokenId, chainId];
 
             if (enabled !== undefined) {
@@ -385,7 +385,7 @@ export class AgentsService {
                 paramsArr.push(owner.toLowerCase());
             }
 
-            const orderLimitOffset = `ORDER BY installed_at DESC LIMIT $${paramsArr.length + 1} OFFSET $${paramsArr.length + 2}`;
+            const orderLimitOffset = `ORDER BY "installedAt" DESC LIMIT $${paramsArr.length + 1} OFFSET $${paramsArr.length + 2}`;
             paramsArr.push(limit, offset);
 
             const installations = await runQuery<any>(`
@@ -399,13 +399,13 @@ export class AgentsService {
                 const placeholders = owners.map((_, i) => `$${i + 1}`).join(', ');
                 policiesData = await runQuery<any>(`
                     SELECT * FROM agent_policies 
-                    WHERE agent_token_id = $${owners.length + 1} AND chain_id = $${owners.length + 2} AND owner IN (${placeholders})
+                    WHERE "agentTokenId" = $${owners.length + 1} AND "chainId" = $${owners.length + 2} AND owner IN (${placeholders})
                 `, [...owners, agentTokenId, chainId]);
             }
 
             const policyMap = new Map(policiesData.map(p => [p.owner, p]));
 
-            const countConditions = `WHERE agent_token_id = $1 AND chain_id = $2`;
+            const countConditions = `WHERE "agentTokenId" = $1 AND "chainId" = $2`;
             const countParams: any[] = [agentTokenId, chainId];
             
             let countAdditional = '';
@@ -428,24 +428,24 @@ export class AgentsService {
                 return {
                     id: p.id,
                     owner: p.owner,
-                    chainId: p.chain_id,
-                    agentTokenId: p.agent_token_id?.toString(),
-                    maxTradeSize: p.max_trade_size?.toString() || null,
-                    maxDailyVolume: p.max_daily_volume?.toString() || null,
-                    allowedPools: p.allowed_pools || [],
-                    restrictedPools: p.restricted_pools || [],
-                    enableCircuitBreaker: p.enable_circuit_breaker ?? true,
+                    chainId: p.chainId,
+                    agentTokenId: p.agentTokenId?.toString(),
+                    maxTradeSize: p.maxTradeSize?.toString() || null,
+                    maxDailyVolume: p.maxDailyVolume?.toString() || null,
+                    allowedPools: p.allowedPools || [],
+                    restrictedPools: p.restrictedPools || [],
+                    enableCircuitBreaker: p.enableCircuitBreaker ?? true,
                 };
             };
 
             const data = installations.map(inst => ({
                 owner: inst.owner,
                 enabled: inst.enabled,
-                installedAt: inst.installed_at,
-                uninstalledAt: inst.uninstalled_at,
-                templateUsed: inst.template_used,
-                transactionId: inst.transaction_id,
-                blockNumber: inst.block_number?.toString(),
+                installedAt: inst.installedAt,
+                uninstalledAt: inst.uninstalledAt,
+                templateUsed: inst.templateUsed,
+                transactionId: inst.transactionId,
+                blockNumber: inst.blockNumber?.toString(),
                 policy: serializePolicy(policyMap.get(inst.owner)),
             }));
 
@@ -471,7 +471,7 @@ export class AgentsService {
             const limit = Math.min(Math.max(parseInt(query?.limit as string ?? '50') || 50, 1), 100);
             const offset = Math.max(parseInt(query?.offset as string ?? '0') || 0, 0);
 
-            let conditions = `WHERE agent_token_id = $1 AND chain_id = $2`;
+            let conditions = `WHERE "agentTokenId" = $1 AND "chainId" = $2`;
             const paramsArr: any[] = [agentTokenId, chainId];
 
             if (status) {
@@ -479,7 +479,7 @@ export class AgentsService {
                 paramsArr.push(status);
             }
 
-            const orderLimitOffset = `ORDER BY timestamp DESC LIMIT $${paramsArr.length + 1} OFFSET $${paramsArr.length + 2}`;
+            const orderLimitOffset = `ORDER BY "timestamp" DESC LIMIT $${paramsArr.length + 1} OFFSET $${paramsArr.length + 2}`;
             paramsArr.push(limit, offset);
 
             const orders = await runQuery<any>(`
@@ -488,13 +488,13 @@ export class AgentsService {
 
             const data = orders.map(order => ({
                 ...order,
-                orderId: order.order_id?.toString(),
+                orderId: order.orderId?.toString(),
                 price: order.price?.toString(),
                 quantity: order.quantity?.toString(),
                 filled: order.filled?.toString(),
-                quoteQuantity: order.quote_quantity?.toString(),
-                executedQuoteQuantity: order.executed_quote_quantity?.toString(),
-                agentTokenId: order.agent_token_id?.toString(),
+                quoteQuantity: order.quoteQuantity?.toString(),
+                executedQuoteQuantity: order.executedQuoteQuantity?.toString(),
+                agentTokenId: order.agentTokenId?.toString(),
             }));
 
             return {
@@ -520,8 +520,8 @@ export class AgentsService {
 
             const violations = await runQuery<any>(`
                 SELECT * FROM agent_policy_violations 
-                WHERE agent_token_id = $1 AND chain_id = $2
-                ORDER BY timestamp DESC
+                WHERE "agentTokenId" = $1 AND "chainId" = $2
+                ORDER BY "timestamp" DESC
                 LIMIT $3 OFFSET $4
             `, [agentTokenId, chainId, limit, offset]);
 
@@ -548,8 +548,8 @@ export class AgentsService {
 
             const circuitBreakers = await runQuery<any>(`
                 SELECT * FROM agent_circuit_breakers 
-                WHERE agent_token_id = $1 AND chain_id = $2
-                ORDER BY timestamp DESC
+                WHERE "agentTokenId" = $1 AND "chainId" = $2
+                ORDER BY "timestamp" DESC
                 LIMIT $3 OFFSET $4
             `, [agentTokenId, chainId, limit, offset]);
 
