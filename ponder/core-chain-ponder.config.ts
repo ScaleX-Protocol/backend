@@ -2,7 +2,7 @@
 import dotenv from "dotenv";
 import { factory } from "ponder";
 import { fallback, getAddress, http, parseAbiItem } from "viem";
-import { AgentRouterABI, BalanceManagerABI, IdentityRegistryABI, LendingManagerABI, MailboxABI, OracleABI, OrderBookABI, PolicyFactoryABI, PoolManagerABI, SCALEXRouterABI, SyntheticTokenFactoryABI, TokenRegistryABI } from "./abis";
+import { AgentRouterABI, BalanceManagerABI, IdentityRegistryABI, LendingManagerABI, MailboxABI, OracleABI, OrderBookABI, PolicyFactoryABI, PoolManagerABI, PricePredictionABI, SCALEXRouterABI, SyntheticTokenFactoryABI, TokenRegistryABI } from "./abis";
 
 dotenv.config({ path: ".env.core-chain" });
 
@@ -155,6 +155,18 @@ const contracts: any = {
 		network: {
 			coreDevnet: {
 				address: getAddress((process.env.POLICYFACTORY_CONTRACT_SCALEX_CORE_DEVNET_ADDRESS as `0x${string}`) || default_address),
+				startBlock: Number(process.env.SCALEX_CORE_DEVNET_START_BLOCK) || 0,
+				endBlock: Number(process.env.SCALEX_CORE_DEVNET_END_BLOCK) || undefined,
+			},
+		},
+	},
+
+	// PricePrediction - Yield-bearing binary prediction markets (Phase 6)
+	PricePrediction: {
+		abi: PricePredictionABI || [],
+		network: {
+			coreDevnet: {
+				address: getAddress((process.env.PRICE_PREDICTION_CONTRACT_ADDRESS as `0x${string}`) || default_address),
 				startBlock: Number(process.env.SCALEX_CORE_DEVNET_START_BLOCK) || 0,
 				endBlock: Number(process.env.SCALEX_CORE_DEVNET_END_BLOCK) || undefined,
 			},

@@ -38,7 +38,10 @@ import schema, {
 	tokenMappings,
 	trades,
 	unlockEvents,
-	withdrawals
+	withdrawals,
+	predictionMarkets,
+	predictionPositions,
+	predictionEvents
 } from "ponder:schema";
 import { createPublicClient, http } from "viem";
 import { base, baseSepolia, mainnet, sepolia } from "viem/chains";
@@ -4391,6 +4394,160 @@ function calculateAccruedBorrowInterest(
 	const scaledRate = BigInt(Math.round(borrowRateBP * Number(PRECISION_MULTIPLIER)));
 	return (borrowed * scaledRate * BigInt(timeDelta)) / (BigInt(SECONDS_PER_YEAR) * BigInt(BASIS_POINTS) * PRECISION_MULTIPLIER);
 }
+
+// =============================================================================
+// PricePrediction API Routes (Phase 6 — Yield-Bearing Binary Prediction Markets)
+// =============================================================================
+
+// GET /api/predictions/markets — list all markets, optionally filtered by status
+app.get("/api/predictions/markets", async (c) => {
+	try {
+		const chainId = Number(c.req.query("chainId")) || undefined;
+		const status = c.req.query("status") !== undefined ? Number(c.req.query("status")) : undefined;
+		const limit = Math.min(Number(c.req.query("limit") || "50"), 250);
+
+		let query = db.select().from(predictionMarkets);
+		const conditions: any[] = [];
+
+		if (chainId !== undefined) conditions.push(eq(predictionMarkets.chainId, chainId));
+		if (status !== undefined) conditions.push(eq(predictionMarkets.status, status));
+
+		if (conditions.length > 0) {
+			query = query.where(and(...conditions)) as any;
+		}
+
+		const markets = await query
+			.orderBy(desc(predictionMarkets.startTime))
+			.limit(limit)
+			.execute();
+
+		return c.json({
+			markets: markets.map(m => ({
+				...m,
+				marketId: m.marketId.toString(),
+				strikePrice: m.strikePrice.toString(),
+				openingTwap: m.openingTwap.toString(),
+				totalUp: m.totalUp.toString(),
+				totalDown: m.totalDown.toString(),
+				protocolFee: m.protocolFee?.toString() ?? null,
+			})),
+			count: markets.length,
+		});
+	} catch (error) {
+		return c.json({ error: "Failed to fetch prediction markets" }, 500);
+	}
+});
+
+// GET /api/predictions/markets/:marketId — single market detail
+app.get("/api/predictions/markets/:marketId", async (c) => {
+	try {
+		const chainId = Number(c.req.query("chainId")) || 84532;
+		const marketIdParam = c.req.param("marketId");
+		const id = `${chainId}-${marketIdParam}`;
+
+		const market = await db.find(predictionMarkets, { id });
+		if (!market) {
+			return c.json({ error: "Market not found" }, 404);
+		}
+
+		// Fetch participants count
+		const positions = await db
+			.select()
+			.from(predictionPositions)
+			.where(
+				and(
+					eq(predictionPositions.chainId, chainId),
+					eq(predictionPositions.marketId, BigInt(marketIdParam))
+				)
+			)
+			.execute();
+
+		return c.json({
+			market: {
+				...market,
+				marketId: market.marketId.toString(),
+				strikePrice: market.strikePrice.toString(),
+				openingTwap: market.openingTwap.toString(),
+				totalUp: market.totalUp.toString(),
+				totalDown: market.totalDown.toString(),
+				protocolFee: market.protocolFee?.toString() ?? null,
+			},
+			participantCount: positions.length,
+		});
+	} catch (error) {
+		return c.json({ error: "Failed to fetch market" }, 500);
+	}
+});
+
+// GET /api/predictions/positions/:userAddress — all positions for a user
+app.get("/api/predictions/positions/:userAddress", async (c) => {
+	try {
+		const userAddress = c.req.param("userAddress").toLowerCase();
+		const chainId = Number(c.req.query("chainId")) || undefined;
+		const onlyActive = c.req.query("onlyActive") === "true";
+		const limit = Math.min(Number(c.req.query("limit") || "50"), 250);
+
+		const conditions: any[] = [eq(predictionPositions.userAddress, userAddress)];
+		if (chainId !== undefined) conditions.push(eq(predictionPositions.chainId, chainId));
+		if (onlyActive) conditions.push(eq(predictionPositions.claimed, false));
+
+		const positions = await db
+			.select()
+			.from(predictionPositions)
+			.where(and(...conditions))
+			.orderBy(desc(predictionPositions.lastUpdated))
+			.limit(limit)
+			.execute();
+
+		return c.json({
+			positions: positions.map(p => ({
+				...p,
+				marketId: p.marketId.toString(),
+				stakeUp: p.stakeUp.toString(),
+				stakeDown: p.stakeDown.toString(),
+				payout: p.payout?.toString() ?? null,
+			})),
+			count: positions.length,
+		});
+	} catch (error) {
+		return c.json({ error: "Failed to fetch positions" }, 500);
+	}
+});
+
+// GET /api/predictions/events/:marketId — event history for a market
+app.get("/api/predictions/events/:marketId", async (c) => {
+	try {
+		const chainId = Number(c.req.query("chainId")) || 84532;
+		const marketIdParam = c.req.param("marketId");
+		const limit = Math.min(Number(c.req.query("limit") || "50"), 250);
+
+		const events = await db
+			.select()
+			.from(predictionEvents)
+			.where(
+				and(
+					eq(predictionEvents.chainId, chainId),
+					eq(predictionEvents.marketId, BigInt(marketIdParam))
+				)
+			)
+			.orderBy(desc(predictionEvents.timestamp))
+			.limit(limit)
+			.execute();
+
+		return c.json({
+			events: events.map(e => ({
+				...e,
+				marketId: e.marketId.toString(),
+				amount: e.amount?.toString() ?? null,
+				payout: e.payout?.toString() ?? null,
+				blockNumber: e.blockNumber.toString(),
+			})),
+			count: events.length,
+		});
+	} catch (error) {
+		return c.json({ error: "Failed to fetch prediction events" }, 500);
+	}
+});
 
 // Initialize services on startup
 initializeServices();

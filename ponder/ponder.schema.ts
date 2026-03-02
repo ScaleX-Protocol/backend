@@ -1510,3 +1510,84 @@ export const agentStatsRelations = relations(agentStats, ({ one }) => ({
 		references: [agentInstallations.owner, agentInstallations.agentTokenId, agentInstallations.chainId],
 	}),
 }));
+
+// =============================================================================
+// PricePrediction Tables (Phase 6 — Yield-Bearing Binary Prediction Markets)
+// =============================================================================
+
+export const predictionMarkets = onchainTable(
+	"prediction_markets",
+	(t: any) => ({
+		id: t.text().primaryKey(),            // `${chainId}-${marketId}`
+		chainId: t.integer().notNull(),
+		marketId: t.bigint().notNull(),
+		marketType: t.integer().notNull(),    // 0 = Directional, 1 = Absolute
+		status: t.integer().notNull(),        // 0 = Open, 1 = SettlementRequested, 2 = Settled, 3 = Cancelled
+		baseToken: t.hex().notNull(),
+		strikePrice: t.bigint().notNull(),
+		openingTwap: t.bigint().notNull(),
+		startTime: t.integer().notNull(),
+		endTime: t.integer().notNull(),
+		totalUp: t.bigint().notNull(),
+		totalDown: t.bigint().notNull(),
+		outcome: t.boolean(),                 // null until settled
+		protocolFee: t.bigint(),              // set at settlement
+		transactionId: t.text(),
+	}),
+	(table: any) => ({
+		chainIdIdx: index().on(table.chainId),
+		statusIdx: index().on(table.status),
+		baseTokenIdx: index().on(table.baseToken),
+		endTimeIdx: index().on(table.endTime),
+		chainStatusIdx: index().on(table.chainId, table.status),
+	})
+);
+
+export const predictionPositions = onchainTable(
+	"prediction_positions",
+	(t: any) => ({
+		id: t.text().primaryKey(),            // `${chainId}-${marketId}-${userAddress}`
+		chainId: t.integer().notNull(),
+		marketId: t.bigint().notNull(),
+		userAddress: t.text().notNull(),
+		stakeUp: t.bigint().notNull(),
+		stakeDown: t.bigint().notNull(),
+		claimed: t.boolean().notNull(),
+		payout: t.bigint(),                   // set when claimed
+		lastUpdated: t.integer().notNull(),
+	}),
+	(table: any) => ({
+		marketIdx: index().on(table.marketId),
+		userIdx: index().on(table.userAddress),
+		chainIdIdx: index().on(table.chainId),
+		userChainIdx: index().on(table.userAddress, table.chainId),
+		marketUserIdx: index().on(table.marketId, table.userAddress),
+	})
+);
+
+export const predictionEvents = onchainTable(
+	"prediction_events",
+	(t: any) => ({
+		id: t.text().primaryKey(),            // `${txHash}-${eventType}-${marketId}`
+		chainId: t.integer().notNull(),
+		marketId: t.bigint().notNull(),
+		eventType: t.varchar().notNull(),     // MarketCreated | Predicted | SettlementRequested | MarketSettled | Claimed | MarketCancelled
+		userAddress: t.text(),               // null for non-user events
+		amount: t.bigint(),
+		predictedUp: t.boolean(),
+		outcome: t.boolean(),
+		payout: t.bigint(),
+		timestamp: t.integer().notNull(),
+		blockNumber: t.bigint().notNull(),
+		transactionId: t.text().notNull(),
+	}),
+	(table: any) => ({
+		marketIdx: index().on(table.marketId),
+		userIdx: index().on(table.userAddress),
+		eventTypeIdx: index().on(table.eventType),
+		chainIdIdx: index().on(table.chainId),
+		timestampIdx: index().on(table.timestamp),
+		marketEventTypeIdx: index().on(table.marketId, table.eventType),
+		userTimestampIdx: index().on(table.userAddress, table.timestamp),
+	})
+);

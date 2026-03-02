@@ -8,6 +8,7 @@ import * as lendingManagerHandler from "../src/handlers/lendingManagerHandler";
 import * as oracleHandler from "../src/handlers/oracleHandler";
 import * as agentRouterHandler from "../src/handlers/agentRouterHandler";
 import * as identityRegistryHandler from "../src/handlers/identityRegistryHandler";
+import * as pricePredictionHandler from "../src/handlers/pricePredictionHandler";
 import { PonderEvents } from "../src/types/ponder-core-chain";
 import { withEventValidator } from "../src/utils/eventValidator";
 
@@ -76,7 +77,16 @@ ponder.on(PonderEvents.AGENT_COLLATERAL_WITHDRAWN, withEventValidator(agentRoute
 ponder.on(PonderEvents.AGENT_REGISTERED, withEventValidator(identityRegistryHandler.handleRegistered, 'agentRegistered'));
 ponder.on(PonderEvents.AGENT_URI_UPDATED, withEventValidator(identityRegistryHandler.handleURIUpdated, 'agentURIUpdated'));
 
+// PricePrediction Events - Yield-Bearing Binary Prediction Markets (Phase 6)
+ponder.on(PonderEvents.PREDICTION_MARKET_CREATED, withEventValidator(pricePredictionHandler.handleMarketCreated, 'marketCreated'));
+ponder.on(PonderEvents.PREDICTION_PREDICTED, withEventValidator(pricePredictionHandler.handlePredicted, 'predicted'));
+ponder.on(PonderEvents.PREDICTION_SETTLEMENT_REQUESTED, withEventValidator(pricePredictionHandler.handleSettlementRequested, 'settlementRequested'));
+ponder.on(PonderEvents.PREDICTION_MARKET_SETTLED, withEventValidator(pricePredictionHandler.handleMarketSettled, 'marketSettled'));
+ponder.on(PonderEvents.PREDICTION_CLAIMED, withEventValidator(pricePredictionHandler.handleClaimed, 'claimed'));
+ponder.on(PonderEvents.PREDICTION_MARKET_CANCELLED, withEventValidator(pricePredictionHandler.handleMarketCancelled, 'marketCancelled'));
+
 console.log("✅ Core Chain indexer initialized - Chain ID: 84532");
 console.log("📊 Monitoring: OrderBook, PoolManager, Hyperlane cross-chain events, TokenRegistry mappings");
 console.log("🏦 Monitoring: LendingManager and Oracle events for lending protocol data");
 console.log("🤖 Monitoring: AI Agent system (ERC-8004) - identity registry, installations, orders, lending, violations");
+console.log("🎲 Monitoring: PricePrediction - yield-bearing binary prediction markets (Phase 6)");;

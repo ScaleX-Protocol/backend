@@ -16,3 +16,4 @@ export { SCALEXRouterABI } from './ScaleXRouter';
 export { AgentRouterABI } from './AgentRouter';
 export { PolicyFactoryABI } from './PolicyFactory';
 export { IdentityRegistryABI } from './IdentityRegistry';
+export { PricePredictionABI } from './PricePrediction';

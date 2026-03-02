@@ -102,6 +102,14 @@ export const PonderEvents = {
 	// IdentityRegistry Events (ERC-8004 Agent Identity)
 	AGENT_REGISTERED: ponderEvent("IdentityRegistry:Registered"),
 	AGENT_URI_UPDATED: ponderEvent("IdentityRegistry:URIUpdated"),
+
+	// PricePrediction Events (Phase 6 — Yield-Bearing Binary Markets)
+	PREDICTION_MARKET_CREATED: ponderEvent("PricePrediction:MarketCreated"),
+	PREDICTION_PREDICTED: ponderEvent("PricePrediction:Predicted"),
+	PREDICTION_SETTLEMENT_REQUESTED: ponderEvent("PricePrediction:SettlementRequested"),
+	PREDICTION_MARKET_SETTLED: ponderEvent("PricePrediction:MarketSettled"),
+	PREDICTION_CLAIMED: ponderEvent("PricePrediction:Claimed"),
+	PREDICTION_MARKET_CANCELLED: ponderEvent("PricePrediction:MarketCancelled"),
 };
 
 /**
