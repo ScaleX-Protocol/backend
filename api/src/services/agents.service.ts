@@ -55,7 +55,15 @@ export class AgentsService {
                 return { success: true, data: [], count: 0, pagination: { limit, offset } };
             }
 
-            const agentTokenIds = agents.map(a => a.tokenId);
+            const agentTokenIds = agents.map(a => a.tokenId).filter(id => id && id.trim() !== '');
+            
+            // Early return if no agents
+            if (agentTokenIds.length === 0) {
+                return { success: true, data: [], count: 0, pagination: { limit, offset } };
+            }
+
+            const agentIdArray = `{${agentTokenIds.join(',')}}`;
+            
             const installations = await runQuery<{ agent_token_id: string; total_users: number; active_users: number; first_installed_at: number | null }>(`
                 SELECT 
                     agent_token_id::text,
@@ -65,7 +73,7 @@ export class AgentsService {
                 FROM agent_installations
                 WHERE chain_id = $1 AND agent_token_id = ANY($2::numeric[])
                 GROUP BY agent_token_id
-            `, [chainId, `{${agentTokenIds.join(',')}}`]);
+            `, [chainId, agentIdArray]);
 
             const activityStats = await runQuery<{ agent_token_id: string; last_activity_at: number | null; total_trading_volume: string }>(`
                 SELECT 
@@ -75,14 +83,14 @@ export class AgentsService {
                 FROM agent_stats
                 WHERE chain_id = $1 AND agent_token_id = ANY($2::numeric[])
                 GROUP BY agent_token_id
-            `, [chainId, `{${agentTokenIds.join(',')}}`]);
+            `, [chainId, agentIdArray]);
 
             const orderCounts = await runQuery<AgentOrdersRow>(`
                 SELECT agent_token_id::text, COUNT(*)::int as order_count
                 FROM orders
                 WHERE chain_id = $1 AND agent_token_id = ANY($2::numeric[]) AND agent_token_id > 0
                 GROUP BY agent_token_id
-            `, [chainId, `{${agentTokenIds.join(',')}}`]);
+            `, [chainId, agentIdArray]);
 
             const installationsMap = new Map(installations.map(i => [i.agent_token_id, i]));
             const activityStatsMap = new Map(activityStats.map(a => [a.agent_token_id, a]));
