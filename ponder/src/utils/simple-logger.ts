@@ -10,11 +10,19 @@ const LOG_LEVELS = {
   TRACE: 5
 } as const;
 
+const LOG_LEVEL_MAP: Record<string, number> = {
+  silent: LOG_LEVELS.SILENT,
+  error: LOG_LEVELS.ERROR,
+  warn: LOG_LEVELS.WARN,
+  warning: LOG_LEVELS.WARN,
+  info: LOG_LEVELS.INFO,
+  debug: LOG_LEVELS.DEBUG,
+  trace: LOG_LEVELS.TRACE,
+};
+
 const currentLogLevel = process.env.NODE_ENV === 'production'
   ? LOG_LEVELS.INFO
-  : process.env.LOG_LEVEL === 'debug'
-    ? LOG_LEVELS.DEBUG
-    : LOG_LEVELS.INFO;
+  : LOG_LEVEL_MAP[process.env.LOG_LEVEL?.toLowerCase() ?? 'info'] ?? LOG_LEVELS.INFO;
 
 export class SimpleLogger {
   private moduleName: string;

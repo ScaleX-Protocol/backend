@@ -3,6 +3,7 @@ import { updateIndexerStatus } from "@/utils/indexerStatus";
 import { currencies, tokenMappings } from "ponder:schema";
 import { ERC20ABI } from "../../abis/ERC20";
 import { createLogger, LogLabel, log, LogLevel } from "../utils/logger";
+import { setSyntheticCurrency } from "../utils/syntheticCurrencyCache";
 
 // Create logger instance for this file
 const logger = createLogger('tokenRegistryHandler.ts');
@@ -114,6 +115,9 @@ async function insertCurrency(context: any, chainId: number, address: string, da
 				registeredAt: data.registeredAt || Math.floor(Date.now() / 1000),
 			});
 
+		if (data.tokenType === "synthetic" && data.underlyingTokenAddress) {
+			setSyntheticCurrency(chainId, address, data.underlyingTokenAddress);
+		}
 		logger.info(`Recorded currency: ${data.symbol} (${address}) on chain ${chainId} [${data.tokenType || "underlying"}]`, LogLabel.DATABASE, 'insertCurrency', { symbol: data.symbol, address, chainId, tokenType: data.tokenType });
 	} catch (error) {
 		logger.error(`Failed to record currency ${data.symbol}`, LogLabel.DATABASE, 'insertCurrency', { symbol: data.symbol, error: error instanceof Error ? error.message : String(error) });

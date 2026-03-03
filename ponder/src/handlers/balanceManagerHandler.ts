@@ -4,6 +4,7 @@ import { getAddress } from "viem";
 import { createLogger, LogLabel } from "../utils/logger";
 import { updateIndexerStatus } from "@/utils/indexerStatus";
 import { eq, and } from "ponder";
+import { getSyntheticUnderlyingToken } from "../utils/syntheticCurrencyCache";
 
 dotenv.config();
 
@@ -65,65 +66,43 @@ async function recordLendingTransferEvents(
 	executor?: string
 ) {
 	try {
-		// Check if the currency is a synthetic token by looking up in currencies table
-		// Synthetic tokens have tokenType = "synthetic" and underlyingTokenAddress set
-		const currencyLower = currency.toLowerCase() as `0x${string}`;
+		// Cache lookup — zero DB cost (populated by tokenRegistryHandler on registration)
+		const underlyingToken = getSyntheticUnderlyingToken(chainId, currency);
+		if (!underlyingToken) return;
 
-		const syntheticCurrency = await db.sql
-			.select()
-			.from(currencies)
-			.where(
-				and(
-					eq(currencies.chainId, chainId),
-					eq(currencies.address, currencyLower),
-					eq(currencies.tokenType, "synthetic")
-				)
-			)
-			.limit(1);
-
-		console.log(`[recordLendingTransferEvents] currency: ${currency}, found: ${syntheticCurrency?.length > 0}, sender: ${sender}, receiver: ${receiver}, amount: ${amount}`);
-
-		// If this is not a synthetic token, skip lending event recording
-		if (!syntheticCurrency || syntheticCurrency.length === 0 || !syntheticCurrency[0].underlyingTokenAddress) {
-			console.log(`[recordLendingTransferEvents] SKIPPED - not synthetic or no underlying token`);
-			return;
-		}
-
-		const underlyingToken = syntheticCurrency[0].underlyingTokenAddress;
 		const netAmount = amount - feeAmount;
 
-		// Record TRANSFER_OUT event for sender (reduces their supply)
-		// Include logIndex in ID to handle multiple transfers in same transaction
+		// Insert both events in parallel
 		const transferOutEventId = `${txHash}-transfer-out-${sender}-${logIndex}`;
-		await db.insert(lendingEvents).values({
-			id: transferOutEventId,
-			chainId,
-			userAddress: sender,
-			action: "TRANSFER_OUT",
-			token: underlyingToken, // Use underlying token for consistency with other lending events
-			amount: amount, // Full amount transferred out
-			timestamp,
-			transactionId: txHash,
-			blockNumber,
-			agentTokenId: agentTokenId ?? BigInt(0),
-			executor: executor ?? null,
-		}).onConflictDoNothing();
-
-		// Record TRANSFER_IN event for receiver (increases their supply)
 		const transferInEventId = `${txHash}-transfer-in-${receiver}-${logIndex}`;
-		await db.insert(lendingEvents).values({
-			id: transferInEventId,
-			chainId,
-			userAddress: receiver,
-			action: "TRANSFER_IN",
-			token: underlyingToken, // Use underlying token for consistency
-			amount: netAmount, // Amount after fee
-			timestamp,
-			transactionId: txHash,
-			blockNumber,
-			agentTokenId: agentTokenId ?? BigInt(0),
-			executor: executor ?? null,
-		}).onConflictDoNothing();
+		await Promise.all([
+			db.insert(lendingEvents).values({
+				id: transferOutEventId,
+				chainId,
+				userAddress: sender,
+				action: "TRANSFER_OUT",
+				token: underlyingToken,
+				amount: amount,
+				timestamp,
+				transactionId: txHash,
+				blockNumber,
+				agentTokenId: agentTokenId ?? BigInt(0),
+				executor: executor ?? null,
+			}).onConflictDoNothing(),
+			db.insert(lendingEvents).values({
+				id: transferInEventId,
+				chainId,
+				userAddress: receiver,
+				action: "TRANSFER_IN",
+				token: underlyingToken,
+				amount: netAmount,
+				timestamp,
+				transactionId: txHash,
+				blockNumber,
+				agentTokenId: agentTokenId ?? BigInt(0),
+				executor: executor ?? null,
+			}).onConflictDoNothing(),
+		]);
 
 		logger.info(`Recorded lending transfer events: ${sender} -> ${receiver}`, LogLabel.EVENT_HANDLER, 'recordLendingTransferEvents', {
 			sender,
@@ -212,8 +191,6 @@ export async function handleTransferFrom({ event, context }: any) {
 	const currency = getAddress(fromId(event.args.id));
 	const timestamp = Number(event.block.timestamp);
 
-	console.log(`🔄 [TransferFrom] ${event.args.sender} -> ${event.args.receiver}, currency: ${currency}, amount: ${event.args.amount}`);
-
 	// Record lending transfer events for synthetic tokens
 	await recordLendingTransferEvents(
 		db,
@@ -243,8 +220,6 @@ export async function handleTransferLockedFrom({ event, context }: any) {
 	const chainId = context.network.chainId;
 	const currency = getAddress(fromId(event.args.id));
 	const timestamp = Number(event.block.timestamp);
-
-	console.log(`🔒 [TransferLockedFrom] ${event.args.sender} -> ${event.args.receiver}, currency: ${currency}, amount: ${event.args.amount}`);
 
 	// Record lending transfer events for synthetic tokens
 	await recordLendingTransferEvents(
