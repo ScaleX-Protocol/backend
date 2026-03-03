@@ -167,7 +167,7 @@ const contracts: any = {
 		network: {
 			coreDevnet: {
 				address: getAddress((process.env.PRICE_PREDICTION_CONTRACT_ADDRESS as `0x${string}`) || default_address),
-				startBlock: Number(process.env.PRICE_PREDICTION_START_BLOCK) || Number(process.env.SCALEX_CORE_DEVNET_START_BLOCK) || 0,
+				startBlock: Number(process.env.SCALEX_CORE_DEVNET_START_BLOCK) || 0,
 				endBlock: Number(process.env.SCALEX_CORE_DEVNET_END_BLOCK) || undefined,
 			},
 		},
