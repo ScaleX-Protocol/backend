@@ -41,7 +41,7 @@ import schema, {
 	withdrawals,
 	predictionMarkets,
 	predictionPositions,
-	predictionEvents
+	predictionEvents,
 } from "ponder:schema";
 import { createPublicClient, http } from "viem";
 import { base, baseSepolia, mainnet, sepolia } from "viem/chains";
@@ -57,24 +57,24 @@ function formatAmount(rawAmount: string | bigint, decimals: number): string {
 
 	// For very small amounts (< 0.01), show more precision
 	if (amount < 0.01 && amount > 0) {
-		return amount.toLocaleString('en-US', {
+		return amount.toLocaleString("en-US", {
 			minimumFractionDigits: 6,
-			maximumFractionDigits: 6
+			maximumFractionDigits: 6,
 		});
 	}
 
 	// For normal amounts, show 2-6 decimal places
-	return amount.toLocaleString('en-US', {
+	return amount.toLocaleString("en-US", {
 		minimumFractionDigits: 2,
-		maximumFractionDigits: 6
+		maximumFractionDigits: 6,
 	});
 }
 
 function formatUSD(value: string | bigint, decimals: number): string {
 	const amount = Number(value) / Math.pow(10, decimals);
-	return `$${amount.toLocaleString('en-US', {
+	return `$${amount.toLocaleString("en-US", {
 		minimumFractionDigits: 2,
-		maximumFractionDigits: 2
+		maximumFractionDigits: 2,
 	})}`;
 }
 
@@ -86,7 +86,7 @@ function formatAPY(apyDecimal: string | number): string {
 
 function formatSymbol(symbol: string): string {
 	// Convert synthetic token symbols to clean underlying symbols
-	if (symbol.startsWith('gs')) {
+	if (symbol.startsWith("gs")) {
 		return symbol.substring(2);
 	}
 	return symbol;
@@ -145,19 +145,27 @@ function serializePolicy(p: any) {
 
 // Format USD with price conversion
 // Price decimals depend on the quote currency decimals in the pool
-function formatUSDWithPrice(value: string | bigint, tokenDecimals: number, price: number, quoteDecimals: number): string {
+function formatUSDWithPrice(
+	value: string | bigint,
+	tokenDecimals: number,
+	price: number,
+	quoteDecimals: number
+): string {
 	const amount = Number(value) / Math.pow(10, tokenDecimals);
 	const usdValue = amount * (price / Math.pow(10, quoteDecimals));
-	return `$${usdValue.toLocaleString('en-US', {
+	return `$${usdValue.toLocaleString("en-US", {
 		minimumFractionDigits: 2,
-		maximumFractionDigits: 2
+		maximumFractionDigits: 2,
 	})}`;
 }
 
 // Helper function to fetch token prices from pools
 // Maps underlying tokens (WETH) to their synthetic counterparts (gsWETH) to find pool prices
-async function getTokenPricesFromTrades(tokenAddresses: string[], chainId: number): Promise<Map<string, { price: bigint, quoteDecimals: number }>> {
-	const priceMap = new Map<string, { price: bigint, quoteDecimals: number }>();
+async function getTokenPricesFromTrades(
+	tokenAddresses: string[],
+	chainId: number
+): Promise<Map<string, { price: bigint; quoteDecimals: number }>> {
+	const priceMap = new Map<string, { price: bigint; quoteDecimals: number }>();
 
 	if (tokenAddresses.length === 0) return priceMap;
 
@@ -183,10 +191,7 @@ async function getTokenPricesFromTrades(tokenAddresses: string[], chainId: numbe
 				addressToDecimals.set(currency.address.toLowerCase(), currency.decimals);
 			}
 			if (currency.tokenType === "synthetic" && currency.underlyingAddress) {
-				underlyingToSynthetic.set(
-					currency.underlyingAddress.toLowerCase(),
-					currency.address.toLowerCase()
-				);
+				underlyingToSynthetic.set(currency.underlyingAddress.toLowerCase(), currency.address.toLowerCase());
 			}
 		}
 
@@ -211,13 +216,14 @@ async function getTokenPricesFromTrades(tokenAddresses: string[], chainId: numbe
 				const syntheticBaseAddr = pool.baseCurrency.toLowerCase();
 
 				// Find the underlying token for this synthetic base currency
-				const underlyingAddr = [...underlyingToSynthetic.entries()]
-					.find(([_, synthetic]) => synthetic === syntheticBaseAddr)?.[0];
+				const underlyingAddr = [...underlyingToSynthetic.entries()].find(
+					([_, synthetic]) => synthetic === syntheticBaseAddr
+				)?.[0];
 
 				if (underlyingAddr && !priceMap.has(underlyingAddr)) {
 					priceMap.set(underlyingAddr, {
 						price: pool.price,
-						quoteDecimals: quoteDecimals
+						quoteDecimals: quoteDecimals,
 					});
 				}
 			}
@@ -237,7 +243,7 @@ async function getTokenPricesFromTrades(tokenAddresses: string[], chainId: numbe
 						// Stablecoin = $1 (price in its own decimals)
 						priceMap.set(tokenLower, {
 							price: BigInt(Math.pow(10, quoteDecimals)),
-							quoteDecimals: quoteDecimals
+							quoteDecimals: quoteDecimals,
 						});
 					}
 				}
@@ -265,10 +271,12 @@ async function getMultipleTokenInfo(tokenAddresses: string[], chainId?: number) 
 				decimals: currencies.decimals,
 			})
 			.from(currencies)
-			.where(and(
-				inArray(currencies.address, tokenAddresses as `0x${string}`[]),
-				chainId ? eq(currencies.chainId, chainId) : sql`1=1`
-			))
+			.where(
+				and(
+					inArray(currencies.address, tokenAddresses as `0x${string}`[]),
+					chainId ? eq(currencies.chainId, chainId) : sql`1=1`
+				)
+			)
 			.execute();
 
 		tokenInfos.forEach(info => {
@@ -304,7 +312,6 @@ const erc20BalanceOfABI = [
 		type: "function",
 	},
 ] as const;
-
 
 // Helper function to create or get Viem client for a chain
 function getViemClient() {
@@ -346,7 +353,11 @@ function getViemClient() {
 }
 
 // Helper function to fetch ERC20 balance using Viem
-async function getERC20Balance(userAddress: `0x${string}`, tokenAddress: `0x${string}`, chainId?: number): Promise<string> {
+async function getERC20Balance(
+	userAddress: `0x${string}`,
+	tokenAddress: `0x${string}`,
+	chainId?: number
+): Promise<string> {
 	try {
 		const client = getViemClient();
 		const balance = await client.readContract({
@@ -427,11 +438,7 @@ function calculateBorrowRate(
  * Calculate supply rate from borrow rate
  * supplyRate = (borrowRate * utilizationRate * (1 - reserveFactor)) / BASIS_POINTS
  */
-function calculateSupplyRate(
-	borrowRate: number,
-	utilizationRate: number,
-	reserveFactor: number
-): number {
+function calculateSupplyRate(borrowRate: number, utilizationRate: number, reserveFactor: number): number {
 	if (utilizationRate === 0) return 0;
 	return (borrowRate * utilizationRate * (BASIS_POINTS - reserveFactor)) / (BASIS_POINTS * BASIS_POINTS);
 }
@@ -440,11 +447,7 @@ function calculateSupplyRate(
  * Calculate projected interest accrual over time period
  * interest = (principal * rate * timeDelta) / (SECONDS_PER_YEAR * BASIS_POINTS)
  */
-function calculateProjectedInterest(
-	principal: bigint,
-	rate: number,
-	timeInSeconds: number
-): bigint {
+function calculateProjectedInterest(principal: bigint, rate: number, timeInSeconds: number): bigint {
 	if (principal === 0n || rate === 0 || timeInSeconds <= 0) return 0n;
 	// Round rate to integer since it can be a decimal from calculateSupplyRate
 	const roundedRate = Math.round(rate);
@@ -518,40 +521,40 @@ async function getRealTimeLendingRates(
 		projections: {
 			hourly: {
 				borrowInterest: calculateProjectedInterest(totalBorrowed, borrowRateBP, 3600), // 1 hour
-				supplyEarnings: calculateProjectedInterest(totalLiquidity, supplyRateBP, 3600)
+				supplyEarnings: calculateProjectedInterest(totalLiquidity, supplyRateBP, 3600),
 			},
 			daily: {
 				borrowInterest: calculateProjectedInterest(totalBorrowed, borrowRateBP, 86400), // 1 day
-				supplyEarnings: calculateProjectedInterest(totalLiquidity, supplyRateBP, 86400)
+				supplyEarnings: calculateProjectedInterest(totalLiquidity, supplyRateBP, 86400),
 			},
 			weekly: {
 				borrowInterest: calculateProjectedInterest(totalBorrowed, borrowRateBP, 604800), // 1 week
-				supplyEarnings: calculateProjectedInterest(totalLiquidity, supplyRateBP, 604800)
+				supplyEarnings: calculateProjectedInterest(totalLiquidity, supplyRateBP, 604800),
 			},
 			monthly: {
 				borrowInterest: calculateProjectedInterest(totalBorrowed, borrowRateBP, 2592000), // 30 days
-				supplyEarnings: calculateProjectedInterest(totalLiquidity, supplyRateBP, 2592000)
+				supplyEarnings: calculateProjectedInterest(totalLiquidity, supplyRateBP, 2592000),
 			},
 			yearly: {
 				borrowInterest: calculateProjectedInterest(totalBorrowed, borrowRateBP, SECONDS_PER_YEAR), // 1 year
-				supplyEarnings: calculateProjectedInterest(totalLiquidity, supplyRateBP, SECONDS_PER_YEAR)
-			}
-		}
+				supplyEarnings: calculateProjectedInterest(totalLiquidity, supplyRateBP, SECONDS_PER_YEAR),
+			},
+		},
 	};
 }
 
 // Helper function to fetch lending rates from indexed data
-async function getIndexedLendingRates(tokenAddress: `0x${string}`, chainId?: number): Promise<{ supplyRate: number, borrowRate: number, utilizationRate: number }> {
+async function getIndexedLendingRates(
+	tokenAddress: `0x${string}`,
+	chainId?: number
+): Promise<{ supplyRate: number; borrowRate: number; utilizationRate: number }> {
 	try {
 		const targetChainId = chainId || Number(process.env.CHAIN_ID) || 84532;
 
 		const poolStats = await db
 			.select()
 			.from(poolLendingStats)
-			.where(and(
-				eq(poolLendingStats.token, tokenAddress),
-				eq(poolLendingStats.chainId, targetChainId)
-			))
+			.where(and(eq(poolLendingStats.token, tokenAddress), eq(poolLendingStats.chainId, targetChainId)))
 			.execute();
 
 		if (poolStats.length > 0) {
@@ -559,7 +562,7 @@ async function getIndexedLendingRates(tokenAddress: `0x${string}`, chainId?: num
 			return {
 				supplyRate: Number(stats.supplyRate || 0),
 				borrowRate: Number(stats.borrowRate || 0),
-				utilizationRate: Number(stats.utilizationRate || 0)
+				utilizationRate: Number(stats.utilizationRate || 0),
 			};
 		}
 
@@ -588,7 +591,7 @@ type BinanceKlineData = [
 	number, // Number of trades
 	string, // Taker buy base asset volume
 	string, // Taker buy quote asset volume
-	string, // Unused field (ignored)
+	string // Unused field (ignored)
 ];
 
 // Interface for our bucket data
@@ -673,11 +676,7 @@ app.get("/api/sync-status", async c => {
 		const latestBlock = await client.getBlock();
 
 		// Get indexer status (single row per chain)
-		const status = await db.select()
-			.from(indexerStatus)
-			.where(eq(indexerStatus.id, chainId))
-			.limit(1)
-			.execute();
+		const status = await db.select().from(indexerStatus).where(eq(indexerStatus.id, chainId)).limit(1).execute();
 
 		const indexerData = status[0];
 		const indexedTimestamp = indexerData?.latestBlockTimestamp ?? 0;
@@ -696,19 +695,17 @@ app.get("/api/sync-status", async c => {
 				timestamp: indexedTimestamp,
 				blockNumber: indexedBlockNumber,
 				time: indexedTimestamp > 0 ? new Date(indexedTimestamp * 1000).toISOString() : null,
-				lastEvent: lastEventName
+				lastEvent: lastEventName,
 			},
 			chain: {
 				timestamp: chainTimestamp,
 				blockNumber: chainBlockNumber,
-				time: new Date(chainTimestamp * 1000).toISOString()
+				time: new Date(chainTimestamp * 1000).toISOString(),
 			},
 			lag: {
 				seconds: lagSeconds,
 				blocks: lagBlocks,
-				formatted: lagSeconds > 60
-					? `${Math.floor(lagSeconds / 60)}m ${lagSeconds % 60}s`
-					: `${lagSeconds}s`
+				formatted: lagSeconds > 60 ? `${Math.floor(lagSeconds / 60)}m ${lagSeconds % 60}s` : `${lagSeconds}s`,
 			},
 			isSynced: lagSeconds < 30,
 			chainId: chainId,
@@ -716,8 +713,8 @@ app.get("/api/sync-status", async c => {
 				blockNumber: Number(e.blockNumber),
 				blockTimestamp: e.blockTimestamp,
 				eventName: e.eventName,
-				time: new Date(e.blockTimestamp * 1000).toISOString()
-			}))
+				time: new Date(e.blockTimestamp * 1000).toISOString(),
+			})),
 		});
 	} catch (error) {
 		return c.json({ error: `Failed to fetch sync status: ${error}` }, 500);
@@ -793,7 +790,7 @@ app.get("/api/depth", async c => {
 		const response = {
 			lastUpdateId: Date.now(),
 			bids: bids.map((o: any) => [o.price.toString(), (o.quantity - o.filled).toString()]),
-			asks: asks.map((o: any) => [o.price.toString(), (o.quantity - o.filled).toString()])
+			asks: asks.map((o: any) => [o.price.toString(), (o.quantity - o.filled).toString()]),
 		};
 
 		return c.json(response);
@@ -828,7 +825,7 @@ app.get("/api/depth-orders", async c => {
 			.select({
 				price: orders.price,
 				quantity: sql`SUM(${orders.quantity})`.as("quantity"),
-				filled: sql`SUM(${orders.filled})`.as("filled")
+				filled: sql`SUM(${orders.filled})`.as("filled"),
 			})
 			.from(orders)
 			.where(
@@ -850,7 +847,7 @@ app.get("/api/depth-orders", async c => {
 			.select({
 				price: orders.price,
 				quantity: sql`SUM(${orders.quantity})`.as("quantity"),
-				filled: sql`SUM(${orders.filled})`.as("filled")
+				filled: sql`SUM(${orders.filled})`.as("filled"),
 			})
 			.from(orders)
 			.where(
@@ -873,37 +870,41 @@ app.get("/api/depth-orders", async c => {
 
 		const [individualBids, individualAsks] = await Promise.all([
 			// Get all individual bid orders
-			bidPriceLevels.length > 0 ? db
-				.select()
-				.from(orders)
-				.where(
-					and(
-						gt(orders.price, 0),
-						gt(orders.quantity, 0),
-						eq(orders.poolId, poolId),
-						eq(orders.side, "Buy"),
-						or(eq(orders.status, "OPEN"), eq(orders.status, "PARTIALLY_FILLED")),
-						inArray(orders.price, bidPriceLevels)
-					)
-				)
-				.execute() : [],
+			bidPriceLevels.length > 0
+				? db
+						.select()
+						.from(orders)
+						.where(
+							and(
+								gt(orders.price, 0),
+								gt(orders.quantity, 0),
+								eq(orders.poolId, poolId),
+								eq(orders.side, "Buy"),
+								or(eq(orders.status, "OPEN"), eq(orders.status, "PARTIALLY_FILLED")),
+								inArray(orders.price, bidPriceLevels)
+							)
+						)
+						.execute()
+				: [],
 
 			// Get all individual ask orders
 			// Filter out invalid orders (price=0, quantity=0)
-			askPriceLevels.length > 0 ? db
-				.select()
-				.from(orders)
-				.where(
-					and(
-						gt(orders.price, 0),
-						gt(orders.quantity, 0),
-						eq(orders.poolId, poolId),
-						eq(orders.side, "Sell"),
-						or(eq(orders.status, "OPEN"), eq(orders.status, "PARTIALLY_FILLED")),
-						inArray(orders.price, askPriceLevels)
-					)
-				)
-				.execute() : []
+			askPriceLevels.length > 0
+				? db
+						.select()
+						.from(orders)
+						.where(
+							and(
+								gt(orders.price, 0),
+								gt(orders.quantity, 0),
+								eq(orders.poolId, poolId),
+								eq(orders.side, "Sell"),
+								or(eq(orders.status, "OPEN"), eq(orders.status, "PARTIALLY_FILLED")),
+								inArray(orders.price, askPriceLevels)
+							)
+						)
+						.execute()
+				: [],
 		]);
 
 		// Group individual orders by price
@@ -924,7 +925,7 @@ app.get("/api/depth-orders", async c => {
 				type: order.type,
 				timestamp: Number(order.timestamp) * 1000,
 				side: order.side.toLowerCase(),
-				tag: getWalletNameByAddress(order.userAddress)
+				tag: getWalletNameByAddress(order.userAddress),
 			});
 		});
 
@@ -945,7 +946,7 @@ app.get("/api/depth-orders", async c => {
 				type: order.type,
 				timestamp: Number(order.timestamp) * 1000,
 				side: order.side.toLowerCase(),
-				tag: getWalletNameByAddress(order.userAddress)
+				tag: getWalletNameByAddress(order.userAddress),
 			});
 		});
 
@@ -954,7 +955,7 @@ app.get("/api/depth-orders", async c => {
 			groupedOrders.map(group => ({
 				price: group.price.toString(),
 				quantity: (BigInt(group.quantity) - BigInt(group.filled)).toString(),
-				orders: ordersByPrice.get(group.price.toString()) || []
+				orders: ordersByPrice.get(group.price.toString()) || [],
 			}));
 
 		const formattedBids = formatGroupedOrders(bidOrders, bidsByPrice);
@@ -982,12 +983,16 @@ app.get("/api/depth-orders", async c => {
 			summary: {
 				totalBidOrders: totalBidOrders,
 				totalAskOrders: totalAskOrders,
-				totalBidQuantity: formattedBids.reduce((sum: bigint, level: any) => sum + BigInt(level.quantity), 0n).toString(),
-				totalAskQuantity: formattedAsks.reduce((sum: bigint, level: any) => sum + BigInt(level.quantity), 0n).toString(),
+				totalBidQuantity: formattedBids
+					.reduce((sum: bigint, level: any) => sum + BigInt(level.quantity), 0n)
+					.toString(),
+				totalAskQuantity: formattedAsks
+					.reduce((sum: bigint, level: any) => sum + BigInt(level.quantity), 0n)
+					.toString(),
 				highestBid: formattedBids.length > 0 ? formattedBids[0]?.price : "0",
 				lowestAsk: formattedAsks.length > 0 ? formattedAsks[0]?.price : "0",
-				walletSummary: walletSummary
-			}
+				walletSummary: walletSummary,
+			},
 		};
 
 		return c.json(response);
@@ -1022,9 +1027,7 @@ app.get("/api/trades", async c => {
 		let recentTrades;
 
 		if (user) {
-			const timeoutPromise = new Promise((_, reject) =>
-				setTimeout(() => reject(new Error('Query timeout')), 10000)
-			);
+			const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Query timeout")), 10000));
 
 			try {
 				const userTradesPromise = db
@@ -1034,10 +1037,7 @@ app.get("/api/trades", async c => {
 					})
 					.from(orderBookTrades)
 					.innerJoin(orders, eq(orderBookTrades.poolId, orders.poolId))
-					.where(and(
-						eq(orderBookTrades.poolId, poolId),
-						eq(orders.userAddress, user.toLowerCase())
-					))
+					.where(and(eq(orderBookTrades.poolId, poolId), eq(orders.userAddress, user.toLowerCase())))
 					.orderBy(desc(orderBookTrades.timestamp))
 					.limit(Math.min(limit, 100))
 					.execute();
@@ -1045,7 +1045,7 @@ app.get("/api/trades", async c => {
 				const userTrades = await Promise.race([userTradesPromise, timeoutPromise]);
 				recentTrades = (userTrades as any).map((result: any) => result.trade);
 			} catch (error: any) {
-				if (error?.message === 'Query timeout') {
+				if (error?.message === "Query timeout") {
 					return c.json({ error: "Query took too long, try reducing limit or use general trades endpoint" }, 408);
 				}
 				throw error;
@@ -1453,9 +1453,8 @@ app.get("/api/allOrders", async c => {
 			// For limit orders: both quantity and filled are in base currency
 			const origQty = isMarketOrder ? filledBase.toString() : order.quantity.toString();
 			const origQuoteOrderQty = isMarketOrder ? order.quantity.toString() : "0";
-			const cumulativeQuoteQty = filledBase > 0n && orderPrice > 0n
-				? ((filledBase * orderPrice) / BigInt(10 ** decimals)).toString()
-				: "0";
+			const cumulativeQuoteQty =
+				filledBase > 0n && orderPrice > 0n ? ((filledBase * orderPrice) / BigInt(10 ** decimals)).toString() : "0";
 
 			const agentInfo = agentOrderMap.get(order.orderId);
 
@@ -1579,9 +1578,8 @@ app.get("/api/openOrders", async c => {
 			// For limit orders: both quantity and filled are in base currency
 			const origQty = isMarketOrder ? filledBase.toString() : order.quantity.toString();
 			const origQuoteOrderQty = isMarketOrder ? order.quantity.toString() : "0";
-			const cumulativeQuoteQty = filledBase > 0n && orderPrice > 0n
-				? ((filledBase * orderPrice) / BigInt(10 ** decimals)).toString()
-				: "0";
+			const cumulativeQuoteQty =
+				filledBase > 0n && orderPrice > 0n ? ((filledBase * orderPrice) / BigInt(10 ** decimals)).toString() : "0";
 
 			const agentInfo = agentOrderMap.get(order.orderId);
 
@@ -1640,7 +1638,6 @@ app.get("/api/pairs", async c => {
 	}
 });
 
-
 app.get("/api/pairs", async c => {
 	try {
 		const allPools = await db.select().from(pools).execute();
@@ -1669,80 +1666,75 @@ app.get("/api/markets", async c => {
 	try {
 		const allPools = await db.select().from(pools).execute();
 
-		const pairs = await Promise.all(allPools.map(async pool => {
-			const symbol = pool.coin || "";
-			const symbolParts = symbol.split("/");
+		const pairs = await Promise.all(
+			allPools.map(async pool => {
+				const symbol = pool.coin || "";
+				const symbolParts = symbol.split("/");
 
-			// Calculate market age in seconds
-			const currentTime = Math.floor(Date.now() / 1000);
-			const marketAge = pool.timestamp ? currentTime - pool.timestamp : 0;
+				// Calculate market age in seconds
+				const currentTime = Math.floor(Date.now() / 1000);
+				const marketAge = pool.timestamp ? currentTime - pool.timestamp : 0;
 
-			// Calculate liquidity from order book depth (separate buy and sell sides)
-			let bidLiquidity = "0";
-			let askLiquidity = "0";
-			let totalLiquidityInQuote = "0";
+				// Calculate liquidity from order book depth (separate buy and sell sides)
+				let bidLiquidity = "0";
+				let askLiquidity = "0";
+				let totalLiquidityInQuote = "0";
 
-			if (pool.orderBook) {
-				// Get bid side liquidity (Buy orders - in base asset)
-				const bidData = await db
-					.select({
-						totalQuantity: sql`SUM(${orderBookDepth.quantity})`.as("totalQuantity")
-					})
-					.from(orderBookDepth)
-					.where(and(
-						eq(orderBookDepth.poolId, pool.orderBook as `0x${string}`),
-						eq(orderBookDepth.side, "Buy")
-					))
-					.execute();
+				if (pool.orderBook) {
+					// Get bid side liquidity (Buy orders - in base asset)
+					const bidData = await db
+						.select({
+							totalQuantity: sql`SUM(${orderBookDepth.quantity})`.as("totalQuantity"),
+						})
+						.from(orderBookDepth)
+						.where(and(eq(orderBookDepth.poolId, pool.orderBook as `0x${string}`), eq(orderBookDepth.side, "Buy")))
+						.execute();
 
-				bidLiquidity = bidData[0]?.totalQuantity?.toString() || "0";
+					bidLiquidity = bidData[0]?.totalQuantity?.toString() || "0";
 
-				// Get ask side liquidity (Sell orders - in base asset)
-				const askData = await db
-					.select({
-						totalQuantity: sql`SUM(${orderBookDepth.quantity})`.as("totalQuantity")
-					})
-					.from(orderBookDepth)
-					.where(and(
-						eq(orderBookDepth.poolId, pool.orderBook as `0x${string}`),
-						eq(orderBookDepth.side, "Sell")
-					))
-					.execute();
+					// Get ask side liquidity (Sell orders - in base asset)
+					const askData = await db
+						.select({
+							totalQuantity: sql`SUM(${orderBookDepth.quantity})`.as("totalQuantity"),
+						})
+						.from(orderBookDepth)
+						.where(and(eq(orderBookDepth.poolId, pool.orderBook as `0x${string}`), eq(orderBookDepth.side, "Sell")))
+						.execute();
 
-				askLiquidity = askData[0]?.totalQuantity?.toString() || "0";
+					askLiquidity = askData[0]?.totalQuantity?.toString() || "0";
 
-				// Calculate total liquidity in quote asset (sum of bid_quantity * price for buy orders)
-				const quoteLiquidityData = await db
-					.select({
-						totalValue: sql`SUM(${orderBookDepth.quantity} * ${orderBookDepth.price})`.as("totalValue")
-					})
-					.from(orderBookDepth)
-					.where(and(
-						eq(orderBookDepth.poolId, pool.orderBook as `0x${string}`),
-						eq(orderBookDepth.side, "Buy")
-					))
-					.execute();
+					// Calculate total liquidity in quote asset
+					// Buy side: quantity * price (quantity in base, result in quote)
+					// Sell side: quantity * price (quantity in base, result in quote)
+					const quoteLiquidityData = await db
+						.select({
+							totalValue: sql`SUM(${orderBookDepth.quantity} * ${orderBookDepth.price})`.as("totalValue"),
+						})
+						.from(orderBookDepth)
+						.where(eq(orderBookDepth.poolId, pool.orderBook as `0x${string}`))
+						.execute();
 
-				totalLiquidityInQuote = quoteLiquidityData[0]?.totalValue?.toString() || "0";
-			}
+					totalLiquidityInQuote = quoteLiquidityData[0]?.totalValue?.toString() || "0";
+				}
 
-			return {
-				symbol: symbol.replace("/", ""),
-				baseAsset: symbolParts[0] || symbol,
-				quoteAsset: symbolParts[1] || "USDT",
-				poolId: pool.id,
-				baseDecimals: pool.baseDecimals,
-				quoteDecimals: pool.quoteDecimals,
-				volume: pool.volume?.toString() || "0",
-				volumeInQuote: pool.volumeInQuote?.toString() || "0",
-				latestPrice: pool.price?.toString() || "0",
-				age: marketAge,
-				bidLiquidity: bidLiquidity,
-				askLiquidity: askLiquidity,
-				totalLiquidityInQuote: totalLiquidityInQuote,
-				createdAt: pool.timestamp,
-			};
-		}));
+				return {
+					symbol: symbol.replace("/", ""),
+					baseAsset: symbolParts[0] || symbol,
+					quoteAsset: symbolParts[1] || "USDT",
+					poolId: pool.id,
+					baseDecimals: pool.baseDecimals,
+					quoteDecimals: pool.quoteDecimals,
+					volume: pool.volume?.toString() || "0",
+					volumeInQuote: pool.volumeInQuote?.toString() || "0",
+					latestPrice: pool.price?.toString() || "0",
+					age: marketAge,
+					bidLiquidity: bidLiquidity,
+					askLiquidity: askLiquidity,
+					totalLiquidityInQuote: totalLiquidityInQuote,
+					createdAt: pool.timestamp,
+				};
+			})
+		);
 
 		return c.json(pairs);
 	} catch (error) {
@@ -1778,16 +1770,11 @@ app.get("/api/cross-chain-deposits", async c => {
 		const dispatchMessages = await db
 			.select()
 			.from(hyperlaneMessages)
-			.where(and(
-				inArray(hyperlaneMessages.transactionHash, transactionHashes),
-				eq(hyperlaneMessages.type, "DISPATCH")
-			))
+			.where(and(inArray(hyperlaneMessages.transactionHash, transactionHashes), eq(hyperlaneMessages.type, "DISPATCH")))
 			.execute();
 
 		// Create a map for quick lookup of dispatch messages by transaction hash
-		const dispatchMessageMap = new Map(
-			dispatchMessages.map(msg => [msg.transactionHash, msg])
-		);
+		const dispatchMessageMap = new Map(dispatchMessages.map(msg => [msg.transactionHash, msg]));
 
 		// Step 3: For each dispatch message, find the corresponding process message by message ID
 		const messageIds = dispatchMessages.map(msg => msg.messageId);
@@ -1797,17 +1784,12 @@ app.get("/api/cross-chain-deposits", async c => {
 			processMessages = await db
 				.select()
 				.from(hyperlaneMessages)
-				.where(and(
-					inArray(hyperlaneMessages.messageId, messageIds),
-					eq(hyperlaneMessages.type, "PROCESS")
-				))
+				.where(and(inArray(hyperlaneMessages.messageId, messageIds), eq(hyperlaneMessages.type, "PROCESS")))
 				.execute();
 		}
 
 		// Create a map for quick lookup of process messages by message ID
-		const processMessageMap = new Map(
-			processMessages.map(msg => [msg.messageId, msg])
-		);
+		const processMessageMap = new Map(processMessages.map(msg => [msg.messageId, msg]));
 
 		// Step 4: Compose the response in the same format as the existing GraphQL structure
 		const composedTransfers = deposits.map(deposit => {
@@ -1839,28 +1821,32 @@ app.get("/api/cross-chain-deposits", async c => {
 				destinationTimestamp: destinationTimestamp,
 				destinationToken: null, // Synthetic token info not available in separate schemas
 				destinationTransactionHash: destinationTransactionHash,
-				dispatchMessage: dispatchMessage ? {
-					blockNumber: dispatchMessage.blockNumber?.toString() || null,
-					chainId: dispatchMessage.chainId,
-					id: dispatchMessage.id,
-					messageId: dispatchMessage.messageId,
-					sender: dispatchMessage.sender,
-					timestamp: dispatchMessage.timestamp,
-					type: dispatchMessage.type,
-					transactionHash: dispatchMessage.transactionHash
-				} : null,
+				dispatchMessage: dispatchMessage
+					? {
+							blockNumber: dispatchMessage.blockNumber?.toString() || null,
+							chainId: dispatchMessage.chainId,
+							id: dispatchMessage.id,
+							messageId: dispatchMessage.messageId,
+							sender: dispatchMessage.sender,
+							timestamp: dispatchMessage.timestamp,
+							type: dispatchMessage.type,
+							transactionHash: dispatchMessage.transactionHash,
+					  }
+					: null,
 				direction: "DEPOSIT",
 				messageId: dispatchMessage?.messageId || null,
-				processMessage: processMessage ? {
-					blockNumber: processMessage.blockNumber?.toString() || null,
-					chainId: processMessage.chainId,
-					id: processMessage.id,
-					messageId: processMessage.messageId,
-					sender: processMessage.sender,
-					timestamp: processMessage.timestamp,
-					transactionHash: processMessage.transactionHash,
-					type: processMessage.type
-				} : null,
+				processMessage: processMessage
+					? {
+							blockNumber: processMessage.blockNumber?.toString() || null,
+							chainId: processMessage.chainId,
+							id: processMessage.id,
+							messageId: processMessage.messageId,
+							sender: processMessage.sender,
+							timestamp: processMessage.timestamp,
+							transactionHash: processMessage.transactionHash,
+							type: processMessage.type,
+					  }
+					: null,
 				sourceToken: deposit.token,
 				sourceChainId: deposit.chainId,
 				sourceBlockNumber: deposit.blockNumber,
@@ -1868,7 +1854,7 @@ app.get("/api/cross-chain-deposits", async c => {
 				recipient: deposit.recipient,
 				sourceTransactionHash: deposit.transactionId,
 				status: transferStatus,
-				timestamp: deposit.timestamp
+				timestamp: deposit.timestamp,
 			};
 		});
 
@@ -1906,17 +1892,14 @@ app.get("/api/token-mappings", async c => {
 			conditions.push(eq(tokenMappings.symbol, symbol));
 		}
 		if (isActive !== undefined) {
-			conditions.push(eq(tokenMappings.isActive, isActive === 'true'));
+			conditions.push(eq(tokenMappings.isActive, isActive === "true"));
 		}
 
 		if (conditions.length > 0) {
 			query = query.where(and(...conditions));
 		}
 
-		const mappings = await query
-			.orderBy(desc(tokenMappings.timestamp))
-			.limit(limit)
-			.execute();
+		const mappings = await query.orderBy(desc(tokenMappings.timestamp)).limit(limit).execute();
 
 		const formattedMappings = mappings.map(mapping => ({
 			id: mapping.id,
@@ -1951,15 +1934,35 @@ app.get("/api/account", async c => {
 	try {
 		// Fetch all balance events for the user from event tables
 		const [depositEvents, withdrawalEvents, lendingEventsData, lockEventsData, unlockEventsData] = await Promise.all([
-			db.select().from(deposits).where(eq(deposits.userAddress, address as `0x${string}`)).execute(),
-			db.select().from(withdrawals).where(eq(withdrawals.userAddress, address as `0x${string}`)).execute(),
-			db.select().from(lendingEvents).where(eq(lendingEvents.userAddress, address as `0x${string}`)).execute(),
-			db.select().from(lockEvents).where(eq(lockEvents.userAddress, address as `0x${string}`)).execute(),
-			db.select().from(unlockEvents).where(eq(unlockEvents.userAddress, address as `0x${string}`)).execute(),
+			db
+				.select()
+				.from(deposits)
+				.where(eq(deposits.userAddress, address as `0x${string}`))
+				.execute(),
+			db
+				.select()
+				.from(withdrawals)
+				.where(eq(withdrawals.userAddress, address as `0x${string}`))
+				.execute(),
+			db
+				.select()
+				.from(lendingEvents)
+				.where(eq(lendingEvents.userAddress, address as `0x${string}`))
+				.execute(),
+			db
+				.select()
+				.from(lockEvents)
+				.where(eq(lockEvents.userAddress, address as `0x${string}`))
+				.execute(),
+			db
+				.select()
+				.from(unlockEvents)
+				.where(eq(unlockEvents.userAddress, address as `0x${string}`))
+				.execute(),
 		]);
 
 		// Calculate balances from events for each currency
-		const currencyBalances = new Map<string, { total: bigint, locked: bigint, chainId: number }>();
+		const currencyBalances = new Map<string, { total: bigint; locked: bigint; chainId: number }>();
 
 		// Process deposits (increase total balance)
 		depositEvents.forEach(event => {
@@ -1978,16 +1981,12 @@ app.get("/api/account", async c => {
 		});
 
 		// Get all currency mappings to map underlying tokens to synthetic tokens
-		const allCurrencies = await db
-			.select()
-			.from(currencies)
-			.where(eq(currencies.chainId, 84532))
-			.execute();
+		const allCurrencies = await db.select().from(currencies).where(eq(currencies.chainId, 84532)).execute();
 
 		// Create mapping: underlyingToken -> syntheticToken
 		const underlyingToSynthetic = new Map<string, string>();
 		allCurrencies.forEach(currency => {
-			if (currency.tokenType === 'synthetic' && currency.underlyingTokenAddress) {
+			if (currency.tokenType === "synthetic" && currency.underlyingTokenAddress) {
 				underlyingToSynthetic.set(currency.underlyingTokenAddress.toLowerCase(), currency.address.toLowerCase());
 			}
 		});
@@ -2001,9 +2000,9 @@ app.get("/api/account", async c => {
 			const key = `${syntheticToken}-${event.chainId}`;
 			const current = currencyBalances.get(key) || { total: 0n, locked: 0n, chainId: event.chainId };
 
-			if (event.action === 'TRANSFER_IN') {
+			if (event.action === "TRANSFER_IN") {
 				current.total += BigInt(event.amount);
-			} else if (event.action === 'TRANSFER_OUT') {
+			} else if (event.action === "TRANSFER_OUT") {
 				current.total -= BigInt(event.amount);
 			}
 			currencyBalances.set(key, current);
@@ -2028,13 +2027,11 @@ app.get("/api/account", async c => {
 		// Get currency info for each balance
 		const balancesWithInfo = await Promise.all(
 			Array.from(currencyBalances.entries()).map(async ([key, balance]) => {
-				const [currencyAddress] = key.split('-');
+				const [currencyAddress] = key.split("-");
 				const currency = await db
 					.select()
 					.from(currencies)
-					.where(
-						and(eq(currencies.address, currencyAddress as `0x${string}`), eq(currencies.chainId, balance.chainId))
-					)
+					.where(and(eq(currencies.address, currencyAddress as `0x${string}`), eq(currencies.chainId, balance.chainId)))
 					.execute();
 
 				const symbol = currency[0]?.symbol || "UNKNOWN";
@@ -2090,100 +2087,96 @@ app.get("/api/lending/dashboard/:user", async c => {
 		const userLendingEvents = await db
 			.select()
 			.from(lendingEvents)
-			.where(and(
-				eq(lendingEvents.userAddress, user as `0x${string}`),
-				eq(lendingEvents.chainId, targetChainId)
-			))
+			.where(and(eq(lendingEvents.userAddress, user as `0x${string}`), eq(lendingEvents.chainId, targetChainId)))
 			.execute();
 
 		// Calculate net positions from events
 		const calculatedPositions = calculatePositionsFromEvents(userLendingEvents);
 
 		// Execute remaining queries in parallel with proper error handling
-		const [poolStats, assetConfigs, interestRateParams, userActivityHistory, indexedPositions] = await Promise.allSettled([
-			db.select({
-				token: poolLendingStats.token,
-				totalSupply: poolLendingStats.totalSupply,
-				totalBorrow: poolLendingStats.totalBorrow,
-				supplyRate: poolLendingStats.supplyRate,
-				borrowRate: poolLendingStats.borrowRate,
-				utilizationRate: poolLendingStats.utilizationRate,
-			})
-				.from(poolLendingStats)
-				.where(eq(poolLendingStats.chainId, targetChainId))
-				.execute(),
-			db.select({
-				token: assetConfigurations.token,
-				collateralFactor: assetConfigurations.collateralFactor,
-				liquidationThreshold: assetConfigurations.liquidationThreshold,
-				liquidationBonus: assetConfigurations.liquidationBonus,
-				reserveFactor: assetConfigurations.reserveFactor,
-				isActive: assetConfigurations.isActive,
-				timestamp: assetConfigurations.timestamp,
-			})
-				.from(assetConfigurations)
-				.where(and(
-					eq(assetConfigurations.chainId, targetChainId),
-					eq(assetConfigurations.isActive, true)
-				))
-				.execute(),
-			db.select({
-				token: interestRateParameters.token,
-				baseRate: interestRateParameters.baseRate,
-				optimalUtilization: interestRateParameters.optimalUtilization,
-				rateSlope1: interestRateParameters.rateSlope1,
-				rateSlope2: interestRateParameters.rateSlope2,
-				timestamp: interestRateParameters.timestamp,
-			})
-				.from(interestRateParameters)
-				.where(and(
-					eq(interestRateParameters.chainId, targetChainId),
-					eq(interestRateParameters.isActive, true)
-				))
-				.execute(),
-			db.select({
-				action: lendingEvents.action,
-				amount: lendingEvents.amount,
-				token: lendingEvents.token,
-				timestamp: lendingEvents.timestamp,
-				blockNumber: lendingEvents.blockNumber,
-				transactionId: lendingEvents.transactionId,
-			})
-				.from(lendingEvents)
-				.where(and(
-					eq(lendingEvents.userAddress, user as `0x${string}`),
-					eq(lendingEvents.chainId, targetChainId)
-				))
-				.orderBy(desc(lendingEvents.timestamp))
-				.limit(50)
-				.execute(),
-			// Fetch indexed lending positions with lastUpdated (checkpoint timestamp)
-			db.select({
-				id: lendingPositions.id,
-				collateralToken: lendingPositions.collateralToken,
-				debtToken: lendingPositions.debtToken,
-				collateralAmount: lendingPositions.collateralAmount,
-				debtAmount: lendingPositions.debtAmount,
-				lastUpdated: lendingPositions.lastUpdated,
-				isActive: lendingPositions.isActive,
-			})
-				.from(lendingPositions)
-				.where(and(
-					eq(lendingPositions.userAddress, user as `0x${string}`),
-					eq(lendingPositions.chainId, targetChainId),
-					eq(lendingPositions.isActive, true)
-				))
-				.execute()
-		]);
+		const [poolStats, assetConfigs, interestRateParams, userActivityHistory, indexedPositions] =
+			await Promise.allSettled([
+				db
+					.select({
+						token: poolLendingStats.token,
+						totalSupply: poolLendingStats.totalSupply,
+						totalBorrow: poolLendingStats.totalBorrow,
+						supplyRate: poolLendingStats.supplyRate,
+						borrowRate: poolLendingStats.borrowRate,
+						utilizationRate: poolLendingStats.utilizationRate,
+					})
+					.from(poolLendingStats)
+					.where(eq(poolLendingStats.chainId, targetChainId))
+					.execute(),
+				db
+					.select({
+						token: assetConfigurations.token,
+						collateralFactor: assetConfigurations.collateralFactor,
+						liquidationThreshold: assetConfigurations.liquidationThreshold,
+						liquidationBonus: assetConfigurations.liquidationBonus,
+						reserveFactor: assetConfigurations.reserveFactor,
+						isActive: assetConfigurations.isActive,
+						timestamp: assetConfigurations.timestamp,
+					})
+					.from(assetConfigurations)
+					.where(and(eq(assetConfigurations.chainId, targetChainId), eq(assetConfigurations.isActive, true)))
+					.execute(),
+				db
+					.select({
+						token: interestRateParameters.token,
+						baseRate: interestRateParameters.baseRate,
+						optimalUtilization: interestRateParameters.optimalUtilization,
+						rateSlope1: interestRateParameters.rateSlope1,
+						rateSlope2: interestRateParameters.rateSlope2,
+						timestamp: interestRateParameters.timestamp,
+					})
+					.from(interestRateParameters)
+					.where(and(eq(interestRateParameters.chainId, targetChainId), eq(interestRateParameters.isActive, true)))
+					.execute(),
+				db
+					.select({
+						action: lendingEvents.action,
+						amount: lendingEvents.amount,
+						token: lendingEvents.token,
+						timestamp: lendingEvents.timestamp,
+						blockNumber: lendingEvents.blockNumber,
+						transactionId: lendingEvents.transactionId,
+					})
+					.from(lendingEvents)
+					.where(and(eq(lendingEvents.userAddress, user as `0x${string}`), eq(lendingEvents.chainId, targetChainId)))
+					.orderBy(desc(lendingEvents.timestamp))
+					.limit(50)
+					.execute(),
+				// Fetch indexed lending positions with lastUpdated (checkpoint timestamp)
+				db
+					.select({
+						id: lendingPositions.id,
+						collateralToken: lendingPositions.collateralToken,
+						debtToken: lendingPositions.debtToken,
+						collateralAmount: lendingPositions.collateralAmount,
+						debtAmount: lendingPositions.debtAmount,
+						lastUpdated: lendingPositions.lastUpdated,
+						isActive: lendingPositions.isActive,
+					})
+					.from(lendingPositions)
+					.where(
+						and(
+							eq(lendingPositions.userAddress, user as `0x${string}`),
+							eq(lendingPositions.chainId, targetChainId),
+							eq(lendingPositions.isActive, true)
+						)
+					)
+					.execute(),
+			]);
 
 		// Use calculated positions instead of empty lendingPositions
 		const positions = calculatedPositions;
-		const stats = poolStats.status === 'fulfilled' ? poolStats.value : [];
-		const configs = assetConfigs.status === 'fulfilled' ? assetConfigs.value : [];
-		const rateParams = interestRateParams.status === 'fulfilled' ? interestRateParams.value : [];
-		const activityHistory = userActivityHistory.status === 'fulfilled' ? userActivityHistory.value : [];
+		const stats = poolStats.status === "fulfilled" ? poolStats.value : [];
+		const configs = assetConfigs.status === "fulfilled" ? assetConfigs.value : [];
+		const rateParams = interestRateParams.status === "fulfilled" ? interestRateParams.value : [];
+		const activityHistory = userActivityHistory.status === "fulfilled" ? userActivityHistory.value : [];
 		// Indexed positions with lastUpdated checkpoint
-		const indexedPositionsList = indexedPositions.status === 'fulfilled' ? indexedPositions.value : [];
+		const indexedPositionsList = indexedPositions.status === "fulfilled" ? indexedPositions.value : [];
 
 		// Create a map of token -> lastUpdated from indexed positions for quick lookup
 		const positionCheckpoints = new Map<string, number>();
@@ -2197,29 +2190,29 @@ app.get("/api/lending/dashboard/:user", async c => {
 		});
 
 		// Log any errors but continue processing
-		if (poolStats.status === 'rejected') {
+		if (poolStats.status === "rejected") {
 			console.error("Error fetching pool stats:", poolStats.reason);
 		}
-		if (assetConfigs.status === 'rejected') {
+		if (assetConfigs.status === "rejected") {
 			console.error("Error fetching asset configs:", assetConfigs.reason);
 		}
-		if (interestRateParams.status === 'rejected') {
+		if (interestRateParams.status === "rejected") {
 			console.error("Error fetching interest rate parameters:", interestRateParams.reason);
 		}
-		if (userActivityHistory.status === 'rejected') {
+		if (userActivityHistory.status === "rejected") {
 			console.error("Error fetching user activity history:", userActivityHistory.reason);
 		}
 
 		// Create maps for efficient lookup
 		const ratesMap = new Map();
-		const assetConfigMap: Record<string, { collateralFactor: number, liquidationThreshold: number }> = {};
+		const assetConfigMap: Record<string, { collateralFactor: number; liquidationThreshold: number }> = {};
 
 		// Process asset configurations
 		configs.forEach(config => {
 			const tokenLower = config.token.toLowerCase();
 			assetConfigMap[tokenLower] = {
 				collateralFactor: config.collateralFactor / 10000,
-				liquidationThreshold: config.liquidationThreshold / 10000
+				liquidationThreshold: config.liquidationThreshold / 10000,
 			};
 		});
 
@@ -2235,13 +2228,16 @@ app.get("/api/lending/dashboard/:user", async c => {
 		});
 
 		// Create interest rate parameters map
-		const interestRateMap: Record<string, {
-			baseRate: number,
-			optimalUtilization: number,
-			rateSlope1: number,
-			rateSlope2: number,
-			lastUpdated: number
-		}> = {};
+		const interestRateMap: Record<
+			string,
+			{
+				baseRate: number;
+				optimalUtilization: number;
+				rateSlope1: number;
+				rateSlope2: number;
+				lastUpdated: number;
+			}
+		> = {};
 		rateParams.forEach(param => {
 			const tokenLower = param.token.toLowerCase();
 			interestRateMap[tokenLower] = {
@@ -2249,7 +2245,7 @@ app.get("/api/lending/dashboard/:user", async c => {
 				optimalUtilization: param.optimalUtilization,
 				rateSlope1: param.rateSlope1,
 				rateSlope2: param.rateSlope2,
-				lastUpdated: param.timestamp
+				lastUpdated: param.timestamp,
 			};
 		});
 
@@ -2277,7 +2273,7 @@ app.get("/api/lending/dashboard/:user", async c => {
 		}
 
 		// Fetch token prices from latest trades for USD value conversion
-		let tokenPriceMap = new Map<string, { price: bigint, quoteDecimals: number }>();
+		let tokenPriceMap = new Map<string, { price: bigint; quoteDecimals: number }>();
 		if (uniqueTokenAddresses.size > 0) {
 			try {
 				tokenPriceMap = await getTokenPricesFromTrades(Array.from(uniqueTokenAddresses), targetChainId);
@@ -2287,31 +2283,36 @@ app.get("/api/lending/dashboard/:user", async c => {
 		}
 
 		// Format activity history for response (now that tokenInfoMap is available)
-		const formattedActivityHistory = await Promise.all(activityHistory.map(async (activity) => {
-			const tokenInfo = tokenInfoMap.get(activity.token.toLowerCase()) || { decimals: 18, symbol: "UNKNOWN" };
-			const cleanSymbol = formatSymbol(tokenInfo.symbol);
+		const formattedActivityHistory = await Promise.all(
+			activityHistory.map(async activity => {
+				const tokenInfo = tokenInfoMap.get(activity.token.toLowerCase()) || { decimals: 18, symbol: "UNKNOWN" };
+				const cleanSymbol = formatSymbol(tokenInfo.symbol);
 
-			return {
-				action: activity.action,
-				amount: formatAmount(activity.amount.toString(), tokenInfo.decimals),
-				token: cleanSymbol,
-				tokenAddress: activity.token,
-				timestamp: activity.timestamp,
-				blockNumber: activity.blockNumber.toString(),
-				transactionId: activity.transactionId,
-				// Add human-readable timestamp
-				createdAt: new Date(activity.timestamp * 1000).toISOString()
-			};
-		}));
+				return {
+					action: activity.action,
+					amount: formatAmount(activity.amount.toString(), tokenInfo.decimals),
+					token: cleanSymbol,
+					tokenAddress: activity.token,
+					timestamp: activity.timestamp,
+					blockNumber: activity.blockNumber.toString(),
+					transactionId: activity.transactionId,
+					// Add human-readable timestamp
+					createdAt: new Date(activity.timestamp * 1000).toISOString(),
+				};
+			})
+		);
 
 		// Process positions into supplies and borrows with real contract rates
 		const positionPromises = positions.map(async (position, index) => {
-			const result: { supplies: any[], borrows: any[] } = { supplies: [], borrows: [] };
+			const result: { supplies: any[]; borrows: any[] } = { supplies: [], borrows: [] };
 
 			try {
 				// Process supplies
 				if (position.collateralAmount && Number(position.collateralAmount) > 0) {
-					const collateralTokenInfo = tokenInfoMap.get(position.collateralToken.toLowerCase()) || { decimals: 18, symbol: "UNKNOWN" };
+					const collateralTokenInfo = tokenInfoMap.get(position.collateralToken.toLowerCase()) || {
+						decimals: 18,
+						symbol: "UNKNOWN",
+					};
 					const cleanSymbol = formatSymbol(collateralTokenInfo.symbol);
 					const collateralAmount = position.collateralAmount.toString();
 
@@ -2321,16 +2322,22 @@ app.get("/api/lending/dashboard/:user", async c => {
 					const totalBorrowed = poolStat?.totalBorrow || BigInt(0);
 
 					// Get interest rate parameters for this token
-					const irParam = rateParams.find(param => param.token.toLowerCase() === position.collateralToken.toLowerCase());
-					const interestRateParam = irParam ? {
-						baseRate: irParam.baseRate,
-						optimalUtilization: irParam.optimalUtilization,
-						rateSlope1: irParam.rateSlope1,
-						rateSlope2: irParam.rateSlope2
-					} : null;
+					const irParam = rateParams.find(
+						param => param.token.toLowerCase() === position.collateralToken.toLowerCase()
+					);
+					const interestRateParam = irParam
+						? {
+								baseRate: irParam.baseRate,
+								optimalUtilization: irParam.optimalUtilization,
+								rateSlope1: irParam.rateSlope1,
+								rateSlope2: irParam.rateSlope2,
+						  }
+						: null;
 
 					// Get asset configuration for this token
-					const assetConfig = configs.find(config => config.token.toLowerCase() === position.collateralToken.toLowerCase());
+					const assetConfig = configs.find(
+						config => config.token.toLowerCase() === position.collateralToken.toLowerCase()
+					);
 
 					// Calculate real-time rates
 					let realTimeRates = null;
@@ -2363,10 +2370,18 @@ app.get("/api/lending/dashboard/:user", async c => {
 
 					// Calculate projected earnings for different time periods
 					const projectedEarnings = {
-						hourly: realTimeRates ? formatUSD(realTimeRates.projections.hourly.supplyEarnings.toString(), collateralTokenInfo.decimals) : "$0.00",
-						daily: realTimeRates ? formatUSD(realTimeRates.projections.daily.supplyEarnings.toString(), collateralTokenInfo.decimals) : "$0.00",
-						weekly: realTimeRates ? formatUSD(realTimeRates.projections.weekly.supplyEarnings.toString(), collateralTokenInfo.decimals) : "$0.00",
-						monthly: realTimeRates ? formatUSD(realTimeRates.projections.monthly.supplyEarnings.toString(), collateralTokenInfo.decimals) : "$0.00"
+						hourly: realTimeRates
+							? formatUSD(realTimeRates.projections.hourly.supplyEarnings.toString(), collateralTokenInfo.decimals)
+							: "$0.00",
+						daily: realTimeRates
+							? formatUSD(realTimeRates.projections.daily.supplyEarnings.toString(), collateralTokenInfo.decimals)
+							: "$0.00",
+						weekly: realTimeRates
+							? formatUSD(realTimeRates.projections.weekly.supplyEarnings.toString(), collateralTokenInfo.decimals)
+							: "$0.00",
+						monthly: realTimeRates
+							? formatUSD(realTimeRates.projections.monthly.supplyEarnings.toString(), collateralTokenInfo.decimals)
+							: "$0.00",
 					};
 
 					// Use indexed checkpoint from lendingPositions.lastUpdated
@@ -2376,11 +2391,7 @@ app.get("/api/lending/dashboard/:user", async c => {
 
 					// Calculate accrued yield since checkpoint
 					// yield = (principal * supplyRate * timeDelta) / (SECONDS_PER_YEAR * BASIS_POINTS)
-					const accruedYield = calculateAccruedSupplyYield(
-						BigInt(collateralAmount),
-						supplyRateBP,
-						checkpointTimestamp
-					);
+					const accruedYield = calculateAccruedSupplyYield(BigInt(collateralAmount), supplyRateBP, checkpointTimestamp);
 
 					const accruedYieldFormatted = formatAmount(accruedYield.toString(), collateralTokenInfo.decimals);
 					const accruedYieldUSD = formatUSD(accruedYield.toString(), collateralTokenInfo.decimals);
@@ -2389,12 +2400,18 @@ app.get("/api/lending/dashboard/:user", async c => {
 					const currentTime = Math.floor(Date.now() / 1000);
 					const supplyDurationSeconds = checkpointTimestamp ? currentTime - checkpointTimestamp : 0;
 					const supplyDurationDays = supplyDurationSeconds > 0 ? Math.floor(supplyDurationSeconds / 86400) : 0;
-					const supplyDurationHours = supplyDurationSeconds > 0 ? Math.floor((supplyDurationSeconds % 86400) / 3600) : 0;
+					const supplyDurationHours =
+						supplyDurationSeconds > 0 ? Math.floor((supplyDurationSeconds % 86400) / 3600) : 0;
 
 					// Get token price from pools for USD conversion
 					const tokenPrice = tokenPriceMap.get(position.collateralToken.toLowerCase());
 					const currentValueUSD = tokenPrice
-						? formatUSDWithPrice(collateralAmount, collateralTokenInfo.decimals, Number(tokenPrice.price), tokenPrice.quoteDecimals)
+						? formatUSDWithPrice(
+								collateralAmount,
+								collateralTokenInfo.decimals,
+								Number(tokenPrice.price),
+								tokenPrice.quoteDecimals
+						  )
 						: formatUSD(collateralAmount, collateralTokenInfo.decimals); // fallback to 1:1 if no pool price
 
 					result.supplies.push({
@@ -2411,22 +2428,27 @@ app.get("/api/lending/dashboard/:user", async c => {
 							amount: accruedYieldFormatted,
 							value: accruedYieldUSD,
 							sinceTimestamp: checkpointTimestamp,
-							duration: supplyDurationSeconds > 0 ? `${supplyDurationDays}d ${supplyDurationHours}h` : "0h"
+							duration: supplyDurationSeconds > 0 ? `${supplyDurationDays}d ${supplyDurationHours}h` : "0h",
 						},
 						canWithdraw: position.isActive !== false,
 						collateralUsed: formatAmount(collateralAmount, collateralTokenInfo.decimals),
 						utilizationRate: (utilizationRateValue / 100).toFixed(1) + "%",
-						realTimeRates: realTimeRates ? {
-							supplyAPY: (realTimeRates.supplyAPY / 100).toFixed(2) + "%",
-							borrowAPY: (realTimeRates.borrowAPY / 100).toFixed(2) + "%",
-							utilizationRate: (realTimeRates.utilizationRate / 100).toFixed(1) + "%"
-						} : null
+						realTimeRates: realTimeRates
+							? {
+									supplyAPY: (realTimeRates.supplyAPY / 100).toFixed(2) + "%",
+									borrowAPY: (realTimeRates.borrowAPY / 100).toFixed(2) + "%",
+									utilizationRate: (realTimeRates.utilizationRate / 100).toFixed(1) + "%",
+							  }
+							: null,
 					});
 				}
 
 				// Process borrows
 				if (position.debtAmount && Number(position.debtAmount) > 0) {
-					const debtTokenInfo = tokenInfoMap.get(position.debtToken.toLowerCase()) || { decimals: 18, symbol: "UNKNOWN" };
+					const debtTokenInfo = tokenInfoMap.get(position.debtToken.toLowerCase()) || {
+						decimals: 18,
+						symbol: "UNKNOWN",
+					};
 					const cleanSymbol = formatSymbol(debtTokenInfo.symbol);
 					const debtAmount = position.debtAmount.toString();
 
@@ -2437,12 +2459,14 @@ app.get("/api/lending/dashboard/:user", async c => {
 
 					// Get interest rate parameters for this token
 					const irParam = rateParams.find(param => param.token.toLowerCase() === position.debtToken.toLowerCase());
-					const interestRateParam = irParam ? {
-						baseRate: irParam.baseRate,
-						optimalUtilization: irParam.optimalUtilization,
-						rateSlope1: irParam.rateSlope1,
-						rateSlope2: irParam.rateSlope2
-					} : null;
+					const interestRateParam = irParam
+						? {
+								baseRate: irParam.baseRate,
+								optimalUtilization: irParam.optimalUtilization,
+								rateSlope1: irParam.rateSlope1,
+								rateSlope2: irParam.rateSlope2,
+						  }
+						: null;
 
 					// Get asset configuration for this token
 					const assetConfig = configs.find(config => config.token.toLowerCase() === position.debtToken.toLowerCase());
@@ -2478,10 +2502,18 @@ app.get("/api/lending/dashboard/:user", async c => {
 
 					// Calculate projected interest accrual for different time periods
 					const projectedInterest = {
-						hourly: realTimeRates ? formatUSD(realTimeRates.projections.hourly.borrowInterest.toString(), debtTokenInfo.decimals) : "$0.00",
-						daily: realTimeRates ? formatUSD(realTimeRates.projections.daily.borrowInterest.toString(), debtTokenInfo.decimals) : "$0.00",
-						weekly: realTimeRates ? formatUSD(realTimeRates.projections.weekly.borrowInterest.toString(), debtTokenInfo.decimals) : "$0.00",
-						monthly: realTimeRates ? formatUSD(realTimeRates.projections.monthly.borrowInterest.toString(), debtTokenInfo.decimals) : "$0.00"
+						hourly: realTimeRates
+							? formatUSD(realTimeRates.projections.hourly.borrowInterest.toString(), debtTokenInfo.decimals)
+							: "$0.00",
+						daily: realTimeRates
+							? formatUSD(realTimeRates.projections.daily.borrowInterest.toString(), debtTokenInfo.decimals)
+							: "$0.00",
+						weekly: realTimeRates
+							? formatUSD(realTimeRates.projections.weekly.borrowInterest.toString(), debtTokenInfo.decimals)
+							: "$0.00",
+						monthly: realTimeRates
+							? formatUSD(realTimeRates.projections.monthly.borrowInterest.toString(), debtTokenInfo.decimals)
+							: "$0.00",
 					};
 
 					// Use indexed checkpoint from lendingPositions.lastUpdated
@@ -2492,11 +2524,7 @@ app.get("/api/lending/dashboard/:user", async c => {
 					// Calculate accrued interest since checkpoint
 					// Uses same formula as _calculateUserDebt in smart contract:
 					// accruedInterest = (borrowed * borrowRate * timeDelta) / (SECONDS_PER_YEAR * BASIS_POINTS)
-					const accruedInterest = calculateAccruedBorrowInterest(
-						BigInt(debtAmount),
-						borrowRateBP,
-						checkpointTimestamp
-					);
+					const accruedInterest = calculateAccruedBorrowInterest(BigInt(debtAmount), borrowRateBP, checkpointTimestamp);
 
 					const accruedInterestFormatted = formatAmount(accruedInterest.toString(), debtTokenInfo.decimals);
 					const accruedInterestUSD = formatUSD(accruedInterest.toString(), debtTokenInfo.decimals);
@@ -2505,7 +2533,8 @@ app.get("/api/lending/dashboard/:user", async c => {
 					const currentTime = Math.floor(Date.now() / 1000);
 					const borrowDurationSeconds = checkpointTimestamp ? currentTime - checkpointTimestamp : 0;
 					const borrowDurationDays = borrowDurationSeconds > 0 ? Math.floor(borrowDurationSeconds / 86400) : 0;
-					const borrowDurationHours = borrowDurationSeconds > 0 ? Math.floor((borrowDurationSeconds % 86400) / 3600) : 0;
+					const borrowDurationHours =
+						borrowDurationSeconds > 0 ? Math.floor((borrowDurationSeconds % 86400) / 3600) : 0;
 
 					// Calculate total debt including accrued interest (same as contract's _calculateUserDebt)
 					const principalAmount = BigInt(debtAmount);
@@ -2515,18 +2544,28 @@ app.get("/api/lending/dashboard/:user", async c => {
 					// Get token price from pools for USD conversion
 					const debtTokenPrice = tokenPriceMap.get(position.debtToken.toLowerCase());
 					const currentDebtUSD = debtTokenPrice
-						? formatUSDWithPrice(debtAmount, debtTokenInfo.decimals, Number(debtTokenPrice.price), debtTokenPrice.quoteDecimals)
+						? formatUSDWithPrice(
+								debtAmount,
+								debtTokenInfo.decimals,
+								Number(debtTokenPrice.price),
+								debtTokenPrice.quoteDecimals
+						  )
 						: formatUSD(debtAmount, debtTokenInfo.decimals);
 					const totalDebtUSD = debtTokenPrice
-						? formatUSDWithPrice(totalDebtWithInterest.toString(), debtTokenInfo.decimals, Number(debtTokenPrice.price), debtTokenPrice.quoteDecimals)
+						? formatUSDWithPrice(
+								totalDebtWithInterest.toString(),
+								debtTokenInfo.decimals,
+								Number(debtTokenPrice.price),
+								debtTokenPrice.quoteDecimals
+						  )
 						: formatUSD(totalDebtWithInterest.toString(), debtTokenInfo.decimals);
 
 					// Placeholder health factor - will be calculated correctly after all positions are processed
 					let healthFactor = 999999;
 
-					let healthStatus: 'safe' | 'warning' | 'danger' = 'safe';
-					if (healthFactor < 1.5) healthStatus = 'danger';
-					else if (healthFactor < 2.0) healthStatus = 'warning';
+					let healthStatus: "safe" | "warning" | "danger" = "safe";
+					if (healthFactor < 1.5) healthStatus = "danger";
+					else if (healthFactor < 2.0) healthStatus = "warning";
 
 					result.borrows.push({
 						id: position.id || `borrow-${index}`,
@@ -2542,23 +2581,25 @@ app.get("/api/lending/dashboard/:user", async c => {
 							amount: accruedInterestFormatted,
 							value: accruedInterestUSD,
 							sinceTimestamp: checkpointTimestamp,
-							duration: borrowDurationSeconds > 0 ? `${borrowDurationDays}d ${borrowDurationHours}h` : "0h"
+							duration: borrowDurationSeconds > 0 ? `${borrowDurationDays}d ${borrowDurationHours}h` : "0h",
 						},
 						// Total debt including accrued interest (matches _calculateUserDebt)
 						totalDebtWithInterest: {
 							amount: totalDebtFormatted,
-							value: totalDebtUSD
+							value: totalDebtUSD,
 						},
 						collateralRatio: (assetConfigMap[position.debtToken.toLowerCase()]?.collateralFactor || 0).toString(),
 						healthFactor: healthFactor.toFixed(2),
 						healthStatus,
 						canRepay: position.isActive !== false,
 						utilizationRate: (utilizationRateValue / 100).toFixed(1) + "%",
-						realTimeRates: realTimeRates ? {
-							supplyAPY: (realTimeRates.supplyAPY / 100).toFixed(2) + "%",
-							borrowAPY: (realTimeRates.borrowAPY / 100).toFixed(2) + "%",
-							utilizationRate: (realTimeRates.utilizationRate / 100).toFixed(1) + "%"
-						} : null
+						realTimeRates: realTimeRates
+							? {
+									supplyAPY: (realTimeRates.supplyAPY / 100).toFixed(2) + "%",
+									borrowAPY: (realTimeRates.borrowAPY / 100).toFixed(2) + "%",
+									utilizationRate: (realTimeRates.utilizationRate / 100).toFixed(1) + "%",
+							  }
+							: null,
 					});
 				}
 			} catch (processError) {
@@ -2574,7 +2615,7 @@ app.get("/api/lending/dashboard/:user", async c => {
 		const borrows = positionResults.flatMap(result => result.borrows);
 
 		// Generate available assets to supply with on-chain balance fetching and real-time rates
-		const availableToSupplyPromises = configs.map(async (config) => {
+		const availableToSupplyPromises = configs.map(async config => {
 			try {
 				const tokenInfo = tokenInfoMap.get(config.token.toLowerCase()) || { decimals: 18, symbol: "UNKNOWN" };
 				const cleanSymbol = formatSymbol(tokenInfo.symbol);
@@ -2587,12 +2628,14 @@ app.get("/api/lending/dashboard/:user", async c => {
 
 				// Get interest rate parameters for this token
 				const irParam = rateParams.find(param => param.token.toLowerCase() === config.token.toLowerCase());
-				const interestRateParam = irParam ? {
-					baseRate: irParam.baseRate,
-					optimalUtilization: irParam.optimalUtilization,
-					rateSlope1: irParam.rateSlope1,
-					rateSlope2: irParam.rateSlope2
-				} : null;
+				const interestRateParam = irParam
+					? {
+							baseRate: irParam.baseRate,
+							optimalUtilization: irParam.optimalUtilization,
+							rateSlope1: irParam.rateSlope1,
+							rateSlope2: irParam.rateSlope2,
+					  }
+					: null;
 
 				// Calculate real-time rates
 				let realTimeRates = null;
@@ -2643,10 +2686,22 @@ app.get("/api/lending/dashboard/:user", async c => {
 				let projectedEarnings = null;
 				if (realTimeRates && availableBalance > 0n) {
 					projectedEarnings = {
-						hourly: formatUSD(calculateProjectedInterest(availableBalance, realTimeRates.supplyRate, 3600).toString(), tokenInfo.decimals),
-						daily: formatUSD(calculateProjectedInterest(availableBalance, realTimeRates.supplyRate, 86400).toString(), tokenInfo.decimals),
-						weekly: formatUSD(calculateProjectedInterest(availableBalance, realTimeRates.supplyRate, 604800).toString(), tokenInfo.decimals),
-						monthly: formatUSD(calculateProjectedInterest(availableBalance, realTimeRates.supplyRate, 2592000).toString(), tokenInfo.decimals)
+						hourly: formatUSD(
+							calculateProjectedInterest(availableBalance, realTimeRates.supplyRate, 3600).toString(),
+							tokenInfo.decimals
+						),
+						daily: formatUSD(
+							calculateProjectedInterest(availableBalance, realTimeRates.supplyRate, 86400).toString(),
+							tokenInfo.decimals
+						),
+						weekly: formatUSD(
+							calculateProjectedInterest(availableBalance, realTimeRates.supplyRate, 604800).toString(),
+							tokenInfo.decimals
+						),
+						monthly: formatUSD(
+							calculateProjectedInterest(availableBalance, realTimeRates.supplyRate, 2592000).toString(),
+							tokenInfo.decimals
+						),
 					};
 				}
 
@@ -2661,11 +2716,13 @@ app.get("/api/lending/dashboard/:user", async c => {
 					projectedEarnings,
 					canSupply: true,
 					recommended: cleanSymbol === "USDC",
-					realTimeRates: realTimeRates ? {
-						supplyAPY: (realTimeRates.supplyAPY / 100).toFixed(2) + "%",
-						borrowAPY: (realTimeRates.borrowAPY / 100).toFixed(2) + "%",
-						utilizationRate: (realTimeRates.utilizationRate / 100).toFixed(1) + "%"
-					} : null
+					realTimeRates: realTimeRates
+						? {
+								supplyAPY: (realTimeRates.supplyAPY / 100).toFixed(2) + "%",
+								borrowAPY: (realTimeRates.borrowAPY / 100).toFixed(2) + "%",
+								utilizationRate: (realTimeRates.utilizationRate / 100).toFixed(1) + "%",
+						  }
+						: null,
 				};
 			} catch (processError) {
 				console.error(`Error processing supply config for ${config.token}:`, processError);
@@ -2677,10 +2734,10 @@ app.get("/api/lending/dashboard/:user", async c => {
 		const availableToSupply = (await Promise.all(availableToSupplyPromises)).filter(Boolean);
 
 		// Calculate borrowing power
-		const totalCollateralValueRaw = supplies.reduce((sum, s) => sum + Number(s.currentValue.replace(/[$,]/g, '')), 0);
+		const totalCollateralValueRaw = supplies.reduce((sum, s) => sum + Number(s.currentValue.replace(/[$,]/g, "")), 0);
 
 		// Show all available assets to borrow with real-time rates
-		const availableToBorrowPromises = configs.map(async (config) => {
+		const availableToBorrowPromises = configs.map(async config => {
 			try {
 				const tokenInfo = tokenInfoMap.get(config.token.toLowerCase()) || { decimals: 18, symbol: "UNKNOWN" };
 				const cleanSymbol = formatSymbol(tokenInfo.symbol);
@@ -2693,12 +2750,14 @@ app.get("/api/lending/dashboard/:user", async c => {
 
 				// Get interest rate parameters for this token
 				const irParam = rateParams.find(param => param.token.toLowerCase() === config.token.toLowerCase());
-				const interestRateParam = irParam ? {
-					baseRate: irParam.baseRate,
-					optimalUtilization: irParam.optimalUtilization,
-					rateSlope1: irParam.rateSlope1,
-					rateSlope2: irParam.rateSlope2
-				} : null;
+				const interestRateParam = irParam
+					? {
+							baseRate: irParam.baseRate,
+							optimalUtilization: irParam.optimalUtilization,
+							rateSlope1: irParam.rateSlope1,
+							rateSlope2: irParam.rateSlope2,
+					  }
+					: null;
 
 				// Calculate real-time rates
 				let realTimeRates = null;
@@ -2740,15 +2799,30 @@ app.get("/api/lending/dashboard/:user", async c => {
 					// For interest projection, use the USD borrowing power converted to token units
 					const borrowingPowerInTokens = BigInt(Math.floor(borrowingPowerUSD * Math.pow(10, tokenInfo.decimals)));
 					projectedInterest = {
-						hourly: formatUSD(calculateProjectedInterest(borrowingPowerInTokens, realTimeRates.borrowRate, 3600).toString(), tokenInfo.decimals),
-						daily: formatUSD(calculateProjectedInterest(borrowingPowerInTokens, realTimeRates.borrowRate, 86400).toString(), tokenInfo.decimals),
-						weekly: formatUSD(calculateProjectedInterest(borrowingPowerInTokens, realTimeRates.borrowRate, 604800).toString(), tokenInfo.decimals),
-						monthly: formatUSD(calculateProjectedInterest(borrowingPowerInTokens, realTimeRates.borrowRate, 2592000).toString(), tokenInfo.decimals)
+						hourly: formatUSD(
+							calculateProjectedInterest(borrowingPowerInTokens, realTimeRates.borrowRate, 3600).toString(),
+							tokenInfo.decimals
+						),
+						daily: formatUSD(
+							calculateProjectedInterest(borrowingPowerInTokens, realTimeRates.borrowRate, 86400).toString(),
+							tokenInfo.decimals
+						),
+						weekly: formatUSD(
+							calculateProjectedInterest(borrowingPowerInTokens, realTimeRates.borrowRate, 604800).toString(),
+							tokenInfo.decimals
+						),
+						monthly: formatUSD(
+							calculateProjectedInterest(borrowingPowerInTokens, realTimeRates.borrowRate, 2592000).toString(),
+							tokenInfo.decimals
+						),
 					};
 				}
 
 				// Format borrowing power as USD
-				const borrowingPowerFormatted = `$${borrowingPowerUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+				const borrowingPowerFormatted = `$${borrowingPowerUSD.toLocaleString("en-US", {
+					minimumFractionDigits: 2,
+					maximumFractionDigits: 2,
+				})}`;
 
 				return {
 					asset: cleanSymbol,
@@ -2763,11 +2837,13 @@ app.get("/api/lending/dashboard/:user", async c => {
 					liquidationThreshold: ((config.liquidationThreshold / 10000) * 100).toString(),
 					canBorrow,
 					recommended,
-					realTimeRates: realTimeRates ? {
-						supplyAPY: (realTimeRates.supplyAPY / 100).toFixed(2) + "%",
-						borrowAPY: (realTimeRates.borrowAPY / 100).toFixed(2) + "%",
-						utilizationRate: (realTimeRates.utilizationRate / 100).toFixed(1) + "%"
-					} : null
+					realTimeRates: realTimeRates
+						? {
+								supplyAPY: (realTimeRates.supplyAPY / 100).toFixed(2) + "%",
+								borrowAPY: (realTimeRates.borrowAPY / 100).toFixed(2) + "%",
+								utilizationRate: (realTimeRates.utilizationRate / 100).toFixed(1) + "%",
+						  }
+						: null,
 				};
 			} catch (processError) {
 				console.error(`Error processing borrow config for ${config.token}:`, processError);
@@ -2779,7 +2855,7 @@ app.get("/api/lending/dashboard/:user", async c => {
 		const availableToBorrow = (await Promise.all(availableToBorrowPromises)).filter(Boolean);
 
 		// Calculate summary statistics
-		const parseCurrency = (currencyString: string) => Number(currencyString.replace(/[$,]/g, '')) || 0;
+		const parseCurrency = (currencyString: string) => Number(currencyString.replace(/[$,]/g, "")) || 0;
 
 		const totalSuppliedRaw = supplies.reduce((sum, s) => sum + parseCurrency(s.currentValue), 0);
 		const totalBorrowedRaw = borrows.reduce((sum, b) => sum + parseCurrency(b.currentDebt), 0);
@@ -2826,9 +2902,9 @@ app.get("/api/lending/dashboard/:user", async c => {
 			// Sum all collateral values with liquidation thresholds
 			const totalCollateralValueUSD = supplies.reduce((sum, supply) => {
 				const supplyValue = parseCurrency(supply.currentValue);
-				const assetConfig = assetConfigMap[supply.assetAddress?.toLowerCase() || ''];
+				const assetConfig = assetConfigMap[supply.assetAddress?.toLowerCase() || ""];
 				const liquidationThreshold = assetConfig?.liquidationThreshold || 0.8; // 80% default
-				return sum + (supplyValue * liquidationThreshold);
+				return sum + supplyValue * liquidationThreshold;
 			}, 0);
 
 			// Sum all debt values
@@ -2847,11 +2923,11 @@ app.get("/api/lending/dashboard/:user", async c => {
 			borrow.healthFactor = realHealthFactor.toFixed(2);
 			// Update health status based on real health factor
 			if (realHealthFactor < 1.5) {
-				borrow.healthStatus = 'danger';
+				borrow.healthStatus = "danger";
 			} else if (realHealthFactor < 2.0) {
-				borrow.healthStatus = 'warning';
+				borrow.healthStatus = "warning";
 			} else {
-				borrow.healthStatus = 'safe';
+				borrow.healthStatus = "safe";
 			}
 		});
 
@@ -2865,11 +2941,11 @@ app.get("/api/lending/dashboard/:user", async c => {
 			return {
 				token: cleanSymbol,
 				tokenAddress,
-				baseRate: (params.baseRate / 100).toFixed(2) + '%',
-				optimalUtilization: (params.optimalUtilization / 100).toFixed(1) + '%',
-				rateSlope1: (params.rateSlope1 / 100).toFixed(2) + '%',
-				rateSlope2: (params.rateSlope2 / 100).toFixed(2) + '%',
-				lastUpdated: new Date(params.lastUpdated * 1000).toISOString()
+				baseRate: (params.baseRate / 100).toFixed(2) + "%",
+				optimalUtilization: (params.optimalUtilization / 100).toFixed(1) + "%",
+				rateSlope1: (params.rateSlope1 / 100).toFixed(2) + "%",
+				rateSlope2: (params.rateSlope2 / 100).toFixed(2) + "%",
+				lastUpdated: new Date(params.lastUpdated * 1000).toISOString(),
 			};
 		});
 
@@ -2881,12 +2957,12 @@ app.get("/api/lending/dashboard/:user", async c => {
 			return {
 				token: cleanSymbol,
 				tokenAddress: config.token,
-				collateralFactor: (config.collateralFactor / 100).toFixed(2) + '%',
-				liquidationThreshold: (config.liquidationThreshold / 100).toFixed(2) + '%',
-				liquidationBonus: (config.liquidationBonus / 100).toFixed(2) + '%',
-				reserveFactor: (config.reserveFactor / 100).toFixed(2) + '%',
+				collateralFactor: (config.collateralFactor / 100).toFixed(2) + "%",
+				liquidationThreshold: (config.liquidationThreshold / 100).toFixed(2) + "%",
+				liquidationBonus: (config.liquidationBonus / 100).toFixed(2) + "%",
+				reserveFactor: (config.reserveFactor / 100).toFixed(2) + "%",
 				isActive: config.isActive,
-				lastUpdated: new Date(config.timestamp * 1000).toISOString()
+				lastUpdated: new Date(config.timestamp * 1000).toISOString(),
 			};
 		});
 
@@ -2904,16 +2980,18 @@ app.get("/api/lending/dashboard/:user", async c => {
 				netAPY: netAPY.toFixed(1),
 				totalEarnings: totalEarningsRaw.toFixed(2),
 				healthFactor,
-				borrowingPower: (totalCollateralValueRaw * 0.8).toFixed(2) // Simplified calculation
-			}
+				borrowingPower: (totalCollateralValueRaw * 0.8).toFixed(2), // Simplified calculation
+			},
 		});
-
 	} catch (error) {
 		console.error("Critical error in lending dashboard:", error);
-		return c.json({
-			error: "Failed to fetch lending dashboard data",
-			details: error instanceof Error ? error.message : String(error)
-		}, 500);
+		return c.json(
+			{
+				error: "Failed to fetch lending dashboard data",
+				details: error instanceof Error ? error.message : String(error),
+			},
+			500
+		);
 	}
 });
 
@@ -2955,7 +3033,7 @@ app.get("/api/agents", async c => {
 				success: true,
 				data: [],
 				count: 0,
-				pagination: { limit: queryLimit, offset: queryOffset }
+				pagination: { limit: queryLimit, offset: queryOffset },
 			});
 		}
 
@@ -2971,10 +3049,7 @@ app.get("/api/agents", async c => {
 					firstInstalledAt: sql<string>`min(${agentInstallations.installedAt})`,
 				})
 				.from(agentInstallations)
-				.where(and(
-					eq(agentInstallations.chainId, targetChainId),
-					inArray(agentInstallations.agentTokenId, tokenIds)
-				))
+				.where(and(eq(agentInstallations.chainId, targetChainId), inArray(agentInstallations.agentTokenId, tokenIds)))
 				.groupBy(agentInstallations.agentTokenId)
 				.execute(),
 			db
@@ -2986,10 +3061,7 @@ app.get("/api/agents", async c => {
 					totalLimitOrders: sql<number>`coalesce(sum(${agentStats.totalLimitOrders}), 0)::int`,
 				})
 				.from(agentStats)
-				.where(and(
-					eq(agentStats.chainId, targetChainId),
-					inArray(agentStats.agentTokenId, tokenIds)
-				))
+				.where(and(eq(agentStats.chainId, targetChainId), inArray(agentStats.agentTokenId, tokenIds)))
 				.groupBy(agentStats.agentTokenId)
 				.execute(),
 			db
@@ -3025,15 +3097,18 @@ app.get("/api/agents", async c => {
 			success: true,
 			data,
 			count: totalCount[0]?.count ?? 0,
-			pagination: { limit: queryLimit, offset: queryOffset }
+			pagination: { limit: queryLimit, offset: queryOffset },
 		});
 	} catch (error) {
 		console.error("Error fetching agents:", error);
-		return c.json({
-			success: false,
-			error: "Failed to fetch agents",
-			details: error instanceof Error ? error.message : String(error)
-		}, 500);
+		return c.json(
+			{
+				success: false,
+				error: "Failed to fetch agents",
+				details: error instanceof Error ? error.message : String(error),
+			},
+			500
+		);
 	}
 });
 
@@ -3059,10 +3134,7 @@ app.get("/api/agents/:agentTokenId", async c => {
 					registeredAt: agentRegistry.registeredAt,
 				})
 				.from(agentRegistry)
-				.where(and(
-					eq(agentRegistry.tokenId, BigInt(agentTokenId)),
-					eq(agentRegistry.chainId, targetChainId),
-				))
+				.where(and(eq(agentRegistry.tokenId, BigInt(agentTokenId)), eq(agentRegistry.chainId, targetChainId)))
 				.execute(),
 			// User counts from installations
 			db
@@ -3072,10 +3144,7 @@ app.get("/api/agents/:agentTokenId", async c => {
 					firstInstalledAt: sql<string>`min(${agentInstallations.installedAt})`,
 				})
 				.from(agentInstallations)
-				.where(and(
-					eq(agentInstallations.agentTokenId, agentTokenId),
-					eq(agentInstallations.chainId, targetChainId),
-				))
+				.where(and(eq(agentInstallations.agentTokenId, agentTokenId), eq(agentInstallations.chainId, targetChainId)))
 				.execute(),
 			// Aggregate stats across all users
 			db
@@ -3091,10 +3160,7 @@ app.get("/api/agents/:agentTokenId", async c => {
 					lastActivityAt: sql<number>`max(${agentStats.lastActivityTimestamp})`,
 				})
 				.from(agentStats)
-				.where(and(
-					eq(agentStats.agentTokenId, BigInt(agentTokenId)),
-					eq(agentStats.chainId, targetChainId),
-				))
+				.where(and(eq(agentStats.agentTokenId, BigInt(agentTokenId)), eq(agentStats.chainId, targetChainId)))
 				.execute(),
 			// Orders grouped by status
 			db
@@ -3103,10 +3169,7 @@ app.get("/api/agents/:agentTokenId", async c => {
 					count: sql<number>`count(*)::int`,
 				})
 				.from(orders)
-				.where(and(
-					eq(orders.agentTokenId, agentTokenId),
-					eq(orders.chainId, targetChainId),
-				))
+				.where(and(eq(orders.agentTokenId, agentTokenId), eq(orders.chainId, targetChainId)))
 				.groupBy(orders.status)
 				.execute(),
 		]);
@@ -3144,15 +3207,18 @@ app.get("/api/agents/:agentTokenId", async c => {
 					acc[item.status] = item.count;
 					return acc;
 				}, {} as Record<string, number>),
-			}
+			},
 		});
 	} catch (error) {
 		console.error("Error fetching agent:", error);
-		return c.json({
-			success: false,
-			error: "Failed to fetch agent",
-			details: error instanceof Error ? error.message : String(error)
-		}, 500);
+		return c.json(
+			{
+				success: false,
+				error: "Failed to fetch agent",
+				details: error instanceof Error ? error.message : String(error),
+			},
+			500
+		);
 	}
 });
 
@@ -3176,7 +3242,7 @@ app.get("/api/agents/:agentTokenId/users", async c => {
 		];
 
 		if (enabled !== undefined) {
-			conditions.push(eq(agentInstallations.enabled, enabled === 'true'));
+			conditions.push(eq(agentInstallations.enabled, enabled === "true"));
 		}
 		if (owner) {
 			conditions.push(eq(agentInstallations.owner, owner.toLowerCase() as `0x${string}`));
@@ -3192,17 +3258,20 @@ app.get("/api/agents/:agentTokenId/users", async c => {
 
 		// Batch-fetch policies for returned owners
 		const owners = installations.map(i => i.owner).filter(Boolean) as `0x${string}`[];
-		const policiesData = owners.length > 0
-			? await db
-				.select()
-				.from(agentPolicies)
-				.where(and(
-					eq(agentPolicies.agentTokenId, agentTokenId),
-					eq(agentPolicies.chainId, targetChainId),
-					inArray(agentPolicies.owner, owners)
-				))
-				.execute()
-			: [];
+		const policiesData =
+			owners.length > 0
+				? await db
+						.select()
+						.from(agentPolicies)
+						.where(
+							and(
+								eq(agentPolicies.agentTokenId, agentTokenId),
+								eq(agentPolicies.chainId, targetChainId),
+								inArray(agentPolicies.owner, owners)
+							)
+						)
+						.execute()
+				: [];
 
 		const policyMap = new Map(policiesData.map(p => [p.owner, p]));
 
@@ -3228,15 +3297,18 @@ app.get("/api/agents/:agentTokenId/users", async c => {
 			success: true,
 			data,
 			count: totalCount[0]?.count ?? 0,
-			pagination: { limit: queryLimit, offset: queryOffset }
+			pagination: { limit: queryLimit, offset: queryOffset },
 		});
 	} catch (error) {
 		console.error("Error fetching agent users:", error);
-		return c.json({
-			success: false,
-			error: "Failed to fetch agent users",
-			details: error instanceof Error ? error.message : String(error)
-		}, 500);
+		return c.json(
+			{
+				success: false,
+				error: "Failed to fetch agent users",
+				details: error instanceof Error ? error.message : String(error),
+			},
+			500
+		);
 	}
 });
 
@@ -3253,10 +3325,7 @@ app.get("/api/agents/:agentTokenId/orders", async c => {
 		const queryLimit = limit ? Math.min(Number(limit), 100) : 50;
 		const queryOffset = offset ? Number(offset) : 0;
 
-		const conditions = [
-			eq(orders.agentTokenId, agentTokenId),
-			eq(orders.chainId, targetChainId)
-		];
+		const conditions = [eq(orders.agentTokenId, agentTokenId), eq(orders.chainId, targetChainId)];
 
 		if (status) {
 			conditions.push(eq(orders.status, status.toUpperCase()));
@@ -3280,7 +3349,7 @@ app.get("/api/agents/:agentTokenId/orders", async c => {
 			filled: order.filled?.toString(),
 			quoteQuantity: order.quoteQuantity?.toString(),
 			executedQuoteQuantity: order.executedQuoteQuantity?.toString(),
-			agentTokenId: order.agentTokenId?.toString()
+			agentTokenId: order.agentTokenId?.toString(),
 		}));
 
 		return c.json({
@@ -3289,16 +3358,19 @@ app.get("/api/agents/:agentTokenId/orders", async c => {
 			count: agentOrders.length,
 			pagination: {
 				limit: queryLimit,
-				offset: queryOffset
-			}
+				offset: queryOffset,
+			},
 		});
 	} catch (error) {
 		console.error("Error fetching agent orders:", error);
-		return c.json({
-			success: false,
-			error: "Failed to fetch agent orders",
-			details: error instanceof Error ? error.message : String(error)
-		}, 500);
+		return c.json(
+			{
+				success: false,
+				error: "Failed to fetch agent orders",
+				details: error instanceof Error ? error.message : String(error),
+			},
+			500
+		);
 	}
 });
 
@@ -3317,10 +3389,7 @@ app.get("/api/agents/:agentTokenId/stats", async c => {
 		const stats = await db
 			.select()
 			.from(agentStats)
-			.where(and(
-				eq(agentStats.agentTokenId, agentTokenId),
-				eq(agentStats.chainId, targetChainId)
-			))
+			.where(and(eq(agentStats.agentTokenId, agentTokenId), eq(agentStats.chainId, targetChainId)))
 			.limit(1)
 			.execute();
 
@@ -3328,26 +3397,25 @@ app.get("/api/agents/:agentTokenId/stats", async c => {
 		const orderStats = await db
 			.select({
 				status: orders.status,
-				count: sql<number>`count(*)::int`
+				count: sql<number>`count(*)::int`,
 			})
 			.from(orders)
-			.where(and(
-				eq(orders.agentTokenId, agentTokenId),
-				eq(orders.chainId, targetChainId)
-			))
+			.where(and(eq(orders.agentTokenId, agentTokenId), eq(orders.chainId, targetChainId)))
 			.groupBy(orders.status)
 			.execute();
 
 		// Serialize BigInt fields to strings for JSON response
-		const serializedStats = stats[0] ? {
-			...stats[0],
-			agentTokenId: stats[0].agentTokenId.toString(),
-			totalTradingVolume: stats[0].totalTradingVolume.toString(),
-			totalBorrowAmount: stats[0].totalBorrowAmount.toString(),
-			totalRepayAmount: stats[0].totalRepayAmount.toString(),
-			totalCollateralSupplied: stats[0].totalCollateralSupplied.toString(),
-			totalCollateralWithdrawn: stats[0].totalCollateralWithdrawn.toString(),
-		} : null;
+		const serializedStats = stats[0]
+			? {
+					...stats[0],
+					agentTokenId: stats[0].agentTokenId.toString(),
+					totalTradingVolume: stats[0].totalTradingVolume.toString(),
+					totalBorrowAmount: stats[0].totalBorrowAmount.toString(),
+					totalRepayAmount: stats[0].totalRepayAmount.toString(),
+					totalCollateralSupplied: stats[0].totalCollateralSupplied.toString(),
+					totalCollateralWithdrawn: stats[0].totalCollateralWithdrawn.toString(),
+			  }
+			: null;
 
 		return c.json({
 			success: true,
@@ -3356,16 +3424,19 @@ app.get("/api/agents/:agentTokenId/stats", async c => {
 				ordersByStatus: orderStats.reduce((acc, item) => {
 					acc[item.status] = item.count;
 					return acc;
-				}, {} as Record<string, number>)
-			}
+				}, {} as Record<string, number>),
+			},
 		});
 	} catch (error) {
 		console.error("Error fetching agent stats:", error);
-		return c.json({
-			success: false,
-			error: "Failed to fetch agent stats",
-			details: error instanceof Error ? error.message : String(error)
-		}, 500);
+		return c.json(
+			{
+				success: false,
+				error: "Failed to fetch agent stats",
+				details: error instanceof Error ? error.message : String(error),
+			},
+			500
+		);
 	}
 });
 
@@ -3384,7 +3455,7 @@ app.get("/api/agent-orders", async c => {
 
 		const conditions = [
 			eq(orders.chainId, targetChainId),
-			sql`${orders.agentTokenId} > '0'` // Only agent orders
+			sql`${orders.agentTokenId} > '0'`, // Only agent orders
 		];
 
 		if (executor) {
@@ -3413,7 +3484,7 @@ app.get("/api/agent-orders", async c => {
 			filled: order.filled?.toString(),
 			quoteQuantity: order.quoteQuantity?.toString(),
 			executedQuoteQuantity: order.executedQuoteQuantity?.toString(),
-			agentTokenId: order.agentTokenId?.toString()
+			agentTokenId: order.agentTokenId?.toString(),
 		}));
 
 		return c.json({
@@ -3422,16 +3493,19 @@ app.get("/api/agent-orders", async c => {
 			count: agentOrders.length,
 			pagination: {
 				limit: queryLimit,
-				offset: queryOffset
-			}
+				offset: queryOffset,
+			},
 		});
 	} catch (error) {
 		console.error("Error fetching agent orders:", error);
-		return c.json({
-			success: false,
-			error: "Failed to fetch agent orders",
-			details: error instanceof Error ? error.message : String(error)
-		}, 500);
+		return c.json(
+			{
+				success: false,
+				error: "Failed to fetch agent orders",
+				details: error instanceof Error ? error.message : String(error),
+			},
+			500
+		);
 	}
 });
 
@@ -3451,10 +3525,7 @@ app.get("/api/agents/:agentTokenId/lending", async c => {
 		const lendingActivity = await db
 			.select()
 			.from(agentLendingEvents)
-			.where(and(
-				eq(agentLendingEvents.agentTokenId, agentTokenId),
-				eq(agentLendingEvents.chainId, targetChainId)
-			))
+			.where(and(eq(agentLendingEvents.agentTokenId, agentTokenId), eq(agentLendingEvents.chainId, targetChainId)))
 			.orderBy(desc(agentLendingEvents.timestamp))
 			.limit(queryLimit)
 			.offset(queryOffset)
@@ -3466,16 +3537,19 @@ app.get("/api/agents/:agentTokenId/lending", async c => {
 			count: lendingActivity.length,
 			pagination: {
 				limit: queryLimit,
-				offset: queryOffset
-			}
+				offset: queryOffset,
+			},
 		});
 	} catch (error) {
 		console.error("Error fetching agent lending activity:", error);
-		return c.json({
-			success: false,
-			error: "Failed to fetch agent lending activity",
-			details: error instanceof Error ? error.message : String(error)
-		}, 500);
+		return c.json(
+			{
+				success: false,
+				error: "Failed to fetch agent lending activity",
+				details: error instanceof Error ? error.message : String(error),
+			},
+			500
+		);
 	}
 });
 
@@ -3495,10 +3569,9 @@ app.get("/api/agents/:agentTokenId/violations", async c => {
 		const violations = await db
 			.select()
 			.from(agentPolicyViolations)
-			.where(and(
-				eq(agentPolicyViolations.agentTokenId, agentTokenId),
-				eq(agentPolicyViolations.chainId, targetChainId)
-			))
+			.where(
+				and(eq(agentPolicyViolations.agentTokenId, agentTokenId), eq(agentPolicyViolations.chainId, targetChainId))
+			)
 			.orderBy(desc(agentPolicyViolations.timestamp))
 			.limit(queryLimit)
 			.offset(queryOffset)
@@ -3510,16 +3583,19 @@ app.get("/api/agents/:agentTokenId/violations", async c => {
 			count: violations.length,
 			pagination: {
 				limit: queryLimit,
-				offset: queryOffset
-			}
+				offset: queryOffset,
+			},
 		});
 	} catch (error) {
 		console.error("Error fetching agent violations:", error);
-		return c.json({
-			success: false,
-			error: "Failed to fetch agent violations",
-			details: error instanceof Error ? error.message : String(error)
-		}, 500);
+		return c.json(
+			{
+				success: false,
+				error: "Failed to fetch agent violations",
+				details: error instanceof Error ? error.message : String(error),
+			},
+			500
+		);
 	}
 });
 
@@ -3539,10 +3615,7 @@ app.get("/api/agents/:agentTokenId/circuit-breakers", async c => {
 		const circuitBreakers = await db
 			.select()
 			.from(agentCircuitBreakers)
-			.where(and(
-				eq(agentCircuitBreakers.agentTokenId, agentTokenId),
-				eq(agentCircuitBreakers.chainId, targetChainId)
-			))
+			.where(and(eq(agentCircuitBreakers.agentTokenId, agentTokenId), eq(agentCircuitBreakers.chainId, targetChainId)))
 			.orderBy(desc(agentCircuitBreakers.timestamp))
 			.limit(queryLimit)
 			.offset(queryOffset)
@@ -3554,16 +3627,19 @@ app.get("/api/agents/:agentTokenId/circuit-breakers", async c => {
 			count: circuitBreakers.length,
 			pagination: {
 				limit: queryLimit,
-				offset: queryOffset
-			}
+				offset: queryOffset,
+			},
 		});
 	} catch (error) {
 		console.error("Error fetching circuit breakers:", error);
-		return c.json({
-			success: false,
-			error: "Failed to fetch circuit breakers",
-			details: error instanceof Error ? error.message : String(error)
-		}, 500);
+		return c.json(
+			{
+				success: false,
+				error: "Failed to fetch circuit breakers",
+				details: error instanceof Error ? error.message : String(error),
+			},
+			500
+		);
 	}
 });
 
@@ -3582,23 +3658,34 @@ app.get("/api/agents/:agentTokenId/policy", async c => {
 	try {
 		const targetChainId = chainId ? Number(chainId) : 84532;
 
-		const conditions: any[] = [
-			eq(agentPolicies.agentTokenId, agentTokenId),
-			eq(agentPolicies.chainId, targetChainId),
-		];
+		const conditions: any[] = [eq(agentPolicies.agentTokenId, agentTokenId), eq(agentPolicies.chainId, targetChainId)];
 
 		if (owner) {
 			// Scoped to a single user — return one policy object (or 404)
 			conditions.push(eq(agentPolicies.owner, owner.toLowerCase() as `0x${string}`));
 
-			const result = await db.select().from(agentPolicies).where(and(...conditions)).limit(1).execute();
+			const result = await db
+				.select()
+				.from(agentPolicies)
+				.where(and(...conditions))
+				.limit(1)
+				.execute();
 
 			if (result.length === 0) {
 				return c.json({ success: false, error: "Policy not found" }, 404);
 			}
 
 			const row = result[0]!;
-			return c.json({ success: true, data: { id: row.id, owner: row.owner, chainId: row.chainId, agentTokenId: row.agentTokenId?.toString(), ...serializePolicy(row) } });
+			return c.json({
+				success: true,
+				data: {
+					id: row.id,
+					owner: row.owner,
+					chainId: row.chainId,
+					agentTokenId: row.agentTokenId?.toString(),
+					...serializePolicy(row),
+				},
+			});
 		}
 
 		// No owner filter — return all policies for this agent (one per user)
@@ -3615,17 +3702,26 @@ app.get("/api/agents/:agentTokenId/policy", async c => {
 
 		return c.json({
 			success: true,
-			data: results.map(r => ({ id: r.id, owner: r.owner, chainId: r.chainId, agentTokenId: r.agentTokenId?.toString(), ...serializePolicy(r) })),
+			data: results.map(r => ({
+				id: r.id,
+				owner: r.owner,
+				chainId: r.chainId,
+				agentTokenId: r.agentTokenId?.toString(),
+				...serializePolicy(r),
+			})),
 			count: results.length,
 			pagination: { limit: queryLimit, offset: queryOffset },
 		});
 	} catch (error) {
 		console.error("Error fetching agent policy:", error);
-		return c.json({
-			success: false,
-			error: "Failed to fetch agent policy",
-			details: error instanceof Error ? error.message : String(error)
-		}, 500);
+		return c.json(
+			{
+				success: false,
+				error: "Failed to fetch agent policy",
+				details: error instanceof Error ? error.message : String(error),
+			},
+			500
+		);
 	}
 });
 
@@ -3646,10 +3742,9 @@ app.get("/api/policies", async c => {
 		const results = await db
 			.select()
 			.from(agentPolicies)
-			.where(and(
-				eq(agentPolicies.owner, owner.toLowerCase() as `0x${string}`),
-				eq(agentPolicies.chainId, targetChainId),
-			))
+			.where(
+				and(eq(agentPolicies.owner, owner.toLowerCase() as `0x${string}`), eq(agentPolicies.chainId, targetChainId))
+			)
 			.execute();
 
 		const data = results.map(p => ({
@@ -3685,11 +3780,14 @@ app.get("/api/policies", async c => {
 		return c.json({ success: true, data, count: data.length });
 	} catch (error) {
 		console.error("Error fetching policies:", error);
-		return c.json({
-			success: false,
-			error: "Failed to fetch policies",
-			details: error instanceof Error ? error.message : String(error)
-		}, 500);
+		return c.json(
+			{
+				success: false,
+				error: "Failed to fetch policies",
+				details: error instanceof Error ? error.message : String(error),
+			},
+			500
+		);
 	}
 });
 
@@ -3698,7 +3796,7 @@ app.get("/api/policies", async c => {
 // ============================================================================
 
 const VALID_WINDOWS = ["24h", "7d", "30d", "all"] as const;
-type AnalyticsWindow = typeof VALID_WINDOWS[number];
+type AnalyticsWindow = (typeof VALID_WINDOWS)[number];
 
 function windowToTimestamp(window: AnalyticsWindow): number | null {
 	if (window === "all") return null;
@@ -3714,7 +3812,7 @@ function windowToTimestamp(window: AnalyticsWindow): number | null {
 async function computeAnalytics(
 	filterConditions: ReturnType<typeof and>[],
 	chainId: number,
-	windowStart: number | null,
+	windowStart: number | null
 ) {
 	const now = Math.floor(Date.now() / 1000);
 
@@ -3750,10 +3848,7 @@ async function computeAnalytics(
 		.execute();
 
 	// Query 2: Fill rate data — orders grouped by status
-	const fillConditions = [
-		eq(orders.chainId, chainId),
-		...filterConditions,
-	];
+	const fillConditions = [eq(orders.chainId, chainId), ...filterConditions];
 	if (orderTimeFilter) fillConditions.push(orderTimeFilter);
 
 	const fillData = await db
@@ -3767,18 +3862,21 @@ async function computeAnalytics(
 		.execute();
 
 	// Group PnL data by poolId
-	const poolMap = new Map<string, {
-		poolId: string;
-		symbol: string | null;
-		baseDecimals: number | null;
-		quoteDecimals: number | null;
-		lastPrice: bigint | null;
-		buyQuantity: bigint;
-		buyQuoteValue: bigint;
-		sellQuantity: bigint;
-		sellQuoteValue: bigint;
-		tradeCount: number;
-	}>();
+	const poolMap = new Map<
+		string,
+		{
+			poolId: string;
+			symbol: string | null;
+			baseDecimals: number | null;
+			quoteDecimals: number | null;
+			lastPrice: bigint | null;
+			buyQuantity: bigint;
+			buyQuoteValue: bigint;
+			sellQuantity: bigint;
+			sellQuoteValue: bigint;
+			tradeCount: number;
+		}
+	>();
 
 	for (const row of pnlData) {
 		const key = row.poolId;
@@ -3838,12 +3936,8 @@ async function computeAnalytics(
 
 		const decimalDivisor = baseMultiplier * quoteMultiplier;
 
-		const avgBuyPrice = pool.buyQuantity > 0n
-			? pool.buyQuoteValue / pool.buyQuantity
-			: 0n;
-		const avgSellPrice = pool.sellQuantity > 0n
-			? pool.sellQuoteValue / pool.sellQuantity
-			: 0n;
+		const avgBuyPrice = pool.buyQuantity > 0n ? pool.buyQuoteValue / pool.buyQuantity : 0n;
+		const avgSellPrice = pool.sellQuantity > 0n ? pool.sellQuoteValue / pool.sellQuantity : 0n;
 
 		// Realized PnL: (avgSellPrice - avgBuyPrice) * min(bought, sold)
 		const matchedQty = pool.buyQuantity < pool.sellQuantity ? pool.buyQuantity : pool.sellQuantity;
@@ -3886,18 +3980,10 @@ async function computeAnalytics(
 			unrealizedPnl: unrealizedPnlHuman.toFixed(6),
 			totalBuyQuantity: (Number(pool.buyQuantity) / baseMultiplier).toFixed(baseDec),
 			totalSellQuantity: (Number(pool.sellQuantity) / baseMultiplier).toFixed(baseDec),
-			openPositionSize: netPosition > 0n
-				? (Number(netPosition) / baseMultiplier).toFixed(baseDec)
-				: "0",
-			avgEntryPrice: avgBuyPrice > 0n
-				? (Number(avgBuyPrice) / quoteMultiplier).toFixed(quoteDec)
-				: "0",
-			avgExitPrice: avgSellPrice > 0n
-				? (Number(avgSellPrice) / quoteMultiplier).toFixed(quoteDec)
-				: "0",
-			lastPrice: lastPrice > 0n
-				? (Number(lastPrice) / quoteMultiplier).toFixed(quoteDec)
-				: "0",
+			openPositionSize: netPosition > 0n ? (Number(netPosition) / baseMultiplier).toFixed(baseDec) : "0",
+			avgEntryPrice: avgBuyPrice > 0n ? (Number(avgBuyPrice) / quoteMultiplier).toFixed(quoteDec) : "0",
+			avgExitPrice: avgSellPrice > 0n ? (Number(avgSellPrice) / quoteMultiplier).toFixed(quoteDec) : "0",
+			lastPrice: lastPrice > 0n ? (Number(lastPrice) / quoteMultiplier).toFixed(quoteDec) : "0",
 			tradeCount: pool.tradeCount,
 		});
 	}
@@ -3969,7 +4055,7 @@ app.get("/api/agents/:agentTokenId/analytics", async c => {
 		const analytics = await computeAnalytics(
 			[eq(orders.agentTokenId, BigInt(agentTokenId))],
 			targetChainId,
-			windowStart,
+			windowStart
 		);
 
 		return c.json({
@@ -3983,11 +4069,14 @@ app.get("/api/agents/:agentTokenId/analytics", async c => {
 		});
 	} catch (error) {
 		console.error("Error computing agent analytics:", error);
-		return c.json({
-			success: false,
-			error: "Failed to compute agent analytics",
-			details: error instanceof Error ? error.message : String(error),
-		}, 500);
+		return c.json(
+			{
+				success: false,
+				error: "Failed to compute agent analytics",
+				details: error instanceof Error ? error.message : String(error),
+			},
+			500
+		);
 	}
 });
 
@@ -4019,7 +4108,7 @@ app.get("/api/users/:address/analytics", async c => {
 		const analytics = await computeAnalytics(
 			[sql`lower(${orders.userAddress}) = ${normalizedAddress}`],
 			targetChainId,
-			windowStart,
+			windowStart
 		);
 
 		return c.json({
@@ -4033,11 +4122,14 @@ app.get("/api/users/:address/analytics", async c => {
 		});
 	} catch (error) {
 		console.error("Error computing user analytics:", error);
-		return c.json({
-			success: false,
-			error: "Failed to compute user analytics",
-			details: error instanceof Error ? error.message : String(error),
-		}, 500);
+		return c.json(
+			{
+				success: false,
+				error: "Failed to compute user analytics",
+				details: error instanceof Error ? error.message : String(error),
+			},
+			500
+		);
 	}
 });
 
@@ -4082,22 +4174,21 @@ function formatKlineData(bucket: BucketData): BinanceKlineData {
 // Initialize event publisher
 async function initializeServices() {
 	try {
-		console.log('Initializing services...');
+		console.log("Initializing services...");
 
 		// Initialize Redis client for event publishing
 		const redisClient = await initIORedisClient();
 		if (redisClient) {
 			const eventPublisher = initializeEventPublisher(redisClient);
 			await eventPublisher.createConsumerGroups();
-			console.log('Event publisher initialized successfully');
+			console.log("Event publisher initialized successfully");
 		} else {
-			console.warn('Redis client not available, event publishing disabled');
+			console.warn("Redis client not available, event publishing disabled");
 		}
 	} catch (error) {
-		console.error('Failed to initialize services:', error);
+		console.error("Failed to initialize services:", error);
 	}
 }
-
 
 /**
  * Time-weighted balance segment for accurate yield calculation
@@ -4126,16 +4217,19 @@ interface BalanceSegment {
  * totalYield = sum of all segmentYields
  */
 function calculatePositionsFromEvents(events: any[]): any[] {
-	const tokenBalances = new Map<string, {
-		supplied: bigint,
-		borrowed: bigint,
-		supplySegments: BalanceSegment[],
-		borrowSegments: BalanceSegment[],
-		firstSupplyTimestamp: number | null,
-		firstBorrowTimestamp: number | null,
-		lastSupplyTimestamp: number | null,
-		lastBorrowTimestamp: number | null
-	}>();
+	const tokenBalances = new Map<
+		string,
+		{
+			supplied: bigint;
+			borrowed: bigint;
+			supplySegments: BalanceSegment[];
+			borrowSegments: BalanceSegment[];
+			firstSupplyTimestamp: number | null;
+			firstBorrowTimestamp: number | null;
+			lastSupplyTimestamp: number | null;
+			lastBorrowTimestamp: number | null;
+		}
+	>();
 
 	// Sort events by timestamp to process chronologically
 	const sortedEvents = [...events].sort((a, b) => a.timestamp - b.timestamp);
@@ -4152,7 +4246,7 @@ function calculatePositionsFromEvents(events: any[]): any[] {
 				firstSupplyTimestamp: null,
 				firstBorrowTimestamp: null,
 				lastSupplyTimestamp: null,
-				lastBorrowTimestamp: null
+				lastBorrowTimestamp: null,
 			});
 		}
 
@@ -4161,7 +4255,7 @@ function calculatePositionsFromEvents(events: any[]): any[] {
 		const timestamp = event.timestamp;
 
 		switch (event.action) {
-			case 'SUPPLY':
+			case "SUPPLY":
 				// Close the previous supply segment if exists
 				if (balance.supplySegments.length > 0) {
 					const lastSegment = balance.supplySegments[balance.supplySegments.length - 1];
@@ -4177,7 +4271,7 @@ function calculatePositionsFromEvents(events: any[]): any[] {
 					balance.supplySegments.push({
 						amount: balance.supplied,
 						startTimestamp: timestamp,
-						endTimestamp: null
+						endTimestamp: null,
 					});
 				}
 
@@ -4187,7 +4281,7 @@ function calculatePositionsFromEvents(events: any[]): any[] {
 				balance.lastSupplyTimestamp = timestamp;
 				break;
 
-			case 'BORROW':
+			case "BORROW":
 				// Close the previous borrow segment if exists
 				if (balance.borrowSegments.length > 0) {
 					const lastSegment = balance.borrowSegments[balance.borrowSegments.length - 1];
@@ -4203,7 +4297,7 @@ function calculatePositionsFromEvents(events: any[]): any[] {
 					balance.borrowSegments.push({
 						amount: balance.borrowed,
 						startTimestamp: timestamp,
-						endTimestamp: null
+						endTimestamp: null,
 					});
 				}
 
@@ -4213,7 +4307,7 @@ function calculatePositionsFromEvents(events: any[]): any[] {
 				balance.lastBorrowTimestamp = timestamp;
 				break;
 
-			case 'REPAY':
+			case "REPAY":
 				// Close the previous borrow segment
 				if (balance.borrowSegments.length > 0) {
 					const lastSegment = balance.borrowSegments[balance.borrowSegments.length - 1];
@@ -4229,12 +4323,12 @@ function calculatePositionsFromEvents(events: any[]): any[] {
 					balance.borrowSegments.push({
 						amount: balance.borrowed,
 						startTimestamp: timestamp,
-						endTimestamp: null
+						endTimestamp: null,
 					});
 				}
 				break;
 
-			case 'WITHDRAW':
+			case "WITHDRAW":
 				// Close the previous supply segment
 				if (balance.supplySegments.length > 0) {
 					const lastSegment = balance.supplySegments[balance.supplySegments.length - 1];
@@ -4250,7 +4344,7 @@ function calculatePositionsFromEvents(events: any[]): any[] {
 					balance.supplySegments.push({
 						amount: balance.supplied,
 						startTimestamp: timestamp,
-						endTimestamp: null
+						endTimestamp: null,
 					});
 				}
 
@@ -4261,7 +4355,7 @@ function calculatePositionsFromEvents(events: any[]): any[] {
 				}
 				break;
 
-			case 'TRANSFER_OUT':
+			case "TRANSFER_OUT":
 				// Handle transfer out - reduces supply (similar to WITHDRAW)
 				// This occurs when gsTokens are transferred during order matching
 				if (balance.supplySegments.length > 0) {
@@ -4278,7 +4372,7 @@ function calculatePositionsFromEvents(events: any[]): any[] {
 					balance.supplySegments.push({
 						amount: balance.supplied,
 						startTimestamp: timestamp,
-						endTimestamp: null
+						endTimestamp: null,
 					});
 				}
 
@@ -4289,7 +4383,7 @@ function calculatePositionsFromEvents(events: any[]): any[] {
 				}
 				break;
 
-			case 'TRANSFER_IN':
+			case "TRANSFER_IN":
 				// Handle transfer in - increases supply (similar to SUPPLY)
 				// This occurs when gsTokens are received during order matching
 				if (balance.supplySegments.length > 0) {
@@ -4306,7 +4400,7 @@ function calculatePositionsFromEvents(events: any[]): any[] {
 					balance.supplySegments.push({
 						amount: balance.supplied,
 						startTimestamp: timestamp,
-						endTimestamp: null
+						endTimestamp: null,
 					});
 				}
 
@@ -4338,7 +4432,7 @@ function calculatePositionsFromEvents(events: any[]): any[] {
 				firstSupplyTimestamp: balance.firstSupplyTimestamp,
 				firstBorrowTimestamp: balance.firstBorrowTimestamp,
 				lastSupplyTimestamp: balance.lastSupplyTimestamp,
-				lastBorrowTimestamp: balance.lastBorrowTimestamp
+				lastBorrowTimestamp: balance.lastBorrowTimestamp,
 			});
 		}
 	});
@@ -4371,7 +4465,10 @@ function calculateAccruedSupplyYield(
 	// Use precision multiplier to preserve fractional basis points
 	// rate * 1e6 preserves 6 decimal places
 	const scaledRate = BigInt(Math.round(supplyRateBP * Number(PRECISION_MULTIPLIER)));
-	return (principal * scaledRate * BigInt(timeDelta)) / (BigInt(SECONDS_PER_YEAR) * BigInt(BASIS_POINTS) * PRECISION_MULTIPLIER);
+	return (
+		(principal * scaledRate * BigInt(timeDelta)) /
+		(BigInt(SECONDS_PER_YEAR) * BigInt(BASIS_POINTS) * PRECISION_MULTIPLIER)
+	);
 }
 
 /**
@@ -4392,7 +4489,10 @@ function calculateAccruedBorrowInterest(
 
 	// Use precision multiplier to preserve fractional basis points
 	const scaledRate = BigInt(Math.round(borrowRateBP * Number(PRECISION_MULTIPLIER)));
-	return (borrowed * scaledRate * BigInt(timeDelta)) / (BigInt(SECONDS_PER_YEAR) * BigInt(BASIS_POINTS) * PRECISION_MULTIPLIER);
+	return (
+		(borrowed * scaledRate * BigInt(timeDelta)) /
+		(BigInt(SECONDS_PER_YEAR) * BigInt(BASIS_POINTS) * PRECISION_MULTIPLIER)
+	);
 }
 
 // =============================================================================
@@ -4400,7 +4500,7 @@ function calculateAccruedBorrowInterest(
 // =============================================================================
 
 // GET /api/predictions/markets — list all markets, optionally filtered by status
-app.get("/api/predictions/markets", async (c) => {
+app.get("/api/predictions/markets", async c => {
 	try {
 		const chainId = Number(c.req.query("chainId")) || undefined;
 		const status = c.req.query("status") !== undefined ? Number(c.req.query("status")) : undefined;
@@ -4416,10 +4516,7 @@ app.get("/api/predictions/markets", async (c) => {
 			query = query.where(and(...conditions)) as any;
 		}
 
-		const markets = await query
-			.orderBy(desc(predictionMarkets.startTime))
-			.limit(limit)
-			.execute();
+		const markets = await query.orderBy(desc(predictionMarkets.startTime)).limit(limit).execute();
 
 		return c.json({
 			markets: markets.map(m => ({
@@ -4439,7 +4536,7 @@ app.get("/api/predictions/markets", async (c) => {
 });
 
 // GET /api/predictions/markets/:marketId — single market detail
-app.get("/api/predictions/markets/:marketId", async (c) => {
+app.get("/api/predictions/markets/:marketId", async c => {
 	try {
 		const chainId = Number(c.req.query("chainId")) || 84532;
 		const marketIdParam = c.req.param("marketId");
@@ -4454,12 +4551,7 @@ app.get("/api/predictions/markets/:marketId", async (c) => {
 		const positions = await db
 			.select()
 			.from(predictionPositions)
-			.where(
-				and(
-					eq(predictionPositions.chainId, chainId),
-					eq(predictionPositions.marketId, BigInt(marketIdParam))
-				)
-			)
+			.where(and(eq(predictionPositions.chainId, chainId), eq(predictionPositions.marketId, BigInt(marketIdParam))))
 			.execute();
 
 		return c.json({
@@ -4480,7 +4572,7 @@ app.get("/api/predictions/markets/:marketId", async (c) => {
 });
 
 // GET /api/predictions/positions/:userAddress — all positions for a user
-app.get("/api/predictions/positions/:userAddress", async (c) => {
+app.get("/api/predictions/positions/:userAddress", async c => {
 	try {
 		const userAddress = c.req.param("userAddress").toLowerCase();
 		const chainId = Number(c.req.query("chainId")) || undefined;
@@ -4515,7 +4607,7 @@ app.get("/api/predictions/positions/:userAddress", async (c) => {
 });
 
 // GET /api/predictions/events/:marketId — event history for a market
-app.get("/api/predictions/events/:marketId", async (c) => {
+app.get("/api/predictions/events/:marketId", async c => {
 	try {
 		const chainId = Number(c.req.query("chainId")) || 84532;
 		const marketIdParam = c.req.param("marketId");
@@ -4524,12 +4616,7 @@ app.get("/api/predictions/events/:marketId", async (c) => {
 		const events = await db
 			.select()
 			.from(predictionEvents)
-			.where(
-				and(
-					eq(predictionEvents.chainId, chainId),
-					eq(predictionEvents.marketId, BigInt(marketIdParam))
-				)
-			)
+			.where(and(eq(predictionEvents.chainId, chainId), eq(predictionEvents.marketId, BigInt(marketIdParam))))
 			.orderBy(desc(predictionEvents.timestamp))
 			.limit(limit)
 			.execute();
@@ -4549,18 +4636,90 @@ app.get("/api/predictions/events/:marketId", async (c) => {
 	}
 });
 
+// GET /api/predictions/positions/:userAddress/:marketId — specific user position in a market
+app.get("/api/predictions/positions/:userAddress/:marketId", async c => {
+	try {
+		const chainId = Number(c.req.query("chainId")) || 84532;
+		const userAddress = c.req.param("userAddress").toLowerCase();
+		const marketIdParam = c.req.param("marketId");
+		const positionId = `${chainId}-${marketIdParam}-${userAddress}`;
+
+		const position = await db.find(predictionPositions, { id: positionId });
+		if (!position) {
+			return c.json({ position: null }, 200);
+		}
+
+		return c.json({
+			position: {
+				...position,
+				marketId: position.marketId.toString(),
+				stakeUp: position.stakeUp.toString(),
+				stakeDown: position.stakeDown.toString(),
+				payout: position.payout?.toString() ?? null,
+			},
+		});
+	} catch (error) {
+		return c.json({ error: "Failed to fetch position" }, 500);
+	}
+});
+
+// GET /api/predictions/stats — overview stats across all markets
+app.get("/api/predictions/stats", async c => {
+	try {
+		const chainId = Number(c.req.query("chainId")) || undefined;
+		const conditions: any[] = [];
+		if (chainId !== undefined) conditions.push(eq(predictionMarkets.chainId, chainId));
+
+		const markets = await db
+			.select()
+			.from(predictionMarkets)
+			.where(conditions.length > 0 ? and(...conditions) : undefined)
+			.execute();
+
+		const activeMarkets = markets.filter(m => m.status === 0).length;
+		const settledMarkets = markets.filter(m => m.status === 2).length;
+		const cancelledMarkets = markets.filter(m => m.status === 3).length;
+
+		const totalVolumeUp = markets.reduce((acc, m) => acc + m.totalUp, BigInt(0));
+		const totalVolumeDown = markets.reduce((acc, m) => acc + m.totalDown, BigInt(0));
+
+		const participantConditions: any[] = [];
+		if (chainId !== undefined) participantConditions.push(eq(predictionPositions.chainId, chainId));
+
+		const participantRows = await db
+			.select({ count: sql<number>`count(distinct ${predictionPositions.userAddress})::int` })
+			.from(predictionPositions)
+			.where(participantConditions.length > 0 ? and(...participantConditions) : undefined)
+			.execute();
+
+		const uniqueParticipants = participantRows[0]?.count ?? 0;
+
+		return c.json({
+			totalMarkets: markets.length,
+			activeMarkets,
+			settledMarkets,
+			cancelledMarkets,
+			totalVolumeUp: totalVolumeUp.toString(),
+			totalVolumeDown: totalVolumeDown.toString(),
+			uniqueParticipants,
+		});
+	} catch (error) {
+		return c.json({ error: "Failed to fetch prediction stats" }, 500);
+	}
+});
+
 // Initialize services on startup
 initializeServices();
 
 // Start system monitor for metrics collection (configurable)
-const ENABLE_SYSTEM_MONITOR = process.env.ENABLE_SYSTEM_MONITOR === 'true';
-const SYSTEM_MONITOR_INTERVAL = parseInt(process.env.SYSTEM_MONITOR_INTERVAL || '60');
+const ENABLE_SYSTEM_MONITOR = process.env.ENABLE_SYSTEM_MONITOR === "true";
+const SYSTEM_MONITOR_INTERVAL = parseInt(process.env.SYSTEM_MONITOR_INTERVAL || "60");
 
 if (ENABLE_SYSTEM_MONITOR) {
 	console.log(`Starting system monitor for metrics collection (interval: ${SYSTEM_MONITOR_INTERVAL}s)...`);
 	systemMonitor.start(SYSTEM_MONITOR_INTERVAL);
 } else {
-	console.log('System monitor disabled (set ENABLE_SYSTEM_MONITOR=true to enable)');
+	console.log("System monitor disabled (set ENABLE_SYSTEM_MONITOR=true to enable)");
 }
 
 export default app;
