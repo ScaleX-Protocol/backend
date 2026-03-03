@@ -127,7 +127,7 @@ jobs:
       run: |
         DB="ponder_base_sepolia"
         U="${POSTGRES_USER:-postgres}"
-        TARGET_SCHEMA="clob_indexer_v1"
+        TARGET_SCHEMA="ponder.schema.v1.ts"
         FORCE_DROP="${{ inputs.force_schema_drop || 'false' }}"
 
         echo "=== Checking schema version ==="
@@ -147,7 +147,7 @@ jobs:
           # Drop both the new target and old legacy schema names to handle transitions cleanly
           docker exec postgres-database psql -U $U -d $DB \
             -c "DROP SCHEMA IF EXISTS \"ponder.schema.ts\" CASCADE;
-                DROP SCHEMA IF EXISTS ${TARGET_SCHEMA} CASCADE;
+                DROP SCHEMA IF EXISTS \"ponder.schema.v1.ts\" CASCADE;
                 DROP SCHEMA IF EXISTS ponder_sync CASCADE;" \
             2>/dev/null \
             && echo "✅ Dropped Ponder schemas - will be recreated on startup" \
@@ -194,7 +194,7 @@ jobs:
           # Poll for _ponder_meta in either known schema name (handles DATABASE_SCHEMA env var or legacy name)
           TABLE_COUNT=$(docker exec postgres-database psql -U $U -d $DB -t -c \
             "SELECT COUNT(*) FROM pg_tables WHERE tablename='_ponder_meta'
-             AND schemaname IN ('clob_indexer_v1', 'ponder.schema.ts');" \
+             AND schemaname IN ('ponder.schema.v1.ts', 'ponder.schema.ts');" \
             2>/dev/null | tr -d ' ')
 
           if [ "${TABLE_COUNT}" = "1" ]; then
@@ -216,7 +216,7 @@ jobs:
         # Detect the actual schema name (works regardless of DATABASE_SCHEMA support)
         SCHEMA_NAME=$(docker exec postgres-database psql -U $U -d $DB -t -c \
           "SELECT schemaname FROM pg_tables WHERE tablename='_ponder_meta'
-           AND schemaname IN ('clob_indexer_v1', 'ponder.schema.ts') LIMIT 1;" \
+           AND schemaname IN ('ponder.schema.v1.ts', 'ponder.schema.ts') LIMIT 1;" \
           2>/dev/null | tr -d ' \n')
         SCHEMA="\"${SCHEMA_NAME}\""
         echo "  Active schema: ${SCHEMA_NAME}"
@@ -288,7 +288,7 @@ jobs:
         # Detect active schema name
         SCHEMA_NAME=$(docker exec postgres-database psql -U $U -d $DB -t -c \
           "SELECT schemaname FROM pg_tables WHERE tablename='_ponder_meta'
-           AND schemaname IN ('clob_indexer_v1', 'ponder.schema.ts') LIMIT 1;" \
+           AND schemaname IN ('ponder.schema.v1.ts', 'ponder.schema.ts') LIMIT 1;" \
           2>/dev/null | tr -d ' \n')
 
         echo "=== Sync progress snapshot (T+0 vs T+30s) ==="
