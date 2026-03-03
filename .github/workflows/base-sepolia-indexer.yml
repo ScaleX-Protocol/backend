@@ -8,6 +8,12 @@ on:
       - 'docker-compose.indexer.yml'
       - '.github/workflows/base-sepolia-indexer.yml'
   workflow_dispatch:
+    inputs:
+      force_schema_drop:
+        description: 'Force schema drop + full resync (overrides schema version check)'
+        required: false
+        default: 'false'
+        type: boolean
 
 env:
   CHAIN_NAME: base-sepolia
@@ -119,14 +125,34 @@ jobs:
         POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
         POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
       run: |
-        echo "=== Dropping Ponder schemas (always required before restart) ==="
-        echo "Ponder detects any config/env change as a new app instance and refuses"
-        echo "to start without a clean schema. This step must always run before startup."
-        docker exec postgres-database psql -U ${POSTGRES_USER:-postgres} -d ponder_base_sepolia \
-          -c "DROP SCHEMA IF EXISTS \"ponder.schema.ts\" CASCADE; DROP SCHEMA IF EXISTS ponder_sync CASCADE;" \
-          2>/dev/null \
-          && echo "✅ Dropped schemas (ponder.schema.ts + ponder_sync) - will be recreated on startup" \
-          || echo "⚠️ Schema drop skipped (database may not exist yet - first deploy)"
+        DB="ponder_base_sepolia"
+        U="${POSTGRES_USER:-postgres}"
+        TARGET_SCHEMA="clob_indexer_v1"
+        FORCE_DROP="${{ inputs.force_schema_drop || 'false' }}"
+
+        echo "=== Checking schema version ==="
+        echo "  Target schema:  '${TARGET_SCHEMA}'"
+        echo "  Force drop:     '${FORCE_DROP}'"
+
+        # Check if the target schema already exists (schema version matches — no resync needed)
+        TARGET_EXISTS=$(docker exec postgres-database psql -U $U -d $DB -t -c \
+          "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name = '${TARGET_SCHEMA}';" \
+          2>/dev/null | tr -d ' ')
+
+        if [ "${TARGET_EXISTS}" = "1" ] && [ "${FORCE_DROP}" != "true" ]; then
+          echo "✅ Schema '${TARGET_SCHEMA}' matches — skipping drop, preserving indexed data"
+        else
+          echo "=== Dropping Ponder schemas (version mismatch or forced) ==="
+          echo "Ponder refuses to start if its config hash changed without a clean schema."
+          # Drop both the new target and old legacy schema names to handle transitions cleanly
+          docker exec postgres-database psql -U $U -d $DB \
+            -c "DROP SCHEMA IF EXISTS \"ponder.schema.ts\" CASCADE;
+                DROP SCHEMA IF EXISTS ${TARGET_SCHEMA} CASCADE;
+                DROP SCHEMA IF EXISTS ponder_sync CASCADE;" \
+            2>/dev/null \
+            && echo "✅ Dropped Ponder schemas - will be recreated on startup" \
+            || echo "⚠️ Schema drop skipped (database may not exist yet - first deploy)"
+        fi
 
     - name: Start Base Sepolia services
       env:
@@ -157,54 +183,137 @@ jobs:
         POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
         POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
       run: |
-        echo "=== Waiting for Ponder to initialize schema (60s) ==="
-        sleep 60
-
-        echo "=== Creating composite indexes for query performance ==="
-        echo "These are dropped with the schema on every deploy and must be recreated."
-        echo "CONCURRENTLY means they build without blocking the indexer."
-
         DB="ponder_base_sepolia"
         U="${POSTGRES_USER:-postgres}"
-        SCHEMA='"ponder.schema.ts"'
+        MAX_WAIT=300
+        INTERVAL=10
+        elapsed=0
+
+        echo "=== Waiting for Ponder schema to initialize (max ${MAX_WAIT}s) ==="
+        while true; do
+          # Poll for _ponder_meta in either known schema name (handles DATABASE_SCHEMA env var or legacy name)
+          TABLE_COUNT=$(docker exec postgres-database psql -U $U -d $DB -t -c \
+            "SELECT COUNT(*) FROM pg_tables WHERE tablename='_ponder_meta'
+             AND schemaname IN ('clob_indexer_v1', 'ponder.schema.ts');" \
+            2>/dev/null | tr -d ' ')
+
+          if [ "${TABLE_COUNT}" = "1" ]; then
+            echo "✅ Ponder schema ready (${elapsed}s elapsed)"
+            break
+          fi
+
+          if [ $elapsed -ge $MAX_WAIT ]; then
+            echo "❌ Timeout: Ponder schema not ready after ${MAX_WAIT}s — indexer may have failed to start"
+            docker logs base-sepolia-clob-indexer --tail=30 2>&1
+            exit 1
+          fi
+
+          echo "  Waiting... (${elapsed}s elapsed, schema not ready yet)"
+          sleep $INTERVAL
+          elapsed=$((elapsed + INTERVAL))
+        done
+
+        # Detect the actual schema name (works regardless of DATABASE_SCHEMA support)
+        SCHEMA_NAME=$(docker exec postgres-database psql -U $U -d $DB -t -c \
+          "SELECT schemaname FROM pg_tables WHERE tablename='_ponder_meta'
+           AND schemaname IN ('clob_indexer_v1', 'ponder.schema.ts') LIMIT 1;" \
+          2>/dev/null | tr -d ' \n')
+        SCHEMA="\"${SCHEMA_NAME}\""
+        echo "  Active schema: ${SCHEMA_NAME}"
+
+        echo "=== Pre-warming PostgreSQL buffer cache ==="
+        docker exec postgres-database psql -U $U -d $DB -c \
+          "SELECT COUNT(*) FROM ${SCHEMA}.orders;
+           SELECT COUNT(*) FROM ${SCHEMA}.lending_events;
+           SELECT COUNT(*) FROM ${SCHEMA}.order_history;" 2>/dev/null \
+          && echo "✅ Buffer pre-warm complete" \
+          || echo "⚠️ Pre-warm skipped (tables may not have data yet)"
+
+        echo "=== Creating composite indexes for query performance ==="
+        echo "CONCURRENTLY means they build without blocking the running indexer."
 
         docker exec postgres-database psql -U $U -d $DB -c \
           "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_orders_pool_status
-           ON $SCHEMA.orders (pool_id, status);" && echo "✅ idx_orders_pool_status" || echo "⚠️ idx_orders_pool_status failed"
+           ON ${SCHEMA}.orders (pool_id, status);" && echo "✅ idx_orders_pool_status" || echo "⚠️ idx_orders_pool_status failed"
 
         docker exec postgres-database psql -U $U -d $DB -c \
           "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_minute_buckets_pool_time
-           ON $SCHEMA.minute_buckets (pool_id, open_time);" && echo "✅ idx_minute_buckets_pool_time" || echo "⚠️ idx_minute_buckets_pool_time failed"
+           ON ${SCHEMA}.minute_buckets (pool_id, open_time);" && echo "✅ idx_minute_buckets_pool_time" || echo "⚠️ idx_minute_buckets_pool_time failed"
 
         docker exec postgres-database psql -U $U -d $DB -c \
           "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_5min_buckets_pool_time
-           ON $SCHEMA.five_minute_buckets (pool_id, open_time);" && echo "✅ idx_5min_buckets_pool_time" || echo "⚠️ idx_5min_buckets_pool_time failed"
+           ON ${SCHEMA}.five_minute_buckets (pool_id, open_time);" && echo "✅ idx_5min_buckets_pool_time" || echo "⚠️ idx_5min_buckets_pool_time failed"
 
         docker exec postgres-database psql -U $U -d $DB -c \
           "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_30min_buckets_pool_time
-           ON $SCHEMA.thirty_minute_buckets (pool_id, open_time);" && echo "✅ idx_30min_buckets_pool_time" || echo "⚠️ idx_30min_buckets_pool_time failed"
+           ON ${SCHEMA}.thirty_minute_buckets (pool_id, open_time);" && echo "✅ idx_30min_buckets_pool_time" || echo "⚠️ idx_30min_buckets_pool_time failed"
 
         docker exec postgres-database psql -U $U -d $DB -c \
           "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_hour_buckets_pool_time
-           ON $SCHEMA.hour_buckets (pool_id, open_time);" && echo "✅ idx_hour_buckets_pool_time" || echo "⚠️ idx_hour_buckets_pool_time failed"
+           ON ${SCHEMA}.hour_buckets (pool_id, open_time);" && echo "✅ idx_hour_buckets_pool_time" || echo "⚠️ idx_hour_buckets_pool_time failed"
 
         docker exec postgres-database psql -U $U -d $DB -c \
           "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_daily_buckets_pool_time
-           ON $SCHEMA.daily_buckets (pool_id, open_time);" && echo "✅ idx_daily_buckets_pool_time" || echo "⚠️ idx_daily_buckets_pool_time failed"
+           ON ${SCHEMA}.daily_buckets (pool_id, open_time);" && echo "✅ idx_daily_buckets_pool_time" || echo "⚠️ idx_daily_buckets_pool_time failed"
 
+        # Covering index: includes timestamp DESC so ORDER BY timestamp DESC LIMIT 1 is a pure index scan (no sort)
         docker exec postgres-database psql -U $U -d $DB -c \
-          "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ob_trades_pool
-           ON $SCHEMA.order_book_trades (pool_id, chain_id);" && echo "✅ idx_ob_trades_pool" || echo "⚠️ idx_ob_trades_pool failed"
+          "DROP INDEX CONCURRENTLY IF EXISTS idx_ob_trades_pool;
+           CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ob_trades_pool_ts
+           ON ${SCHEMA}.order_book_trades (pool_id, chain_id, timestamp DESC);" && echo "✅ idx_ob_trades_pool_ts" || echo "⚠️ idx_ob_trades_pool_ts failed"
 
         docker exec postgres-database psql -U $U -d $DB -c \
           "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_currencies_chain_address
-           ON $SCHEMA.currencies (chain_id, address);" && echo "✅ idx_currencies_chain_address" || echo "⚠️ idx_currencies_chain_address failed"
+           ON ${SCHEMA}.currencies (chain_id, address);" && echo "✅ idx_currencies_chain_address" || echo "⚠️ idx_currencies_chain_address failed"
 
-        echo "=== Index creation complete ==="
+        # API layer queries agent_orders WHERE owner = ? — without this index it's a full table scan
+        docker exec postgres-database psql -U $U -d $DB -c \
+          "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_agent_orders_owner
+           ON ${SCHEMA}.agent_orders (owner);" && echo "✅ idx_agent_orders_owner" || echo "⚠️ idx_agent_orders_owner failed"
+
+        echo "=== Index creation complete (9 indexes) ==="
         docker exec postgres-database psql -U $U -d $DB -c \
           "SELECT indexrelname, relname AS table FROM pg_stat_user_indexes
-           WHERE schemaname='ponder.schema.ts' AND indexrelname LIKE 'idx_%'
+           WHERE schemaname='${SCHEMA_NAME}' AND indexrelname LIKE 'idx_%'
            ORDER BY indexrelname;"
+
+    - name: Sync progress snapshot
+      env:
+        POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+        POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      run: |
+        DB="ponder_base_sepolia"
+        U="${POSTGRES_USER:-postgres}"
+
+        # Detect active schema name
+        SCHEMA_NAME=$(docker exec postgres-database psql -U $U -d $DB -t -c \
+          "SELECT schemaname FROM pg_tables WHERE tablename='_ponder_meta'
+           AND schemaname IN ('clob_indexer_v1', 'ponder.schema.ts') LIMIT 1;" \
+          2>/dev/null | tr -d ' \n')
+
+        echo "=== Sync progress snapshot (T+0 vs T+30s) ==="
+        echo "  Schema: ${SCHEMA_NAME}"
+
+        BLOCK_1=$(docker exec postgres-database psql -U $U -d $DB -t -c \
+          "SELECT MAX(latest_block_number) FROM \"${SCHEMA_NAME}\".indexer_status;" \
+          2>/dev/null | tr -d ' \n')
+        echo "  Block at T+0: ${BLOCK_1:-unknown}"
+
+        sleep 30
+
+        BLOCK_2=$(docker exec postgres-database psql -U $U -d $DB -t -c \
+          "SELECT MAX(latest_block_number) FROM \"${SCHEMA_NAME}\".indexer_status;" \
+          2>/dev/null | tr -d ' \n')
+        echo "  Block at T+30s: ${BLOCK_2:-unknown}"
+
+        if [ -n "${BLOCK_1}" ] && [ -n "${BLOCK_2}" ] && [ "${BLOCK_2}" -gt "${BLOCK_1}" ] 2>/dev/null; then
+          DELTA=$((BLOCK_2 - BLOCK_1))
+          RATE=$((DELTA / 30))
+          echo "  Blocks/30s: +${DELTA}  (~${RATE} blocks/sec)"
+          echo "  Indexer is syncing ✅"
+        else
+          echo "  ⚠️ No block progress in 30s — indexer may still be initializing (normal in first 2 min after schema drop)"
+        fi
 
     - name: Verify deployment
       env:
