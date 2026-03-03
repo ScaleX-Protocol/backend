@@ -1,6 +1,7 @@
 .claude
 logs
 generated
+docs/plans/
 
 # Ignore node_modules in all subdirectories
 node_modules/
