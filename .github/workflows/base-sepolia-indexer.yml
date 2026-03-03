@@ -76,13 +76,11 @@ jobs:
           exit 1
         fi
 
-    - name: Deploy to production
+    - name: Build and stop existing services
       env:
         POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
         POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
       run: |
-        echo "Deploying Base Sepolia indexer services..."
-
         echo "=== Checking environment file ==="
         if [ -f "./ponder/.env.base-sepolia" ]; then
           echo "✅ Environment file exists: ./ponder/.env.base-sepolia"
@@ -94,9 +92,6 @@ jobs:
           ls -la ./ponder/.env* || echo "No .env files found"
           exit 1
         fi
-
-        # Set project name to avoid conflicts with other chains
-        export COMPOSE_PROJECT_NAME=base-sepolia-indexer
 
         echo "=== Building Base Sepolia services ==="
         CHAIN_NAME=base-sepolia \
@@ -119,11 +114,25 @@ jobs:
         INDEXER_ENV_FILE=./ponder/.env.base-sepolia \
         docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer down --remove-orphans || true
 
-        echo "=== Resetting Ponder database schemas (required when schema changes) ==="
-        docker exec postgres-database psql -U ${POSTGRES_USER:-postgres} -d ponder_base_sepolia -c "DROP SCHEMA IF EXISTS \"ponder.schema.ts\" CASCADE; DROP SCHEMA IF EXISTS ponder_sync CASCADE;" 2>/dev/null && \
-          echo "✅ Dropped Ponder schemas (ponder.schema.ts + ponder_sync) - will be recreated on startup" || \
-          echo "⚠️ Schema drop skipped (may not exist yet)"
+    - name: Reset Ponder database schemas
+      env:
+        POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+        POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      run: |
+        echo "=== Dropping Ponder schemas (always required before restart) ==="
+        echo "Ponder detects any config/env change as a new app instance and refuses"
+        echo "to start without a clean schema. This step must always run before startup."
+        docker exec postgres-database psql -U ${POSTGRES_USER:-postgres} -d ponder_base_sepolia \
+          -c "DROP SCHEMA IF EXISTS \"ponder.schema.ts\" CASCADE; DROP SCHEMA IF EXISTS ponder_sync CASCADE;" \
+          2>/dev/null \
+          && echo "✅ Dropped schemas (ponder.schema.ts + ponder_sync) - will be recreated on startup" \
+          || echo "⚠️ Schema drop skipped (database may not exist yet - first deploy)"
 
+    - name: Start Base Sepolia services
+      env:
+        POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+        POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      run: |
         echo "=== Starting Base Sepolia services ==="
         CHAIN_NAME=base-sepolia \
         PONDER_DATABASE=ponder_base_sepolia \
@@ -142,6 +151,60 @@ jobs:
         docker-compose -f docker-compose.indexer.yml -p base-sepolia-indexer ps
 
         echo "Base Sepolia indexer deployment completed"
+
+    - name: Recreate performance indexes
+      env:
+        POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+        POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      run: |
+        echo "=== Waiting for Ponder to initialize schema (60s) ==="
+        sleep 60
+
+        echo "=== Creating composite indexes for query performance ==="
+        echo "These are dropped with the schema on every deploy and must be recreated."
+        echo "CONCURRENTLY means they build without blocking the indexer."
+
+        DB="ponder_base_sepolia"
+        U="${POSTGRES_USER:-postgres}"
+        SCHEMA='"ponder.schema.ts"'
+
+        docker exec postgres-database psql -U $U -d $DB -c \
+          "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_orders_pool_status
+           ON $SCHEMA.orders (pool_id, status);" && echo "✅ idx_orders_pool_status" || echo "⚠️ idx_orders_pool_status failed"
+
+        docker exec postgres-database psql -U $U -d $DB -c \
+          "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_minute_buckets_pool_time
+           ON $SCHEMA.minute_buckets (pool_id, open_time);" && echo "✅ idx_minute_buckets_pool_time" || echo "⚠️ idx_minute_buckets_pool_time failed"
+
+        docker exec postgres-database psql -U $U -d $DB -c \
+          "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_5min_buckets_pool_time
+           ON $SCHEMA.five_minute_buckets (pool_id, open_time);" && echo "✅ idx_5min_buckets_pool_time" || echo "⚠️ idx_5min_buckets_pool_time failed"
+
+        docker exec postgres-database psql -U $U -d $DB -c \
+          "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_30min_buckets_pool_time
+           ON $SCHEMA.thirty_minute_buckets (pool_id, open_time);" && echo "✅ idx_30min_buckets_pool_time" || echo "⚠️ idx_30min_buckets_pool_time failed"
+
+        docker exec postgres-database psql -U $U -d $DB -c \
+          "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_hour_buckets_pool_time
+           ON $SCHEMA.hour_buckets (pool_id, open_time);" && echo "✅ idx_hour_buckets_pool_time" || echo "⚠️ idx_hour_buckets_pool_time failed"
+
+        docker exec postgres-database psql -U $U -d $DB -c \
+          "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_daily_buckets_pool_time
+           ON $SCHEMA.daily_buckets (pool_id, open_time);" && echo "✅ idx_daily_buckets_pool_time" || echo "⚠️ idx_daily_buckets_pool_time failed"
+
+        docker exec postgres-database psql -U $U -d $DB -c \
+          "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ob_trades_pool
+           ON $SCHEMA.order_book_trades (pool_id, chain_id);" && echo "✅ idx_ob_trades_pool" || echo "⚠️ idx_ob_trades_pool failed"
+
+        docker exec postgres-database psql -U $U -d $DB -c \
+          "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_currencies_chain_address
+           ON $SCHEMA.currencies (chain_id, address);" && echo "✅ idx_currencies_chain_address" || echo "⚠️ idx_currencies_chain_address failed"
+
+        echo "=== Index creation complete ==="
+        docker exec postgres-database psql -U $U -d $DB -c \
+          "SELECT indexrelname, relname AS table FROM pg_stat_user_indexes
+           WHERE schemaname='ponder.schema.ts' AND indexrelname LIKE 'idx_%'
+           ORDER BY indexrelname;"
 
     - name: Verify deployment
       env:

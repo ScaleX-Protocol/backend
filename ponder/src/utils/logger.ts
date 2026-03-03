@@ -11,6 +11,12 @@ const OTEL_LOGS_ENDPOINT = OTEL_BASE_URL ? `${OTEL_BASE_URL}/v1/logs` : null;
 // Service name from environment variable
 const SERVICE_NAME = process.env.OTEL_SERVICE_NAME || 'unknown-service';
 
+// Log level filtering - respects LOG_LEVEL env var
+const LOG_LEVEL_PRIORITY: Record<string, number> = {
+  silent: 0, error: 1, warn: 2, info: 3, debug: 4, trace: 5
+};
+const configuredLogLevel = LOG_LEVEL_PRIORITY[process.env.LOG_LEVEL?.toLowerCase() ?? 'info'] ?? 3;
+
 // Map log levels to OTEL severity numbers
 const severityMap: Record<string, { number: number; text: string }> = {
   debug: { number: 5, text: 'DEBUG' },
@@ -141,6 +147,10 @@ export const log = (
   functionName: string,
   fileLoggingEnabled: boolean = false
 ) => {
+  // Filter by configured log level
+  const msgPriority = LOG_LEVEL_PRIORITY[level] ?? 3;
+  if (msgPriority > configuredLogLevel) return;
+
   try {
     const safeMessage = String(message || '').substring(0, 10000);
     const safeData = data && typeof data === 'object' ? data : { value: String(data || '') };
