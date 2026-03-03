@@ -416,20 +416,63 @@ export class MarketService {
     static async getMarkets() {
         const allPools = await ponderDb.select().from(pools).execute();
 
+        // Get order book depth for liquidity
+        const poolIds = allPools.flatMap(p => [p.id, p.orderBook].filter(Boolean));
+        
+        let depthData: any[] = [];
+        
+        if (poolIds.length > 0) {
+            const poolIdList = poolIds.map(p => `'${p}'`).join(',');
+            depthData = await ponderDb.execute(`
+                SELECT pool_id, side, SUM(quantity) as total_quantity
+                FROM order_book_depth
+                WHERE pool_id IN (${poolIdList})
+                GROUP BY pool_id, side
+            `);
+            depthData = depthData.rows || [];
+        }
+
+        const depthMap = new Map();
+        for (const row of depthData) {
+            if (!depthMap.has(row.pool_id)) {
+                depthMap.set(row.pool_id, { bid: "0", ask: "0" });
+            }
+            const entry = depthMap.get(row.pool_id);
+            if (row.side === 'Buy') {
+                entry.bid = row.total_quantity || "0";
+            } else if (row.side === 'Sell') {
+                entry.ask = row.total_quantity || "0";
+            }
+        }
+
+        const now = Math.floor(Date.now() / 1000);
+
         return allPools.map(pool => {
             const symbol = pool.coin || "";
             const symbolParts = symbol.split("/");
+            const poolId = pool.id;
+            const depth = depthMap.get(pool.id) || depthMap.get(pool.orderBook) || { bid: "0", ask: "0" };
             
+            const price = pool.price ? Number(pool.price) : 0;
+            const bidLiqu = depth.bid ? Number(depth.bid) : 0;
+            const askLiqu = depth.ask ? Number(depth.ask) : 0;
+            const totalLiquidityInQuote = price > 0 ? ((bidLiqu + askLiqu) * price / Math.pow(10, pool.baseDecimals || 18)).toString() : "0";
+
             return {
                 symbol: symbol.replace("/", ""),
                 baseAsset: symbolParts[0] || symbol,
                 quoteAsset: symbolParts[1] || "IDRX",
-                poolId: pool.orderBook || pool.id,  // Use order_book as poolId (pool address)
+                poolId: poolId,
                 baseDecimals: pool.baseDecimals,
                 quoteDecimals: pool.quoteDecimals,
                 volume: pool.volume?.toString() || "0",
                 volumeInQuote: pool.volumeInQuote?.toString() || "0",
                 latestPrice: pool.price?.toString() || "0",
+                bidLiquidity: depth.bid,
+                askLiquidity: depth.ask,
+                totalLiquidityInQuote: totalLiquidityInQuote,
+                age: pool.timestamp ? Math.floor((now - pool.timestamp) / 60) : 0,
+                createdAt: pool.timestamp || 0,
             };
         });
     }
