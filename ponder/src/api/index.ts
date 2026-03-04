@@ -194,24 +194,43 @@ async function getTokenPricesFromTrades(
 			}
 		}
 
-		// Get all pools with their prices
+		// Get all pools and their latest prices from orderBookTrades
 		const poolsData = await db
 			.select({
 				id: pools.id,
+				orderBook: pools.orderBook,
 				baseCurrency: pools.baseCurrency,
 				quoteCurrency: pools.quoteCurrency,
-				price: pools.price,
 			})
 			.from(pools)
 			.where(eq(pools.chainId, chainId))
 			.execute();
 
+		// Fetch latest price per pool from orderBookTrades in one query
+		const poolOrderBooks = poolsData.map(p => p.orderBook).filter(Boolean) as string[];
+		const latestPrices = poolOrderBooks.length > 0
+			? await db
+				.select({
+					poolId: orderBookTrades.poolId,
+					price: sql<bigint>`max(${orderBookTrades.price})`.as("price"),
+				})
+				.from(orderBookTrades)
+				.where(and(
+					inArray(orderBookTrades.poolId, poolOrderBooks),
+					eq(orderBookTrades.timestamp, sql<number>`(SELECT MAX(t2.timestamp) FROM order_book_trades t2 WHERE t2.pool_id = ${orderBookTrades.poolId})`)
+				))
+				.groupBy(orderBookTrades.poolId)
+				.execute()
+			: [];
+		const latestPriceMap = new Map(latestPrices.map(r => [r.poolId, r.price]));
+
 		// Map pool prices to underlying tokens
 		for (const pool of poolsData) {
 			// Get actual quote decimals from currencies table
 			const quoteDecimals = addressToDecimals.get(pool.quoteCurrency.toLowerCase()) || 6;
+			const price = pool.orderBook ? (latestPriceMap.get(pool.orderBook) ?? 0n) : 0n;
 
-			if (pool.price && pool.price > 0n) {
+			if (price && price > 0n) {
 				const syntheticBaseAddr = pool.baseCurrency.toLowerCase();
 
 				// Find the underlying token for this synthetic base currency
@@ -221,7 +240,7 @@ async function getTokenPricesFromTrades(
 
 				if (underlyingAddr && !priceMap.has(underlyingAddr)) {
 					priceMap.set(underlyingAddr, {
-						price: pool.price,
+						price: price,
 						quoteDecimals: quoteDecimals,
 					});
 				}
@@ -1678,6 +1697,9 @@ app.get("/api/markets", async c => {
 				let bidLiquidity = "0";
 				let askLiquidity = "0";
 				let totalLiquidityInQuote = "0";
+				let latestPrice = "0";
+				let volume = "0";
+				let volumeInQuote = "0";
 
 				if (pool.orderBook) {
 					const activeStatuses = or(eq(orders.status, "OPEN"), eq(orders.status, "PARTIALLY_FILLED"));
@@ -1708,18 +1730,40 @@ app.get("/api/markets", async c => {
 						.execute();
 
 					totalLiquidityInQuote = quoteLiquidityData[0]?.totalValue?.toString() || "0";
-				}
 
-				return {
+					// Get latest price from orderBookTrades (pools.price no longer updated)
+					const latestPriceRow = await db
+						.select({ price: orderBookTrades.price })
+						.from(orderBookTrades)
+						.where(eq(orderBookTrades.poolId, pool.orderBook as `0x${string}`))
+						.orderBy(desc(orderBookTrades.timestamp))
+						.limit(1)
+						.execute();
+					latestPrice = latestPriceRow[0]?.price?.toString() || "0";
+
+					// Get total volume from orderBookTrades
+					const volumeRow = await db
+						.select({
+							volume: sql<string>`coalesce(sum(${orderBookTrades.quantity}), 0)::text`.as("volume"),
+							volumeInQuote: sql<string>`coalesce(sum(${orderBookTrades.quantity} * ${orderBookTrades.price}), 0)::text`.as("volumeInQuote"),
+						})
+						.from(orderBookTrades)
+						.where(eq(orderBookTrades.poolId, pool.orderBook as `0x${string}`))
+						.execute();
+					volume = volumeRow[0]?.volume || "0";
+					volumeInQuote = volumeRow[0]?.volumeInQuote || "0";
+			}
+
+			return {
 					symbol: symbol.replace("/", ""),
 					baseAsset: symbolParts[0] || symbol,
 					quoteAsset: symbolParts[1] || "USDT",
 					poolId: pool.id,
 					baseDecimals: pool.baseDecimals,
 					quoteDecimals: pool.quoteDecimals,
-					volume: pool.volume?.toString() || "0",
-					volumeInQuote: pool.volumeInQuote?.toString() || "0",
-					latestPrice: pool.price?.toString() || "0",
+					volume: volume,
+					volumeInQuote: volumeInQuote,
+					latestPrice: latestPrice,
 					age: marketAge,
 					bidLiquidity: bidLiquidity,
 					askLiquidity: askLiquidity,
@@ -3830,15 +3874,32 @@ async function computeAnalytics(
 			tradeCount: sql<number>`count(*)::int`,
 			baseDecimals: pools.baseDecimals,
 			quoteDecimals: pools.quoteDecimals,
-			lastPrice: pools.price,
 			symbol: pools.coin,
 		})
 		.from(trades)
 		.innerJoin(orders, eq(trades.orderId, orders.id))
 		.innerJoin(pools, eq(orders.poolId, pools.orderBook))
 		.where(and(...pnlConditions))
-		.groupBy(orders.poolId, orders.side, pools.baseDecimals, pools.quoteDecimals, pools.price, pools.coin)
+		.groupBy(orders.poolId, orders.side, pools.baseDecimals, pools.quoteDecimals, pools.coin)
 		.execute();
+
+	// Fetch latest prices from orderBookTrades for unrealized PnL (pools.price no longer updated)
+	const pnlPoolIds = [...new Set(pnlData.map(r => r.poolId).filter(Boolean))];
+	const poolPriceMap = new Map<string, bigint>();
+	if (pnlPoolIds.length > 0) {
+		await Promise.all(pnlPoolIds.map(async pid => {
+			const priceRow = await db
+				.select({ price: orderBookTrades.price })
+				.from(orderBookTrades)
+				.where(eq(orderBookTrades.poolId, pid as `0x${string}`))
+				.orderBy(desc(orderBookTrades.timestamp))
+				.limit(1)
+				.execute();
+			if (priceRow[0]?.price != null) {
+				poolPriceMap.set(pid, priceRow[0].price);
+			}
+		}));
+	}
 
 	// Query 2: Fill rate data — orders grouped by status
 	const fillConditions = [eq(orders.chainId, chainId), ...filterConditions];
@@ -3879,7 +3940,7 @@ async function computeAnalytics(
 				symbol: row.symbol,
 				baseDecimals: row.baseDecimals,
 				quoteDecimals: row.quoteDecimals,
-				lastPrice: row.lastPrice,
+				lastPrice: poolPriceMap.get(key) ?? null,
 				buyQuantity: 0n,
 				buyQuoteValue: 0n,
 				sellQuantity: 0n,

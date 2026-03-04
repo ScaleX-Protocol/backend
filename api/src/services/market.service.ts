@@ -453,7 +453,7 @@ export class MarketService {
             const poolId = pool.id;
             const depth = depthMap.get(pool.id) || depthMap.get(pool.orderBook) || { bid: "0", ask: "0" };
             
-            const price = pool.price ? Number(pool.price) : 0;
+            const price = 0;
             const bidLiqu = depth.bid ? Number(depth.bid) : 0;
             const askLiqu = depth.ask ? Number(depth.ask) : 0;
             const totalLiquidityInQuote = price > 0 ? ((bidLiqu + askLiqu) * price / Math.pow(10, pool.baseDecimals || 18)).toString() : "0";
@@ -465,9 +465,9 @@ export class MarketService {
                 poolId: poolId,
                 baseDecimals: pool.baseDecimals,
                 quoteDecimals: pool.quoteDecimals,
-                volume: pool.volume?.toString() || "0",
-                volumeInQuote: pool.volumeInQuote?.toString() || "0",
-                latestPrice: pool.price?.toString() || "0",
+                volume: "0",
+                volumeInQuote: "0",
+                latestPrice: "0",
                 bidLiquidity: depth.bid,
                 askLiquidity: depth.ask,
                 totalLiquidityInQuote: totalLiquidityInQuote,
@@ -731,8 +731,6 @@ export class MarketService {
         let price = "0";
         if (latestTrade.length > 0 && latestTrade[0]?.price) {
             price = latestTrade[0].price.toString();
-        } else if (pool?.price) {
-            price = pool.price.toString();
         }
 
         return {

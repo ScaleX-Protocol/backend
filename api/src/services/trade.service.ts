@@ -215,8 +215,6 @@ export class TradeService {
       let price = "0";
       if (latestTrade.length > 0 && latestTrade[0]?.price) {
         price = latestTrade[0].price.toString();
-      } else if (queriedPools[0]?.price) {
-        price = queriedPools[0].price.toString();
       }
 
       const response: TickerPriceResponse = {
