@@ -55,15 +55,15 @@ export class AgentsService {
                 return { success: true, data: [], count: 0, pagination: { limit, offset } };
             }
 
-            const agentTokenIds = agents.map(a => a.tokenId).filter(id => id && id.trim() !== '');
-            
+            const agentTokenIds = agents.map(a => a.token_id).filter(id => id != null && String(id).trim() !== '');
+
             // Early return if no agents
             if (agentTokenIds.length === 0) {
                 return { success: true, data: [], count: 0, pagination: { limit, offset } };
             }
 
             const agentIdArray = `{${agentTokenIds.join(',')}}`;
-            
+
             const installations = await runQuery<{ agent_token_id: string; total_users: number; active_users: number; first_installed_at: number | null }>(`
                 SELECT 
                     agent_token_id::text,
@@ -76,7 +76,7 @@ export class AgentsService {
             `, [chainId, agentIdArray]);
 
             const activityStats = await runQuery<{ agent_token_id: string; last_activity_at: number | null; total_trading_volume: string }>(`
-                SELECT 
+                SELECT
                     agent_token_id::text,
                     MAX(last_activity_timestamp)::integer as last_activity_at,
                     COALESCE(SUM(total_trading_volume), 0)::text as total_trading_volume
@@ -97,14 +97,14 @@ export class AgentsService {
             const ordersMap = new Map(orderCounts.map(o => [o.agent_token_id, o.order_count]));
 
             const data = agents.map(Agent => {
-                const install = installationsMap.get(Agent.tokenId);
-                const activity = activityStatsMap.get(Agent.tokenId);
-                const orderCount = ordersMap.get(Agent.tokenId) || 0;
+                const install = installationsMap.get(Agent.token_id);
+                const activity = activityStatsMap.get(Agent.token_id);
+                const orderCount = ordersMap.get(Agent.token_id) || 0;
                 return {
-                    agentTokenId: Agent.tokenId,
+                    agentTokenId: Agent.token_id,
                     owner: Agent.owner,
-                    metadataURI: Agent.metadataURI,
-                    registeredAt: Agent.registeredAt,
+                    metadataURI: Agent.metadata_uri,
+                    registeredAt: Agent.registered_at,
                     totalUsers: install?.total_users || 0,
                     activeUsers: install?.active_users || 0,
                     firstInstalledAt: install?.first_installed_at || null,
@@ -201,7 +201,7 @@ export class AgentsService {
             return {
                 success: true,
                 data: {
-                    agentTokenId: registry?.tokenId || agentTokenId,
+                    agentTokenId: registry?.token_id?.toString() || agentTokenId,
                     chainId,
                     totalUsers: install?.total_users || 0,
                     activeUsers: install?.active_users || 0,
@@ -286,19 +286,18 @@ export class AgentsService {
             `, [agentTokenId, chainId, limit, offset]);
 
             const data = lendingEvents.map(event => ({
-                ...event,
                 id: event.id,
-                chainId: event.chainId,
-                agentTokenId: event.agentTokenId?.toString(),
+                chainId: event.chain_id,
+                agentTokenId: event.agent_token_id?.toString(),
                 owner: event.owner,
                 executor: event.executor,
                 action: event.action,
                 token: event.token,
                 amount: event.amount?.toString(),
-                newHealthFactor: event.newHealthFactor?.toString(),
+                newHealthFactor: event.new_health_factor?.toString(),
                 timestamp: event.timestamp,
-                transactionId: event.transactionId,
-                blockNumber: event.blockNumber?.toString(),
+                transactionId: event.transaction_id,
+                blockNumber: event.block_number?.toString(),
             }));
 
             const countResult = await runQuery<{ count: string }>(`
@@ -350,13 +349,23 @@ export class AgentsService {
             const data = policies.map(p => ({
                 id: p.id,
                 owner: p.owner,
-                chainId: p.chainId,
-                agentTokenId: p.agentTokenId?.toString(),
-                maxTradeSize: p.maxTradeSize?.toString() || null,
-                maxDailyVolume: p.maxDailyVolume?.toString() || null,
-                allowedPools: p.allowedPools || [],
-                restrictedPools: p.restrictedPools || [],
-                enableCircuitBreaker: p.enableCircuitBreaker ?? true,
+                chainId: p.chain_id,
+                agentTokenId: p.agent_token_id?.toString(),
+                maxOrderSize: p.max_order_size?.toString() || null,
+                minOrderSize: p.min_order_size?.toString() || null,
+                dailyVolumeLimit: p.daily_volume_limit?.toString() || null,
+                weeklyVolumeLimit: p.weekly_volume_limit?.toString() || null,
+                whitelistedTokens: p.whitelisted_tokens || [],
+                blacklistedTokens: p.blacklisted_tokens || [],
+                allowMarketOrders: p.allow_market_orders ?? true,
+                allowLimitOrders: p.allow_limit_orders ?? true,
+                allowBuy: p.allow_buy ?? true,
+                allowSell: p.allow_sell ?? true,
+                maxSlippageBps: p.max_slippage_bps,
+                minTimeBetweenTrades: p.min_time_between_trades,
+                maxTradesPerDay: p.max_trades_per_day,
+                maxTradesPerHour: p.max_trades_per_hour,
+                minHealthFactor: p.min_health_factor?.toString() || null,
             }));
 
             return {
@@ -436,24 +445,34 @@ export class AgentsService {
                 return {
                     id: p.id,
                     owner: p.owner,
-                    chainId: p.chainId,
-                    agentTokenId: p.agentTokenId?.toString(),
-                    maxTradeSize: p.maxTradeSize?.toString() || null,
-                    maxDailyVolume: p.maxDailyVolume?.toString() || null,
-                    allowedPools: p.allowedPools || [],
-                    restrictedPools: p.restrictedPools || [],
-                    enableCircuitBreaker: p.enableCircuitBreaker ?? true,
+                    chainId: p.chain_id,
+                    agentTokenId: p.agent_token_id?.toString(),
+                    maxOrderSize: p.max_order_size?.toString() || null,
+                    minOrderSize: p.min_order_size?.toString() || null,
+                    dailyVolumeLimit: p.daily_volume_limit?.toString() || null,
+                    weeklyVolumeLimit: p.weekly_volume_limit?.toString() || null,
+                    whitelistedTokens: p.whitelisted_tokens || [],
+                    blacklistedTokens: p.blacklisted_tokens || [],
+                    allowMarketOrders: p.allow_market_orders ?? true,
+                    allowLimitOrders: p.allow_limit_orders ?? true,
+                    allowBuy: p.allow_buy ?? true,
+                    allowSell: p.allow_sell ?? true,
+                    maxSlippageBps: p.max_slippage_bps,
+                    minTimeBetweenTrades: p.min_time_between_trades,
+                    maxTradesPerDay: p.max_trades_per_day,
+                    maxTradesPerHour: p.max_trades_per_hour,
+                    minHealthFactor: p.min_health_factor?.toString() || null,
                 };
             };
 
             const data = installations.map(inst => ({
                 owner: inst.owner,
                 enabled: inst.enabled,
-                installedAt: inst.installedAt,
-                uninstalledAt: inst.uninstalledAt,
-                templateUsed: inst.templateUsed,
-                transactionId: inst.transactionId,
-                blockNumber: inst.blockNumber?.toString(),
+                installedAt: inst.installed_at,
+                uninstalledAt: inst.uninstalled_at,
+                templateUsed: inst.template_used,
+                transactionId: inst.transaction_id,
+                blockNumber: inst.block_number?.toString(),
                 policy: serializePolicy(policyMap.get(inst.owner)),
             }));
 

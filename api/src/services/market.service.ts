@@ -118,7 +118,7 @@ export class MarketService {
         const bucketTable = intervalTableMap[interval as IntervalType] || minuteBuckets;
         const poolId = pool.orderBook;
 
-        const klineData = await db
+        const klineData = await ponderDb
             .select()
             .from(bucketTable)
             .where(
@@ -151,7 +151,7 @@ export class MarketService {
         }
 
         const [bids, asks] = await Promise.all([
-            db
+            ponderDb
                 .select({
                     price: orders.price,
                     quantity: sql`SUM(${orders.quantity})`.as("quantity"),
@@ -171,7 +171,7 @@ export class MarketService {
                 .limit(limit)
                 .execute(),
 
-            db
+            ponderDb
                 .select({
                     price: orders.price,
                     quantity: sql`SUM(${orders.quantity})`.as("quantity"),
@@ -222,7 +222,7 @@ export class MarketService {
         let recentTrades;
 
         if (user) {
-            const userTrades = await db
+            const userTrades = await ponderDb
                 .select({
                     trade: orderBookTrades,
                     order: orders,
@@ -231,7 +231,7 @@ export class MarketService {
                 .innerJoin(orders, eq(orderBookTrades.poolId, orders.poolId))
                 .where(and(
                     eq(orderBookTrades.poolId, poolId), 
-                    eq(orders.user, user.toLowerCase())
+                    eq(orders.userAddress, user.toLowerCase())
                 ))
                 .orderBy(desc(orderBookTrades.timestamp))
                 .limit(Math.min(limit, 100))
@@ -239,7 +239,7 @@ export class MarketService {
 
             recentTrades = userTrades.map((result: any) => result.trade);
         } else {
-            recentTrades = await db
+            recentTrades = await ponderDb
                 .select()
                 .from(orderBookTrades)
                 .where(eq(orderBookTrades.poolId, poolId))
@@ -265,7 +265,7 @@ export class MarketService {
     }) {
         const { symbol, limit, address } = params;
 
-        let query = ponderDb.select().from(orders).where(eq(orders.user, address.toLowerCase() as `0x${string}`));
+        let query = ponderDb.select().from(orders).where(eq(orders.userAddress, address.toLowerCase() as `0x${string}`));
 
         if (symbol) {
             const pool = await this.findPool(symbol);
@@ -276,7 +276,7 @@ export class MarketService {
 
             const poolId = pool.orderBook;
             if (poolId) {
-                query = ponderDb.select().from(orders).where(and(eq(orders.user, address.toLowerCase() as `0x${string}`), eq(orders.poolId, poolId)));
+                query = ponderDb.select().from(orders).where(and(eq(orders.userAddress, address.toLowerCase() as `0x${string}`), eq(orders.poolId, poolId)));
             }
         }
 
@@ -287,7 +287,7 @@ export class MarketService {
         const uniquePoolIds = [...new Set(userOrders.map(order => order.poolId).filter(Boolean))];
 
         // Fetch all pool data in a single query
-        const poolsData = await db
+        const poolsData = await ponderDb
             .select()
             .from(pools)
             .where(inArray(pools.orderBook, uniquePoolIds as string[]))
@@ -342,7 +342,7 @@ export class MarketService {
     static async getAccount(params: { address: string }) {
         const { address } = params;
 
-        const userBalances = await db
+        const userBalances = await ponderDb
             .select()
             .from(balances)
             .where(eq(balances.user, address.toLowerCase() as `0x${string}`))
@@ -350,7 +350,7 @@ export class MarketService {
 
         const balancesWithInfo = await Promise.all(
             userBalances.map(async balance => {
-                const currency = await db
+                const currency = await ponderDb
                     .select()
                     .from(currencies)
                     .where(
@@ -374,10 +374,10 @@ export class MarketService {
             })
         );
 
-        const orderCount = await db
+        const orderCount = await ponderDb
             .select({ count: sql`count(*)` })
             .from(orders)
-            .where(eq(orders.user, address.toLowerCase() as `0x${string}`))
+            .where(eq(orders.userAddress, address.toLowerCase() as `0x${string}`))
             .execute();
 
         return {
@@ -496,7 +496,7 @@ export class MarketService {
         const oneDayAgo = now - 86400;
 
         const [dailyStats, latestTrade, bestBids, bestAsks] = await Promise.all([
-            db
+            ponderDb
                 .select()
                 .from(dailyBuckets)
                 .where(and(eq(dailyBuckets.poolId, poolId), gte(dailyBuckets.openTime, oneDayAgo)))
@@ -504,7 +504,7 @@ export class MarketService {
                 .limit(1)
                 .execute(),
 
-            db
+            ponderDb
                 .select()
                 .from(orderBookTrades)
                 .where(eq(orderBookTrades.poolId, poolId))
@@ -513,7 +513,7 @@ export class MarketService {
                 .execute(),
 
             // FIX: Query orders table directly instead of stale orderBookDepth cache
-            db
+            ponderDb
                 .select({ price: orders.price })
                 .from(orders)
                 .where(
@@ -529,7 +529,7 @@ export class MarketService {
                 .execute(),
 
             // FIX: Query orders table directly instead of stale orderBookDepth cache
-            db
+            ponderDb
                 .select({ price: orders.price })
                 .from(orders)
                 .where(
@@ -720,7 +720,7 @@ export class MarketService {
             throw new Error("Pool order book address not found");
         }
 
-        const latestTrade = await db
+        const latestTrade = await ponderDb
             .select()
             .from(orderBookTrades)
             .where(eq(orderBookTrades.poolId, poolId))
@@ -731,7 +731,7 @@ export class MarketService {
         let price = "0";
         if (latestTrade.length > 0 && latestTrade[0]?.price) {
             price = latestTrade[0].price.toString();
-        } else if (queriedPools[0]?.price) {
+        } else if (pool?.price) {
             price = pool.price.toString();
         }
 
@@ -746,7 +746,7 @@ export class MarketService {
 
         let query = ponderDb.select().from(orders).where(
             and(
-                eq(orders.user, address.toLowerCase() as `0x${string}`),
+                eq(orders.userAddress, address.toLowerCase() as `0x${string}`),
                 or(eq(orders.status, "NEW"), eq(orders.status, "PARTIALLY_FILLED"), eq(orders.status, "OPEN"))
             )
         );
@@ -762,7 +762,7 @@ export class MarketService {
             if (poolId) {
                 query = ponderDb.select().from(orders).where(
                     and(
-                        eq(orders.user, address.toLowerCase() as `0x${string}`),
+                        eq(orders.userAddress, address.toLowerCase() as `0x${string}`),
                         or(eq(orders.status, "NEW"), eq(orders.status, "PARTIALLY_FILLED"), eq(orders.status, "OPEN")),
                         eq(orders.poolId, poolId)
                     )
@@ -774,7 +774,7 @@ export class MarketService {
         
         const uniquePoolIds = [...new Set(openOrders.map(order => order.poolId).filter(Boolean))];
         
-        const poolsData = await db
+        const poolsData = await ponderDb
             .select()
             .from(pools)
             .where(inArray(pools.orderBook, uniquePoolIds as string[]))

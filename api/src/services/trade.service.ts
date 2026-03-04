@@ -1,4 +1,5 @@
-import { ponderDb as db } from '../config/database';
+import { ponderDb } from '../config/database';
+const db = ponderDb;
 import { orders, pools, orderBookTrades, dailyBuckets, orderBookDepth } from '../schema';
 import { and, asc, desc, eq, gte, gt, or, sql, inArray } from 'drizzle-orm';
 import { 
@@ -29,7 +30,7 @@ export class TradeService {
   static async getAllOrders({ symbol, limit = 500, address }: AllOrdersParams) {
     try {
       const baseQuery = db.select().from(orders);
-      let query = baseQuery.where(eq(orders.user, address as `0x${string}`));
+      let query = baseQuery.where(eq(orders.userAddress, address as `0x${string}`));
 
       if (symbol) {
         const queriedPools = await ponderDb.select().from(pools).where(eq(pools.coin, symbol));
@@ -40,7 +41,7 @@ export class TradeService {
 
         const poolId = queriedPools[0]!.orderBook;
         if (poolId) {
-          query = baseQuery.where(and(eq(orders.user, address as `0x${string}`), eq(orders.poolId, poolId)));
+          query = baseQuery.where(and(eq(orders.userAddress, address as `0x${string}`), eq(orders.poolId, poolId)));
         }
       }
 
@@ -109,7 +110,7 @@ export class TradeService {
       const baseQuery = db.select().from(orders);
       let query = baseQuery.where(
         and(
-          eq(orders.user, address as `0x${string}`),
+          eq(orders.userAddress, address as `0x${string}`),
           or(eq(orders.status, "NEW"), eq(orders.status, "PARTIALLY_FILLED"), eq(orders.status, "OPEN"))
         )
       );
@@ -125,7 +126,7 @@ export class TradeService {
         if (poolId) {
           query = baseQuery.where(
             and(
-              eq(orders.user, address as `0x${string}`),
+              eq(orders.userAddress, address as `0x${string}`),
               or(eq(orders.status, "NEW"), eq(orders.status, "PARTIALLY_FILLED"), eq(orders.status, "OPEN")),
               eq(orders.poolId, poolId)
             )
