@@ -415,15 +415,13 @@ export async function handleOrderMatched({ event, context }: any) {
     blockNumber: event.block.number?.toString()
   });
 
-  const poolVolumeUpdated = await updatePoolVolume(db, poolId, quantity, price, timestamp);
-  if (poolVolumeUpdated === false) {
-    logger.warn('Pool volume update skipped - pool not found', LogLabel.VALIDATION, 'handleOrderMatched', {
-      poolId,
-      poolAddress,
-      chainId,
-      txHash
-    });
-  }
+  // perf: commented out — price/volume computed on-the-fly from orderBookTrades/trades tables
+  // const poolVolumeUpdated = await updatePoolVolume(db, poolId, quantity, price, timestamp);
+  // if (poolVolumeUpdated === false) {
+  //   logger.warn('Pool volume update skipped - pool not found', LogLabel.VALIDATION, 'handleOrderMatched', {
+  //     poolId, poolAddress, chainId, txHash
+  //   });
+  // }
 
   // Track user trade volume (skip during historical sync — users table not read by any API)
   if (isLiveModeActive()) {
