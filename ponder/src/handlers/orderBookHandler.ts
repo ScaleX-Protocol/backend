@@ -4,6 +4,7 @@ import { updateIndexerStatus } from "@/utils/indexerStatus";
 import { createLogger, LogLabel, log, LogLevel, ServiceName } from "../utils/logger";
 import {
   clearOrderCacheOnce,
+  isLiveModeActive,
   createOrderData,
   createOrderHistoryId,
   createOrderId,
@@ -305,9 +306,11 @@ export async function handleOrderPlaced({ event, context }: any) {
       return;
     }
 
-    // Track user for order
-    const volume = price * quantity;
-    await upsertUserForOrder(db, chainId, args.user, timestamp, volume);
+    // Track user for order (skip during historical sync — users table not read by any API)
+    if (isLiveModeActive()) {
+      const volume = price * quantity;
+      await upsertUserForOrder(db, chainId, args.user, timestamp, volume);
+    }
 
     const historyId = createOrderHistoryId(chainId, txHash, filled, poolAddress, orderId.toString());
     const historyData = { id: historyId, chainId, orderId, poolId: poolAddress, timestamp, quantity, filled, status };
@@ -421,9 +424,11 @@ export async function handleOrderMatched({ event, context }: any) {
     });
   }
 
-  // Track user trade volume
-  const tradeVolume = price * quantity;
-  await upsertUserForOrder(db, chainId, args.user, timestamp, tradeVolume);
+  // Track user trade volume (skip during historical sync — users table not read by any API)
+  if (isLiveModeActive()) {
+    const tradeVolume = price * quantity;
+    await upsertUserForOrder(db, chainId, args.user, timestamp, tradeVolume);
+  }
 
   const tradeId = createTradeId(chainId, txHash, args.user, getSide(args.side), args);
   await insertOrderBookTrades(db, chainId, tradeId, txHash, poolAddress, args);
@@ -650,8 +655,10 @@ export async function handleOrderCancelled({ event, context }: any) {
 
     // await upsertOrderBookDepthOnCancel(db, chainId, order.id, event, timestamp);
 
-    // Track user activity for order cancellation
-    await upsertUserActivity(db, chainId, event.args.user, timestamp);
+    // Track user activity for order cancellation (skip during historical sync)
+    if (isLiveModeActive()) {
+      await upsertUserActivity(db, chainId, event.args.user, timestamp);
+    }
 
     await executeIfInSync(Number(event.block.number), async () => {
       clearOrderCacheOnce();
@@ -761,8 +768,8 @@ export async function handleUpdateOrder({ event, context }: any) {
       txHash: event.transaction.hash
     });
 
-    // Track user activity for order update (order already fetched above)
-    if (order && order.userAddress) {
+    // Track user activity for order update (skip during historical sync)
+    if (isLiveModeActive() && order && order.userAddress) {
       const updateVolume = BigInt(event.args.filled) * BigInt(order.price);
       await upsertUserForOrder(db, chainId, order.userAddress, timestamp, updateVolume);
     }
