@@ -28,6 +28,13 @@ const logger = createLogger('orderHelpers.ts');
 const orderCache = new Map<string, any>();
 let liveModeActive = false;
 
+// ---------------------------------------------------------------------------
+// Pool decimals cache — permanent, never evicted.
+// baseDecimals and quoteDecimals are set at pool creation and never change.
+// Eliminates 2 db.find(pools) calls per OrderMatched event.
+// ---------------------------------------------------------------------------
+const poolDecimalsCache = new Map<string, { baseDecimals: number; quoteDecimals: number }>();
+
 // Statuses that mean the order is done — evict immediately to bound memory
 const TERMINAL_ORDER_STATUSES = new Set(["FILLED", "CANCELLED", "EXPIRED", "REJECTED"]);
 
@@ -37,6 +44,10 @@ const TERMINAL_ORDER_STATUSES = new Set(["FILLED", "CANCELLED", "EXPIRED", "REJE
  * live-mode path uses the DB directly (no stale data risk).
  * Safe to call from every executeIfInSync block — no-op after first call.
  */
+export function isLiveModeActive(): boolean {
+	return liveModeActive;
+}
+
 export function clearOrderCacheOnce(): void {
 	if (!liveModeActive) {
 		liveModeActive = true;
@@ -328,18 +339,18 @@ export async function insertOrderBookTrades(
 }
 
 export async function updatePoolVolume(db: any, poolId: string, quantity: bigint, price: bigint, timestamp: number) {
-	const existingPool = await db.find(pools, {
-		id: poolId
-	});
-
-	if (!existingPool) {
-		logger.warn('Pool not found for volume update', LogLabel.VALIDATION, 'updatePoolVolume', {
-			poolId,
-			quantity: quantity.toString(),
-			price: price.toString(),
-			timestamp
-		});
-		return false;
+	if (!poolDecimalsCache.has(poolId)) {
+		const existingPool = await db.find(pools, { id: poolId });
+		if (!existingPool) {
+			logger.warn('Pool not found for volume update', LogLabel.VALIDATION, 'updatePoolVolume', {
+				poolId,
+				quantity: quantity.toString(),
+				price: price.toString(),
+				timestamp
+			});
+			return false;
+		}
+		poolDecimalsCache.set(poolId, { baseDecimals: existingPool.baseDecimals, quoteDecimals: existingPool.quoteDecimals });
 	}
 
 	await db.update(pools, { id: poolId }).set((row: any) => {
@@ -364,17 +375,22 @@ export async function updateCandlestickBuckets(
 	args: OrderMatchedEventArgs
 ) {
 	const isTakerBuy = !args.side;
-	const pool = await db.find(pools, { id: poolId });
 
-	if (!pool) {
-		logger.warn('Pool not found for candlestick update', LogLabel.VALIDATION, 'updateCandlestickBuckets', {
-			poolId,
-			quantity: quantity.toString(),
-			price: price.toString(),
-			timestamp: Number(event.block.timestamp)
-		});
-		return false;
+	if (!poolDecimalsCache.has(poolId)) {
+		const pool = await db.find(pools, { id: poolId });
+		if (!pool) {
+			logger.warn('Pool not found for candlestick update', LogLabel.VALIDATION, 'updateCandlestickBuckets', {
+				poolId,
+				quantity: quantity.toString(),
+				price: price.toString(),
+				timestamp: Number(event.block.timestamp)
+			});
+			return false;
+		}
+		poolDecimalsCache.set(poolId, { baseDecimals: pool.baseDecimals, quoteDecimals: pool.quoteDecimals });
 	}
+
+	const { baseDecimals, quoteDecimals } = poolDecimalsCache.get(poolId)!;
 
 	const bucketIntervals = [
 		{ table: minuteBuckets, seconds: TIME_INTERVALS.minute },
@@ -384,8 +400,8 @@ export async function updateCandlestickBuckets(
 		{ table: dailyBuckets, seconds: TIME_INTERVALS.day },
 	] as const;
 
-	for (const { table, seconds } of bucketIntervals) {
-		await updateCandlestickBucket(
+	await Promise.all(bucketIntervals.map(({ table, seconds }) =>
+		updateCandlestickBucket(
 			table,
 			seconds,
 			price,
@@ -395,10 +411,10 @@ export async function updateCandlestickBuckets(
 			event,
 			isTakerBuy,
 			chainId,
-			pool.baseDecimals,
-			pool.quoteDecimals
-		);
-	}
+			baseDecimals,
+			quoteDecimals
+		)
+	));
 }
 
 export function createOrderData(
