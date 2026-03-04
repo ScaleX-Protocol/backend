@@ -41,13 +41,13 @@ export async function handleRegistered({ event, context }: any) {
 				owner: owner as `0x${string}`,
 			});
 
-		await updateIndexerStatus(
-			context.db,
-			chainId,
-			BigInt(event.block.number),
-			Number(event.block.timestamp),
-			"AgentRegistered"
-		);
+		// await updateIndexerStatus( // perf
+			// context.db, // perf
+			// chainId, // perf
+			// BigInt(event.block.number), // perf
+			// Number(event.block.timestamp), // perf
+			// "AgentRegistered" // perf
+		// ); // perf
 	} catch (error) {
 		logger.error(
 			`Failed to handle Registered event`,
@@ -84,13 +84,13 @@ export async function handleURIUpdated({ event, context }: any) {
 				});
 		}
 
-		await updateIndexerStatus(
-			context.db,
-			chainId,
-			BigInt(event.block.number),
-			Number(event.block.timestamp),
-			"AgentURIUpdated"
-		);
+		// await updateIndexerStatus( // perf
+			// context.db, // perf
+			// chainId, // perf
+			// BigInt(event.block.number), // perf
+			// Number(event.block.timestamp), // perf
+			// "AgentURIUpdated" // perf
+		// ); // perf
 	} catch (error) {
 		logger.error(
 			`Failed to handle URIUpdated event`,

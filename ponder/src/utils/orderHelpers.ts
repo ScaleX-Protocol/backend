@@ -19,6 +19,35 @@ import { createLogger, LogLabel } from "./logger";
 // Create logger instance for this file
 const logger = createLogger('orderHelpers.ts');
 
+// ---------------------------------------------------------------------------
+// In-memory order cache for historical sync performance.
+// Follows the syntheticCurrencyCache.ts pattern — safe because Ponder
+// processes events in strict chronological order (OrderPlaced always precedes
+// OrderMatched/UpdateOrder for the same order).
+// ---------------------------------------------------------------------------
+const orderCache = new Map<string, any>();
+let liveModeActive = false;
+
+// Statuses that mean the order is done — evict immediately to bound memory
+const TERMINAL_ORDER_STATUSES = new Set(["FILLED", "CANCELLED", "EXPIRED", "REJECTED"]);
+
+/**
+ * Called once when the indexer enters live (realtime) mode.
+ * Clears the cache and disables further cache writes/reads so the
+ * live-mode path uses the DB directly (no stale data risk).
+ * Safe to call from every executeIfInSync block — no-op after first call.
+ */
+export function clearOrderCacheOnce(): void {
+	if (!liveModeActive) {
+		liveModeActive = true;
+		const size = orderCache.size;
+		orderCache.clear();
+		logger.info('Order cache cleared — entering live mode', LogLabel.DATABASE, 'clearOrderCacheOnce', {
+			evictedEntries: size
+		});
+	}
+}
+
 /**
  * Find an active order by its on-chain order ID.
  * Uses predictable ID hash (chainId + poolId + orderId) for db.find() compatibility.
@@ -35,6 +64,25 @@ export async function findActiveOrder(
 	try {
 		// Create predictable ID (no txHash needed for query)
 		const orderId = createOrderId(chainId, onChainOrderId, poolId);
+
+		// Cache-first lookup during historical sync
+		if (!liveModeActive) {
+			const cached = orderCache.get(orderId);
+			if (cached) {
+				const isActive = cached.status === "PENDING" || cached.status === "OPEN" || cached.status === "PARTIALLY_FILLED";
+				if (isActive) {
+					logger.info('Found active order (cache)', LogLabel.DATABASE, 'findActiveOrder', {
+						chainId, poolId, onChainOrderId: onChainOrderId.toString(), hashedId: orderId, status: cached.status, blockNumber: blockNumber?.toString(), txHash
+					});
+					return cached;
+				}
+				return null; // terminal order in cache — don't query DB
+			}
+			// Cache miss during historical sync — unexpected after OrderPlaced
+			logger.warn('Order cache miss during historical sync — falling back to DB', LogLabel.DATABASE, 'findActiveOrder', {
+				orderId, chainId, poolId, onChainOrderId: onChainOrderId.toString(), blockNumber: blockNumber?.toString()
+			});
+		}
 
 		// Use db.find() which works reliably in Ponder
 		const order = await db.find(orders, { id: orderId });
@@ -93,6 +141,9 @@ export async function findActiveOrder(
 
 export async function insertOrder(db: any, orderData: any) {
 	await db.insert(orders).values(orderData).onConflictDoNothing();
+	if (!liveModeActive) {
+		orderCache.set(orderData.id, { ...orderData });
+	}
 }
 
 export async function upsertOrderHistory(db: any, historyData: any) {
@@ -416,11 +467,15 @@ export async function updateOrder(
 	blockNumber?: bigint | number,
 	txHash?: string
 ) {
-	// First check if the order exists
-	const existingOrder = await db.find(orders, {
-		id: hashedOrderId,
-		chainId: chainId,
-	});
+	// Check cache first during historical sync, otherwise query DB
+	const existingOrder = (!liveModeActive && orderCache.has(hashedOrderId))
+		? orderCache.get(hashedOrderId)
+		: await (async () => {
+			if (!liveModeActive) {
+				logger.warn('Cache miss in updateOrder — falling back to DB', LogLabel.DATABASE, 'updateOrder', { hashedOrderId, chainId });
+			}
+			return db.find(orders, { id: hashedOrderId, chainId: chainId });
+		})();
 
 	if (!existingOrder) {
 		logger.warn('Order not found for update', LogLabel.VALIDATION, 'updateOrder', {
@@ -476,6 +531,16 @@ export async function updateOrder(
 				chainId: chainId,
 			})
 			.set(updateData);
+
+		// Update or evict cache entry based on final computed status
+		if (!liveModeActive) {
+			if (TERMINAL_ORDER_STATUSES.has(updateData.status)) {
+				orderCache.delete(hashedOrderId);
+			} else {
+				orderCache.set(hashedOrderId, { ...existingOrder, ...updateData });
+			}
+		}
+
 		return true; // Indicate successful update
 	} catch (error) {
 		logger.error('Failed to update order status', LogLabel.DATABASE, 'updateOrder', {
@@ -500,11 +565,15 @@ export async function updateOrderQuantity(
 	blockNumber?: bigint | number,
 	txHash?: string
 ) {
-	// First check if the order exists
-	const existingOrder = await db.find(orders, {
-		id: hashedOrderId,
-		chainId: chainId,
-	});
+	// Check cache first during historical sync, otherwise query DB
+	const existingOrder = (!liveModeActive && orderCache.has(hashedOrderId))
+		? orderCache.get(hashedOrderId)
+		: await (async () => {
+			if (!liveModeActive) {
+				logger.warn('Cache miss in updateOrderQuantity — falling back to DB', LogLabel.DATABASE, 'updateOrderQuantity', { hashedOrderId, chainId });
+			}
+			return db.find(orders, { id: hashedOrderId, chainId: chainId });
+		})();
 
 	if (!existingOrder) {
 		logger.warn('Order not found for quantity update', LogLabel.VALIDATION, 'updateOrderQuantity', {
@@ -585,6 +654,16 @@ export async function updateOrderQuantity(
 				chainId: chainId,
 			})
 			.set(updateData);
+
+		// Update or evict cache entry based on final computed status
+		if (!liveModeActive) {
+			if (updateData.status && TERMINAL_ORDER_STATUSES.has(updateData.status)) {
+				orderCache.delete(hashedOrderId);
+			} else {
+				orderCache.set(hashedOrderId, { ...existingOrder, ...updateData });
+			}
+		}
+
 		return true; // Indicate successful update
 	} catch (error) {
 		logger.error('Failed to update order quantity', LogLabel.DATABASE, 'updateOrderQuantity', {

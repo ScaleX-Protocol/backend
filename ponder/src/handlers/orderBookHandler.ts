@@ -3,7 +3,7 @@ import { OrderMatchedEventArgs, OrderPlacedEventArgs } from "@/types";
 import { updateIndexerStatus } from "@/utils/indexerStatus";
 import { createLogger, LogLabel, log, LogLevel, ServiceName } from "../utils/logger";
 import {
-  createDepthData,
+  clearOrderCacheOnce,
   createOrderData,
   createOrderHistoryId,
   createOrderId,
@@ -13,7 +13,6 @@ import {
   getOppositeSide,
   getSide,
   insertOrder,
-  insertOrderBookDepth,
   insertOrderBookTrades,
   insertTrade,
   ORDER_STATUS,
@@ -23,8 +22,6 @@ import {
   updateOrder,
   updateOrderQuantity,
   updatePoolVolume,
-  upsertOrderBookDepth,
-  upsertOrderBookDepthOnCancel,
   upsertOrderHistory,
 } from "@/utils";
 import { getPoolTradingPair } from "@/utils/getPoolTradingPair";
@@ -210,7 +207,7 @@ export async function handleOrderPlaced({ event, context }: any) {
 
   try {
     // Track indexer progress
-    await updateIndexerStatus(context, 'OrderBook:OrderPlaced', event);
+    // await updateIndexerStatus(context, 'OrderBook:OrderPlaced', event); // perf
 
     const args = event.args as OrderPlacedEventArgs;
 
@@ -322,24 +319,11 @@ export async function handleOrderPlaced({ event, context }: any) {
       return;
     }
 
-    const depthId = `${poolAddress}-${side.toLowerCase()}-${price.toString()}`;
-    let depthData;
-    try {
-      depthData = createDepthData(chainId, depthId, poolAddress, side, price, quantity, timestamp);
-    } catch (error) {
-      log(LogLevel.ERROR, 'Depth data creation failed', LogLabel.VALIDATION, { error: error instanceof Error ? error.message : String(error) }, 'orderBookHandler.ts', 'handleOrderPlaced');
-      return;
-    }
-
-    try {
-      await insertOrderBookDepth(db, depthData);
-    } catch (error) {
-      log(LogLevel.ERROR, 'Order book depth insertion failed', LogLabel.DATABASE, { error: error instanceof Error ? error.message : String(error) }, 'orderBookHandler.ts', 'handleOrderPlaced');
-      return;
-    }
+    // order_book_depth table is no longer written — depth is computed on-the-fly from orders table in /api/depth
 
     try {
       await executeIfInSync(Number(event.block.number), async () => {
+        clearOrderCacheOnce();
         let symbol;
         try {
           if (!event.log.address) {
@@ -400,7 +384,7 @@ export async function handleOrderPlaced({ event, context }: any) {
 
 export async function handleOrderMatched({ event, context }: any) {
   // Track indexer progress
-  await updateIndexerStatus(context, 'OrderBook:OrderMatched', event);
+  // await updateIndexerStatus(context, 'OrderBook:OrderMatched', event); // perf
 
   const args = event.args as OrderMatchedEventArgs;
   const db = context.db;
@@ -532,6 +516,7 @@ export async function handleOrderMatched({ event, context }: any) {
   });
 
   await executeIfInSync(Number(event.block.number), async () => {
+    clearOrderCacheOnce();
     const symbol = (await getPoolTradingPair(context, event.log.address!, chainId, 'handleOrderMatched', Number(event.block.number))).toUpperCase();
     const txHash = event.transaction.hash;
     const price = event.args.executionPrice.toString();
@@ -612,7 +597,7 @@ export async function handleOrderMatched({ event, context }: any) {
 
 export async function handleOrderCancelled({ event, context }: any) {
   // Track indexer progress
-  await updateIndexerStatus(context, 'OrderBook:OrderCancelled', event);
+  // await updateIndexerStatus(context, 'OrderBook:OrderCancelled', event); // perf
 
   const db = context.db;
   const chainId = context.network.chainId;
@@ -669,6 +654,7 @@ export async function handleOrderCancelled({ event, context }: any) {
     await upsertUserActivity(db, chainId, event.args.user, timestamp);
 
     await executeIfInSync(Number(event.block.number), async () => {
+      clearOrderCacheOnce();
       const symbol = (await getPoolTradingPair(context, event.log.address!, chainId, 'handleOrderCancelled')).toUpperCase();
       const row = await context.db.find(orders, { id: order.id });
 
@@ -686,7 +672,7 @@ export async function handleOrderCancelled({ event, context }: any) {
 
 export async function handleUpdateOrder({ event, context }: any) {
   // Track indexer progress
-  await updateIndexerStatus(context, 'OrderBook:UpdateOrder', event);
+  // await updateIndexerStatus(context, 'OrderBook:UpdateOrder', event); // perf
 
   const db = context.db;
   const chainId = context.network.chainId;
@@ -800,6 +786,7 @@ export async function handleUpdateOrder({ event, context }: any) {
       }
     }
     await executeIfInSync(Number(event.block.number), async () => {
+      clearOrderCacheOnce();
       const symbol = (await getPoolTradingPair(context, event.log.address!, chainId, 'handleUpdateOrder')).toUpperCase();
       const row = await context.db.find(orders, { id: order.id });
 
@@ -816,6 +803,7 @@ export async function handleUpdateOrder({ event, context }: any) {
   }
 
   await executeIfInSync(Number(event.block.number), async () => {
+    clearOrderCacheOnce();
     if (!order) return; // If order wasn't found earlier, skip
 
     const symbol = (await getPoolTradingPair(context, event.log.address!, chainId, 'handleUpdateOrder', Number(event.block.number))).toUpperCase();

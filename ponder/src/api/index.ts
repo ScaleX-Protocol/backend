@@ -29,7 +29,6 @@ import schema, {
 	lendingPositions,
 	lockEvents,
 	minuteBuckets,
-	orderBookDepth,
 	orderBookTrades,
 	orders,
 	poolLendingStats,
@@ -1681,37 +1680,31 @@ app.get("/api/markets", async c => {
 				let totalLiquidityInQuote = "0";
 
 				if (pool.orderBook) {
+					const activeStatuses = or(eq(orders.status, "OPEN"), eq(orders.status, "PARTIALLY_FILLED"));
+
 					// Get bid side liquidity (Buy orders - in base asset)
 					const bidData = await db
-						.select({
-							totalQuantity: sql`SUM(${orderBookDepth.quantity})`.as("totalQuantity"),
-						})
-						.from(orderBookDepth)
-						.where(and(eq(orderBookDepth.poolId, pool.orderBook as `0x${string}`), eq(orderBookDepth.side, "Buy")))
+						.select({ totalQuantity: sql`SUM(${orders.quantity} - ${orders.filled})`.as("totalQuantity") })
+						.from(orders)
+						.where(and(eq(orders.poolId, pool.orderBook as `0x${string}`), eq(orders.side, "Buy"), activeStatuses))
 						.execute();
 
 					bidLiquidity = bidData[0]?.totalQuantity?.toString() || "0";
 
 					// Get ask side liquidity (Sell orders - in base asset)
 					const askData = await db
-						.select({
-							totalQuantity: sql`SUM(${orderBookDepth.quantity})`.as("totalQuantity"),
-						})
-						.from(orderBookDepth)
-						.where(and(eq(orderBookDepth.poolId, pool.orderBook as `0x${string}`), eq(orderBookDepth.side, "Sell")))
+						.select({ totalQuantity: sql`SUM(${orders.quantity} - ${orders.filled})`.as("totalQuantity") })
+						.from(orders)
+						.where(and(eq(orders.poolId, pool.orderBook as `0x${string}`), eq(orders.side, "Sell"), activeStatuses))
 						.execute();
 
 					askLiquidity = askData[0]?.totalQuantity?.toString() || "0";
 
 					// Calculate total liquidity in quote asset
-					// Buy side: quantity * price (quantity in base, result in quote)
-					// Sell side: quantity * price (quantity in base, result in quote)
 					const quoteLiquidityData = await db
-						.select({
-							totalValue: sql`SUM(${orderBookDepth.quantity} * ${orderBookDepth.price})`.as("totalValue"),
-						})
-						.from(orderBookDepth)
-						.where(eq(orderBookDepth.poolId, pool.orderBook as `0x${string}`))
+						.select({ totalValue: sql`SUM((${orders.quantity} - ${orders.filled}) * ${orders.price})`.as("totalValue") })
+						.from(orders)
+						.where(and(eq(orders.poolId, pool.orderBook as `0x${string}`), activeStatuses))
 						.execute();
 
 					totalLiquidityInQuote = quoteLiquidityData[0]?.totalValue?.toString() || "0";
