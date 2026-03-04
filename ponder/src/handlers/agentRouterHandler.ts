@@ -185,13 +185,13 @@ export async function handlePolicyInstalled({ event, context }: any) {
 		await upsertAgentStats(context.db, chainId, user, strategyAgentId, Number(timestamp), {});
 
 		// Update indexer status
-		await updateIndexerStatus(
-			context.db,
-			chainId,
-			BigInt(event.block.number),
-			Number(event.block.timestamp),
-			"PolicyInstalled"
-		);
+		// await updateIndexerStatus( // perf
+			// context.db, // perf
+			// chainId, // perf
+			// BigInt(event.block.number), // perf
+			// Number(event.block.timestamp), // perf
+			// "PolicyInstalled" // perf
+		// ); // perf
 	} catch (error) {
 		logger.error(
 			`Failed to handle PolicyInstalled event`,
@@ -213,7 +213,7 @@ export async function handlePolicyUpdated({ event, context }: any) {
 		const templateUsed = existing?.templateUsed || "custom";
 		await upsertAgentPolicy(context.db, context, chainId, user, strategyAgentId, templateUsed, Number(timestamp));
 
-		await updateIndexerStatus(context.db, chainId, BigInt(event.block.number), Number(event.block.timestamp), "PolicyUpdated");
+		// await updateIndexerStatus(context.db, chainId, BigInt(event.block.number), Number(event.block.timestamp), "PolicyUpdated"); // perf
 	} catch (error) {
 		logger.error(`Failed to handle PolicyUpdated event`, LogLabel.EVENT_HANDLER, 'handlePolicyUpdated', { error: error instanceof Error ? error.message : String(error) });
 		throw error;
@@ -229,7 +229,7 @@ export async function handlePolicyEnabled({ event, context }: any) {
 		await context.db.update(agentPolicies, { id: policyId }).set({ enabled: true, lastUpdatedAt: Number(timestamp) });
 		await context.db.update(agentInstallations, { id: policyId }).set({ enabled: true });
 
-		await updateIndexerStatus(context.db, chainId, BigInt(event.block.number), Number(event.block.timestamp), "PolicyEnabled");
+		// await updateIndexerStatus(context.db, chainId, BigInt(event.block.number), Number(event.block.timestamp), "PolicyEnabled"); // perf
 	} catch (error) {
 		logger.error(`Failed to handle PolicyEnabled event`, LogLabel.EVENT_HANDLER, 'handlePolicyEnabled', { error: error instanceof Error ? error.message : String(error) });
 		throw error;
@@ -245,7 +245,7 @@ export async function handlePolicyDisabled({ event, context }: any) {
 		await context.db.update(agentPolicies, { id: policyId }).set({ enabled: false, lastUpdatedAt: Number(timestamp) });
 		await context.db.update(agentInstallations, { id: policyId }).set({ enabled: false });
 
-		await updateIndexerStatus(context.db, chainId, BigInt(event.block.number), Number(event.block.timestamp), "PolicyDisabled");
+		// await updateIndexerStatus(context.db, chainId, BigInt(event.block.number), Number(event.block.timestamp), "PolicyDisabled"); // perf
 	} catch (error) {
 		logger.error(`Failed to handle PolicyDisabled event`, LogLabel.EVENT_HANDLER, 'handlePolicyDisabled', { error: error instanceof Error ? error.message : String(error) });
 		throw error;
@@ -280,13 +280,13 @@ export async function handlePolicyUninstalled({ event, context }: any) {
 			});
 
 		// Update indexer status
-		await updateIndexerStatus(
-			context.db,
-			chainId,
-			BigInt(event.block.number),
-			Number(event.block.timestamp),
-			"PolicyUninstalled"
-		);
+		// await updateIndexerStatus( // perf
+			// context.db, // perf
+			// chainId, // perf
+			// BigInt(event.block.number), // perf
+			// Number(event.block.timestamp), // perf
+			// "PolicyUninstalled" // perf
+		// ); // perf
 	} catch (error) {
 		logger.error(
 			`Failed to handle PolicyUninstalled event`,
@@ -343,13 +343,13 @@ export async function handleAgentSwapExecuted({ event, context }: any) {
 		});
 
 		// Update indexer status
-		await updateIndexerStatus(
-			context.db,
-			chainId,
-			BigInt(event.block.number),
-			Number(event.block.timestamp),
-			"AgentSwapExecuted"
-		);
+		// await updateIndexerStatus( // perf
+			// context.db, // perf
+			// chainId, // perf
+			// BigInt(event.block.number), // perf
+			// Number(event.block.timestamp), // perf
+			// "AgentSwapExecuted" // perf
+		// ); // perf
 	} catch (error) {
 		logger.error(
 			`Failed to handle AgentSwapExecuted event`,
@@ -401,13 +401,13 @@ export async function handleAgentLimitOrderPlaced({ event, context }: any) {
 		});
 
 		// Update indexer status
-		await updateIndexerStatus(
-			context.db,
-			chainId,
-			BigInt(event.block.number),
-			Number(event.block.timestamp),
-			"AgentLimitOrderPlaced"
-		);
+		// await updateIndexerStatus( // perf
+			// context.db, // perf
+			// chainId, // perf
+			// BigInt(event.block.number), // perf
+			// Number(event.block.timestamp), // perf
+			// "AgentLimitOrderPlaced" // perf
+		// ); // perf
 	} catch (error) {
 		logger.error(
 			`Failed to handle AgentLimitOrderPlaced event`,
@@ -444,13 +444,13 @@ export async function handleAgentOrderCancelled({ event, context }: any) {
 		});
 
 		// Update indexer status
-		await updateIndexerStatus(
-			context.db,
-			chainId,
-			BigInt(event.block.number),
-			Number(event.block.timestamp),
-			"AgentOrderCancelled"
-		);
+		// await updateIndexerStatus( // perf
+			// context.db, // perf
+			// chainId, // perf
+			// BigInt(event.block.number), // perf
+			// Number(event.block.timestamp), // perf
+			// "AgentOrderCancelled" // perf
+		// ); // perf
 	} catch (error) {
 		logger.error(
 			`Failed to handle AgentOrderCancelled event`,
@@ -497,13 +497,13 @@ export async function handleAgentBorrowExecuted({ event, context }: any) {
 		});
 
 		// Update indexer status
-		await updateIndexerStatus(
-			context.db,
-			chainId,
-			BigInt(event.block.number),
-			Number(event.block.timestamp),
-			"AgentBorrowExecuted"
-		);
+		// await updateIndexerStatus( // perf
+			// context.db, // perf
+			// chainId, // perf
+			// BigInt(event.block.number), // perf
+			// Number(event.block.timestamp), // perf
+			// "AgentBorrowExecuted" // perf
+		// ); // perf
 	} catch (error) {
 		logger.error(
 			`Failed to handle AgentBorrowExecuted event`,
@@ -550,13 +550,13 @@ export async function handleAgentRepayExecuted({ event, context }: any) {
 		});
 
 		// Update indexer status
-		await updateIndexerStatus(
-			context.db,
-			chainId,
-			BigInt(event.block.number),
-			Number(event.block.timestamp),
-			"AgentRepayExecuted"
-		);
+		// await updateIndexerStatus( // perf
+			// context.db, // perf
+			// chainId, // perf
+			// BigInt(event.block.number), // perf
+			// Number(event.block.timestamp), // perf
+			// "AgentRepayExecuted" // perf
+		// ); // perf
 	} catch (error) {
 		logger.error(
 			`Failed to handle AgentRepayExecuted event`,
@@ -603,13 +603,13 @@ export async function handleAgentCollateralSupplied({ event, context }: any) {
 		});
 
 		// Update indexer status
-		await updateIndexerStatus(
-			context.db,
-			chainId,
-			BigInt(event.block.number),
-			Number(event.block.timestamp),
-			"AgentCollateralSupplied"
-		);
+		// await updateIndexerStatus( // perf
+			// context.db, // perf
+			// chainId, // perf
+			// BigInt(event.block.number), // perf
+			// Number(event.block.timestamp), // perf
+			// "AgentCollateralSupplied" // perf
+		// ); // perf
 	} catch (error) {
 		logger.error(
 			`Failed to handle AgentCollateralSupplied event`,
@@ -656,13 +656,13 @@ export async function handleAgentCollateralWithdrawn({ event, context }: any) {
 		});
 
 		// Update indexer status
-		await updateIndexerStatus(
-			context.db,
-			chainId,
-			BigInt(event.block.number),
-			Number(event.block.timestamp),
-			"AgentCollateralWithdrawn"
-		);
+		// await updateIndexerStatus( // perf
+			// context.db, // perf
+			// chainId, // perf
+			// BigInt(event.block.number), // perf
+			// Number(event.block.timestamp), // perf
+			// "AgentCollateralWithdrawn" // perf
+		// ); // perf
 	} catch (error) {
 		logger.error(
 			`Failed to handle AgentCollateralWithdrawn event`,
@@ -716,13 +716,13 @@ export async function handleAgentSelfTradeExecuted({ event, context }: any) {
 			totalTradingVolume: quantity,
 		});
 
-		await updateIndexerStatus(
-			context.db,
-			chainId,
-			BigInt(event.block.number),
-			timestamp,
-			"AgentSelfTradeExecuted"
-		);
+		// await updateIndexerStatus( // perf
+			// context.db, // perf
+			// chainId, // perf
+			// BigInt(event.block.number), // perf
+			// timestamp, // perf
+			// "AgentSelfTradeExecuted" // perf
+		// ); // perf
 	} catch (error) {
 		logger.error(
 			`Failed to handle AgentSelfTradeExecuted event`,
@@ -771,13 +771,13 @@ export async function handleAgentSelfLimitOrderPlaced({ event, context }: any) {
 			totalLimitOrders: 1,
 		});
 
-		await updateIndexerStatus(
-			context.db,
-			chainId,
-			BigInt(event.block.number),
-			timestamp,
-			"AgentSelfLimitOrderPlaced"
-		);
+		// await updateIndexerStatus( // perf
+			// context.db, // perf
+			// chainId, // perf
+			// BigInt(event.block.number), // perf
+			// timestamp, // perf
+			// "AgentSelfLimitOrderPlaced" // perf
+		// ); // perf
 	} catch (error) {
 		logger.error(
 			`Failed to handle AgentSelfLimitOrderPlaced event`,
@@ -810,13 +810,13 @@ export async function handleAgentSelfOrderCancelled({ event, context }: any) {
 			totalOrdersCancelled: 1,
 		});
 
-		await updateIndexerStatus(
-			context.db,
-			chainId,
-			BigInt(event.block.number),
-			timestamp,
-			"AgentSelfOrderCancelled"
-		);
+		// await updateIndexerStatus( // perf
+			// context.db, // perf
+			// chainId, // perf
+			// BigInt(event.block.number), // perf
+			// timestamp, // perf
+			// "AgentSelfOrderCancelled" // perf
+		// ); // perf
 	} catch (error) {
 		logger.error(
 			`Failed to handle AgentSelfOrderCancelled event`,
@@ -860,13 +860,13 @@ export async function handleAgentSelfBorrowExecuted({ event, context }: any) {
 			totalBorrowAmount: amount,
 		});
 
-		await updateIndexerStatus(
-			context.db,
-			chainId,
-			BigInt(event.block.number),
-			timestamp,
-			"AgentSelfBorrowExecuted"
-		);
+		// await updateIndexerStatus( // perf
+			// context.db, // perf
+			// chainId, // perf
+			// BigInt(event.block.number), // perf
+			// timestamp, // perf
+			// "AgentSelfBorrowExecuted" // perf
+		// ); // perf
 	} catch (error) {
 		logger.error(
 			`Failed to handle AgentSelfBorrowExecuted event`,
@@ -910,13 +910,13 @@ export async function handleAgentSelfRepayExecuted({ event, context }: any) {
 			totalRepayAmount: amount,
 		});
 
-		await updateIndexerStatus(
-			context.db,
-			chainId,
-			BigInt(event.block.number),
-			timestamp,
-			"AgentSelfRepayExecuted"
-		);
+		// await updateIndexerStatus( // perf
+			// context.db, // perf
+			// chainId, // perf
+			// BigInt(event.block.number), // perf
+			// timestamp, // perf
+			// "AgentSelfRepayExecuted" // perf
+		// ); // perf
 	} catch (error) {
 		logger.error(
 			`Failed to handle AgentSelfRepayExecuted event`,
@@ -968,13 +968,13 @@ export async function handleCircuitBreakerTriggered({ event, context }: any) {
 			});
 
 		// Update indexer status
-		await updateIndexerStatus(
-			context.db,
-			chainId,
-			BigInt(event.block.number),
-			Number(event.block.timestamp),
-			"CircuitBreakerTriggered"
-		);
+		// await updateIndexerStatus( // perf
+			// context.db, // perf
+			// chainId, // perf
+			// BigInt(event.block.number), // perf
+			// Number(event.block.timestamp), // perf
+			// "CircuitBreakerTriggered" // perf
+		// ); // perf
 	} catch (error) {
 		logger.error(
 			`Failed to handle CircuitBreakerTriggered event`,
@@ -1012,13 +1012,13 @@ export async function handlePolicyViolation({ event, context }: any) {
 		});
 
 		// Update indexer status
-		await updateIndexerStatus(
-			context.db,
-			chainId,
-			BigInt(event.block.number),
-			Number(event.block.timestamp),
-			"PolicyViolation"
-		);
+		// await updateIndexerStatus( // perf
+			// context.db, // perf
+			// chainId, // perf
+			// BigInt(event.block.number), // perf
+			// Number(event.block.timestamp), // perf
+			// "PolicyViolation" // perf
+		// ); // perf
 	} catch (error) {
 		logger.error(
 			`Failed to handle PolicyViolation event`,
@@ -1055,13 +1055,13 @@ export async function handleStrategyAgentAuthorized({ event, context }: any) {
 			});
 
 		// Update indexer status
-		await updateIndexerStatus(
-			context.db,
-			chainId,
-			BigInt(event.block.number),
-			Number(event.block.timestamp),
-			"StrategyAgentAuthorized"
-		);
+		// await updateIndexerStatus( // perf
+			// context.db, // perf
+			// chainId, // perf
+			// BigInt(event.block.number), // perf
+			// Number(event.block.timestamp), // perf
+			// "StrategyAgentAuthorized" // perf
+		// ); // perf
 	} catch (error) {
 		logger.error(
 			`Failed to handle StrategyAgentAuthorized event`,
@@ -1101,13 +1101,13 @@ export async function handleStrategyAgentRevoked({ event, context }: any) {
 			});
 
 		// Update indexer status
-		await updateIndexerStatus(
-			context.db,
-			chainId,
-			BigInt(event.block.number),
-			Number(event.block.timestamp),
-			"StrategyAgentRevoked"
-		);
+		// await updateIndexerStatus( // perf
+			// context.db, // perf
+			// chainId, // perf
+			// BigInt(event.block.number), // perf
+			// Number(event.block.timestamp), // perf
+			// "StrategyAgentRevoked" // perf
+		// ); // perf
 	} catch (error) {
 		logger.error(
 			`Failed to handle StrategyAgentRevoked event`,
