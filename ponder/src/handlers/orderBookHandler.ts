@@ -23,7 +23,7 @@ import {
   updateOrder,
   updateOrderQuantity,
   updatePoolVolume,
-  upsertOrderHistory,
+  // upsertOrderHistory, // perf: commented out
 } from "@/utils";
 import { getPoolTradingPair } from "@/utils/getPoolTradingPair";
 import { executeIfInSync } from "@/utils/syncState";
@@ -315,12 +315,13 @@ export async function handleOrderPlaced({ event, context }: any) {
     const historyId = createOrderHistoryId(chainId, txHash, filled, poolAddress, orderId.toString());
     const historyData = { id: historyId, chainId, orderId, poolId: poolAddress, timestamp, quantity, filled, status };
 
-    try {
-      await upsertOrderHistory(db, historyData);
-    } catch (error) {
-      log(LogLevel.ERROR, 'Order history upsert failed', LogLabel.DATABASE, { error: error instanceof Error ? error.message : String(error) }, 'orderBookHandler.ts', 'handleOrderPlaced');
-      return;
-    }
+    // perf: commented out — orderHistory table not read by any API endpoint
+    // try {
+    //   await upsertOrderHistory(db, historyData);
+    // } catch (error) {
+    //   log(LogLevel.ERROR, 'Order history upsert failed', LogLabel.DATABASE, { error: error instanceof Error ? error.message : String(error) }, 'orderBookHandler.ts', 'handleOrderPlaced');
+    //   return;
+    // }
 
     // order_book_depth table is no longer written — depth is computed on-the-fly from orders table in /api/depth
 
@@ -727,9 +728,10 @@ export async function handleUpdateOrder({ event, context }: any) {
     status,
   };
 
-  try {
-    await upsertOrderHistory(db, historyData);
+  // perf: commented out — orderHistory table not read by any API endpoint
+  // await upsertOrderHistory(db, historyData);
 
+  try {
     if (!order) {
       logger.warn('Skipping order update - order does not exist', LogLabel.VALIDATION, 'handleUpdateOrder', {
         hashedOrderId: null,
