@@ -112,14 +112,6 @@ async function fetchPnlRows(
     chainId: number,
     windowStart: number | null,
 ): Promise<PnlRow[]> {
-    const entityExpr = entityType === 'user'
-        ? 'lower(o.user_address)'
-        : 'o.agent_token_id::text';
-
-    const entityFilter = entityType === 'user'
-        ? 'AND (o.agent_token_id IS NULL OR o.agent_token_id = 0)'
-        : 'AND o.agent_token_id >= 0';
-
     const params: unknown[] = [chainId];
     let windowFilter = '';
     if (windowStart !== null) {
@@ -127,9 +119,36 @@ async function fetchPnlRows(
         windowFilter = `AND t.timestamp >= $${params.length}`;
     }
 
+    if (entityType === 'user') {
+        const sql = `
+            SELECT
+                lower(o.user_address) AS entity_key,
+                o.pool_id,
+                o.side,
+                coalesce(sum(t.quantity), 0)::text           AS total_quantity,
+                coalesce(sum(t.quantity * t.price), 0)::text AS total_quote_value,
+                count(*)::int                                AS trade_count,
+                p.base_decimals,
+                p.quote_decimals,
+                p.price::text                                AS last_price,
+                p.coin                                       AS symbol
+            FROM trades t
+            INNER JOIN orders o ON t.order_id = o.id
+            INNER JOIN pools p  ON o.pool_id  = p.order_book
+            WHERE o.chain_id = $1
+              AND o.status IN ('FILLED', 'PARTIALLY_FILLED')
+              ${windowFilter}
+            GROUP BY lower(o.user_address), o.pool_id, o.side, p.base_decimals, p.quote_decimals, p.price, p.coin
+        `;
+        return query<PnlRow>(sql, params);
+    }
+
+    // Agent leaderboard: aggregate user trades by their active agent installation.
+    // The OrderPlaced event always emits agentTokenId=0 for direct user orders,
+    // so we use agent_installations to correctly attribute trades to managing agents.
     const sql = `
         SELECT
-            ${entityExpr} AS entity_key,
+            ai.agent_token_id::text AS entity_key,
             o.pool_id,
             o.side,
             coalesce(sum(t.quantity), 0)::text           AS total_quantity,
@@ -140,15 +159,17 @@ async function fetchPnlRows(
             p.price::text                                AS last_price,
             p.coin                                       AS symbol
         FROM trades t
-        INNER JOIN orders o ON t.order_id = o.id
-        INNER JOIN pools p  ON o.pool_id  = p.order_book
+        INNER JOIN orders o  ON t.order_id = o.id
+        INNER JOIN pools p   ON o.pool_id  = p.order_book
+        INNER JOIN agent_installations ai
+            ON lower(o.user_address) = lower(ai.owner)
+           AND o.chain_id = ai.chain_id
+           AND ai.enabled = true
         WHERE o.chain_id = $1
           AND o.status IN ('FILLED', 'PARTIALLY_FILLED')
-          ${entityFilter}
           ${windowFilter}
-        GROUP BY ${entityExpr}, o.pool_id, o.side, p.base_decimals, p.quote_decimals, p.price, p.coin
+        GROUP BY ai.agent_token_id, o.pool_id, o.side, p.base_decimals, p.quote_decimals, p.price, p.coin
     `;
-
     return query<PnlRow>(sql, params);
 }
 
@@ -157,14 +178,6 @@ async function fetchFillRows(
     chainId: number,
     windowStart: number | null,
 ): Promise<FillRow[]> {
-    const entityExpr = entityType === 'user'
-        ? 'lower(o.user_address)'
-        : 'o.agent_token_id::text';
-
-    const entityFilter = entityType === 'user'
-        ? 'AND (o.agent_token_id IS NULL OR o.agent_token_id = 0)'
-        : 'AND o.agent_token_id >= 0';
-
     const params: unknown[] = [chainId];
     let windowFilter = '';
     if (windowStart !== null) {
@@ -172,18 +185,35 @@ async function fetchFillRows(
         windowFilter = `AND o.timestamp >= $${params.length}`;
     }
 
+    if (entityType === 'user') {
+        const sql = `
+            SELECT
+                lower(o.user_address) AS entity_key,
+                o.status,
+                count(*)::int AS cnt
+            FROM orders o
+            WHERE o.chain_id = $1
+              ${windowFilter}
+            GROUP BY lower(o.user_address), o.status
+        `;
+        return query<FillRow>(sql, params);
+    }
+
+    // Agent leaderboard: fill rate based on managed users' orders.
     const sql = `
         SELECT
-            ${entityExpr} AS entity_key,
+            ai.agent_token_id::text AS entity_key,
             o.status,
             count(*)::int AS cnt
         FROM orders o
+        INNER JOIN agent_installations ai
+            ON lower(o.user_address) = lower(ai.owner)
+           AND o.chain_id = ai.chain_id
+           AND ai.enabled = true
         WHERE o.chain_id = $1
-          ${entityFilter}
           ${windowFilter}
-        GROUP BY ${entityExpr}, o.status
+        GROUP BY ai.agent_token_id, o.status
     `;
-
     return query<FillRow>(sql, params);
 }
 
