@@ -31,7 +31,7 @@ export const ponderPool = new Pool({
 
 // Set search_path to include ponder schema
 ponderPool.on('connect', async (client) => {
-  await client.query('SET search_path TO "ponder.schema.ts", public');
+  await client.query('SET search_path TO "ponder.schema.v1.ts", public');
 });
 
 export const ponderDb = drizzle(ponderPool, { schema });
