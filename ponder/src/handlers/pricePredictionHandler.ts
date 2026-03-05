@@ -1,5 +1,5 @@
 import { updateIndexerStatus } from "@/utils/indexerStatus";
-import { createLogger, log, LogLabel, LogLevel, ServiceName } from "../utils/logger";
+import { createLogger, log, LogLabel, LogLevel } from "../utils/logger";
 import { predictionEvents, predictionMarkets, predictionPositions } from "ponder:schema";
 import { getAddress } from "viem";
 
@@ -26,7 +26,7 @@ function createEventId(txHash: string, eventType: string, marketId: bigint): str
 }
 
 export async function handleMarketCreated({ event, context }: any) {
-  await updateIndexerStatus(context, 'PricePrediction:MarketCreated', event);
+  // await updateIndexerStatus(context, 'PricePrediction:MarketCreated', event); // perf
   const { db } = context;
   const chainId = context.network.chainId;
 
@@ -90,11 +90,11 @@ export async function handleMarketCreated({ event, context }: any) {
     })
     .onConflictDoNothing();
 
-  log(LogLevel.INFO, `Market ${marketId} created (type=${marketType}, endTime=${endTime})`, LogLabel.EVENT_HANDLER, ServiceName.CORE_CHAIN, { chainId, marketId: marketId.toString() }, 'pricePredictionHandler.ts', 'handleMarketCreated');
+  log(LogLevel.INFO, `Market ${marketId} created (type=${marketType}, endTime=${endTime})`, LogLabel.EVENT_HANDLER, 'core-chain', { chainId, marketId: marketId.toString() }, 'pricePredictionHandler.ts', 'handleMarketCreated');
 }
 
 export async function handlePredicted({ event, context }: any) {
-  await updateIndexerStatus(context, 'PricePrediction:Predicted', event);
+  // await updateIndexerStatus(context, 'PricePrediction:Predicted', event); // perf
   const { db } = context;
   const chainId = context.network.chainId;
 
@@ -170,7 +170,7 @@ export async function handlePredicted({ event, context }: any) {
 }
 
 export async function handleSettlementRequested({ event, context }: any) {
-  await updateIndexerStatus(context, 'PricePrediction:SettlementRequested', event);
+  // await updateIndexerStatus(context, 'PricePrediction:SettlementRequested', event); // perf
   const { db } = context;
   const chainId = context.network.chainId;
 
@@ -206,7 +206,7 @@ export async function handleSettlementRequested({ event, context }: any) {
 }
 
 export async function handleMarketSettled({ event, context }: any) {
-  await updateIndexerStatus(context, 'PricePrediction:MarketSettled', event);
+  // await updateIndexerStatus(context, 'PricePrediction:MarketSettled', event); // perf
   const { db } = context;
   const chainId = context.network.chainId;
 
@@ -248,11 +248,11 @@ export async function handleMarketSettled({ event, context }: any) {
     })
     .onConflictDoNothing();
 
-  log(LogLevel.INFO, `Market ${marketId} settled (outcome=${outcome})`, LogLabel.EVENT_HANDLER, ServiceName.CORE_CHAIN, { chainId, marketId: marketId.toString(), outcome }, 'pricePredictionHandler.ts', 'handleMarketSettled');
+  log(LogLevel.INFO, `Market ${marketId} settled (outcome=${outcome})`, LogLabel.EVENT_HANDLER, 'core-chain', { chainId, marketId: marketId.toString(), outcome }, 'pricePredictionHandler.ts', 'handleMarketSettled');
 }
 
 export async function handleClaimed({ event, context }: any) {
-  await updateIndexerStatus(context, 'PricePrediction:Claimed', event);
+  // await updateIndexerStatus(context, 'PricePrediction:Claimed', event); // perf
   const { db } = context;
   const chainId = context.network.chainId;
 
@@ -292,7 +292,7 @@ export async function handleClaimed({ event, context }: any) {
 }
 
 export async function handleMarketCancelled({ event, context }: any) {
-  await updateIndexerStatus(context, 'PricePrediction:MarketCancelled', event);
+  // await updateIndexerStatus(context, 'PricePrediction:MarketCancelled', event); // perf
   const { db } = context;
   const chainId = context.network.chainId;
 

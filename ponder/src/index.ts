@@ -8,6 +8,7 @@ import * as lendingManagerHandler from "../src/handlers/lendingManagerHandler";
 import * as oracleHandler from "../src/handlers/oracleHandler";
 import * as agentRouterHandler from "../src/handlers/agentRouterHandler";
 import * as identityRegistryHandler from "../src/handlers/identityRegistryHandler";
+import * as reputationRegistryHandler from "../src/handlers/reputationRegistryHandler";
 import * as pricePredictionHandler from "../src/handlers/pricePredictionHandler";
 import { PonderEvents } from "../src/types/ponder-core-chain";
 import { withEventValidator } from "../src/utils/eventValidator";
@@ -69,6 +70,18 @@ ponder.on(PonderEvents.AGENT_BORROW_EXECUTED, withEventValidator(agentRouterHand
 ponder.on(PonderEvents.AGENT_REPAY_EXECUTED, withEventValidator(agentRouterHandler.handleAgentRepayExecuted, 'agentRepayExecuted'));
 ponder.on(PonderEvents.AGENT_COLLATERAL_SUPPLIED, withEventValidator(agentRouterHandler.handleAgentCollateralSupplied, 'agentCollateralSupplied'));
 ponder.on(PonderEvents.AGENT_COLLATERAL_WITHDRAWN, withEventValidator(agentRouterHandler.handleAgentCollateralWithdrawn, 'agentCollateralWithdrawn'));
+
+// Self-Funded Agent Trading Events
+ponder.on(PonderEvents.AGENT_SELF_TRADE_EXECUTED, withEventValidator(agentRouterHandler.handleAgentSelfTradeExecuted, 'agentSelfTradeExecuted'));
+ponder.on(PonderEvents.AGENT_SELF_LIMIT_ORDER_PLACED, withEventValidator(agentRouterHandler.handleAgentSelfLimitOrderPlaced, 'agentSelfLimitOrderPlaced'));
+ponder.on(PonderEvents.AGENT_SELF_ORDER_CANCELLED, withEventValidator(agentRouterHandler.handleAgentSelfOrderCancelled, 'agentSelfOrderCancelled'));
+ponder.on(PonderEvents.AGENT_SELF_BORROW_EXECUTED, withEventValidator(agentRouterHandler.handleAgentSelfBorrowExecuted, 'agentSelfBorrowExecuted'));
+ponder.on(PonderEvents.AGENT_SELF_REPAY_EXECUTED, withEventValidator(agentRouterHandler.handleAgentSelfRepayExecuted, 'agentSelfRepayExecuted'));
+
+// Agent Marketplace Events
+ponder.on(PonderEvents.AGENT_LISTED_ON_MARKETPLACE, withEventValidator(agentRouterHandler.handleAgentListedOnMarketplace, 'agentListedOnMarketplace'));
+ponder.on(PonderEvents.AGENT_DELISTED_FROM_MARKETPLACE, withEventValidator(agentRouterHandler.handleAgentDelistedFromMarketplace, 'agentDelistedFromMarketplace'));
+
 // Note: CircuitBreakerTriggered and PolicyViolation events are not in the current AgentRouter ABI
 // ponder.on(PonderEvents.CIRCUIT_BREAKER_TRIGGERED, withEventValidator(agentRouterHandler.handleCircuitBreakerTriggered, 'circuitBreakerTriggered'));
 // ponder.on(PonderEvents.POLICY_VIOLATION, withEventValidator(agentRouterHandler.handlePolicyViolation, 'policyViolation'));
@@ -77,16 +90,19 @@ ponder.on(PonderEvents.AGENT_COLLATERAL_WITHDRAWN, withEventValidator(agentRoute
 ponder.on(PonderEvents.AGENT_REGISTERED, withEventValidator(identityRegistryHandler.handleRegistered, 'agentRegistered'));
 ponder.on(PonderEvents.AGENT_URI_UPDATED, withEventValidator(identityRegistryHandler.handleURIUpdated, 'agentURIUpdated'));
 
-// PricePrediction Events - Yield-Bearing Binary Prediction Markets (Phase 6)
-ponder.on(PonderEvents.PREDICTION_MARKET_CREATED, withEventValidator(pricePredictionHandler.handleMarketCreated, 'marketCreated'));
-ponder.on(PonderEvents.PREDICTION_PREDICTED, withEventValidator(pricePredictionHandler.handlePredicted, 'predicted'));
-ponder.on(PonderEvents.PREDICTION_SETTLEMENT_REQUESTED, withEventValidator(pricePredictionHandler.handleSettlementRequested, 'settlementRequested'));
-ponder.on(PonderEvents.PREDICTION_MARKET_SETTLED, withEventValidator(pricePredictionHandler.handleMarketSettled, 'marketSettled'));
-ponder.on(PonderEvents.PREDICTION_CLAIMED, withEventValidator(pricePredictionHandler.handleClaimed, 'claimed'));
-ponder.on(PonderEvents.PREDICTION_MARKET_CANCELLED, withEventValidator(pricePredictionHandler.handleMarketCancelled, 'marketCancelled'));
+// ReputationRegistry Events - Agent Reputation Feedback (ERC-8004)
+ponder.on(PonderEvents.REPUTATION_NEW_FEEDBACK, withEventValidator(reputationRegistryHandler.handleNewFeedback, 'reputationNewFeedback'));
+ponder.on(PonderEvents.REPUTATION_FEEDBACK_REVOKED, withEventValidator(reputationRegistryHandler.handleFeedbackRevoked, 'reputationFeedbackRevoked'));
+
+// PricePrediction Events - Yield-Bearing Binary Markets (Phase 6)
+ponder.on(PonderEvents.PREDICTION_MARKET_CREATED, pricePredictionHandler.handleMarketCreated);
+ponder.on(PonderEvents.PREDICTION_PREDICTED, pricePredictionHandler.handlePredicted);
+ponder.on(PonderEvents.PREDICTION_SETTLEMENT_REQUESTED, pricePredictionHandler.handleSettlementRequested);
+ponder.on(PonderEvents.PREDICTION_MARKET_SETTLED, pricePredictionHandler.handleMarketSettled);
+ponder.on(PonderEvents.PREDICTION_CLAIMED, pricePredictionHandler.handleClaimed);
+ponder.on(PonderEvents.PREDICTION_MARKET_CANCELLED, pricePredictionHandler.handleMarketCancelled);
 
 console.log("✅ Core Chain indexer initialized - Chain ID: 84532");
 console.log("📊 Monitoring: OrderBook, PoolManager, Hyperlane cross-chain events, TokenRegistry mappings");
 console.log("🏦 Monitoring: LendingManager and Oracle events for lending protocol data");
 console.log("🤖 Monitoring: AI Agent system (ERC-8004) - identity registry, installations, orders, lending, violations");
-console.log("🎲 Monitoring: PricePrediction - yield-bearing binary prediction markets (Phase 6)");;

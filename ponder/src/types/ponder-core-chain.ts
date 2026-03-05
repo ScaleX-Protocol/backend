@@ -96,12 +96,26 @@ export const PonderEvents = {
 	AGENT_SELF_BORROW_EXECUTED: ponderEvent("AgentRouter:AgentSelfBorrowExecuted"),
 	AGENT_SELF_REPAY_EXECUTED: ponderEvent("AgentRouter:AgentSelfRepayExecuted"),
 
+	// AgentRouter Marketplace Listing Events
+	AGENT_LISTED_ON_MARKETPLACE: ponderEvent("AgentRouter:AgentListedOnMarketplace"),
+	AGENT_DELISTED_FROM_MARKETPLACE: ponderEvent("AgentRouter:AgentDelistedFromMarketplace"),
+
+	// AgentRouter Prediction Events
+	AGENT_PREDICTION_PLACED: ponderEvent("AgentRouter:AgentPredictionPlaced"),
+	AGENT_PREDICTION_CLAIMED: ponderEvent("AgentRouter:AgentPredictionClaimed"),
+	AGENT_SELF_PREDICTION_PLACED: ponderEvent("AgentRouter:AgentSelfPredictionPlaced"),
+	AGENT_SELF_PREDICTION_CLAIMED: ponderEvent("AgentRouter:AgentSelfPredictionClaimed"),
+
 	CIRCUIT_BREAKER_TRIGGERED: ponderEvent("AgentRouter:CircuitBreakerTriggered"),
 	POLICY_VIOLATION: ponderEvent("AgentRouter:PolicyViolation"),
 
 	// IdentityRegistry Events (ERC-8004 Agent Identity)
 	AGENT_REGISTERED: ponderEvent("IdentityRegistry:Registered"),
 	AGENT_URI_UPDATED: ponderEvent("IdentityRegistry:URIUpdated"),
+
+	// ReputationRegistry Events (ERC-8004 Agent Reputation)
+	REPUTATION_NEW_FEEDBACK: ponderEvent("ReputationRegistry:NewFeedback"),
+	REPUTATION_FEEDBACK_REVOKED: ponderEvent("ReputationRegistry:FeedbackRevoked"),
 
 	// PricePrediction Events (Phase 6 — Yield-Bearing Binary Markets)
 	PREDICTION_MARKET_CREATED: ponderEvent("PricePrediction:MarketCreated"),

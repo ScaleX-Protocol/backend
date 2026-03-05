@@ -125,7 +125,7 @@ async function insertCurrency(context: any, chainId: number, address: string, da
 }
 
 export async function handleTokenMappingRegistered({ event, context }: any) {
-	await updateIndexerStatus(context, 'TokenRegistry:TokenMappingRegistered', event);
+	// await updateIndexerStatus(context, 'TokenRegistry:TokenMappingRegistered', event); // perf: commented out
 	try {
 		const { sourceChainId, sourceToken, targetChainId, syntheticToken, symbol } = event.args;
 		const { client, db } = context;
@@ -223,7 +223,7 @@ export async function handleTokenMappingRegistered({ event, context }: any) {
 }
 
 export async function handleTokenMappingUpdated({ event, context }: any) {
-	await updateIndexerStatus(context, 'TokenRegistry:TokenMappingUpdated', event);
+	// await updateIndexerStatus(context, 'TokenRegistry:TokenMappingUpdated', event); // perf: commented out
 	try {
 		const { sourceChainId, sourceToken, targetChainId, newSynthetic } = event.args;
 		const db = context.db;
@@ -278,7 +278,7 @@ export async function handleTokenMappingUpdated({ event, context }: any) {
 }
 
 export async function handleTokenMappingRemoved({ event, context }: any) {
-	await updateIndexerStatus(context, 'TokenRegistry:TokenMappingRemoved', event);
+	// await updateIndexerStatus(context, 'TokenRegistry:TokenMappingRemoved', event); // perf: commented out
 	try {
 		const { sourceChainId, sourceToken, targetChainId } = event.args;
 		const db = context.db;
@@ -333,7 +333,7 @@ export async function handleTokenMappingRemoved({ event, context }: any) {
 }
 
 export async function handleTokenStatusChanged({ event, context }: any) {
-	await updateIndexerStatus(context, 'TokenRegistry:TokenStatusChanged', event);
+	// await updateIndexerStatus(context, 'TokenRegistry:TokenStatusChanged', event); // perf: commented out
 	try {
 		const { sourceChainId, sourceToken, targetChainId, isActive } = event.args;
 		const db = context.db;
@@ -379,7 +379,7 @@ export async function handleTokenStatusChanged({ event, context }: any) {
 }
 
 export async function handleOwnershipTransferred({ event, context }: any) {
-	await updateIndexerStatus(context, 'TokenRegistry:OwnershipTransferred', event);
+	// await updateIndexerStatus(context, 'TokenRegistry:OwnershipTransferred', event); // perf: commented out
 	try {
 		const { previousOwner, newOwner } = event.args;
 		const chainId = context.network.chainId;
@@ -392,7 +392,7 @@ export async function handleOwnershipTransferred({ event, context }: any) {
 }
 
 export async function handleInitialized({ event, context }: any) {
-	await updateIndexerStatus(context, 'TokenRegistry:Initialized', event);
+	// await updateIndexerStatus(context, 'TokenRegistry:Initialized', event); // perf: commented out
 	try {
 		const { version } = event.args;
 		const chainId = context.network.chainId;

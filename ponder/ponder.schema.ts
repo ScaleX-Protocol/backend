@@ -1183,12 +1183,40 @@ export const agentRegistry = onchainTable(
 		registeredAt: t.integer().notNull(),
 		transactionId: t.text().notNull(),
 		blockNumber: t.bigint().notNull(),
+		isListedOnMarketplace: t.boolean().notNull().default(false),
 	}),
 	table => ({
 		chainIdIdx: index().on(table.chainId),
 		tokenIdIdx: index().on(table.tokenId),
 		ownerIdx: index().on(table.owner),
 		registeredAtIdx: index().on(table.registeredAt),
+		isListedOnMarketplaceIdx: index().on(table.isListedOnMarketplace),
+	})
+);
+
+// Agent reputation feedback (tracking giveFeedback events from ReputationRegistry)
+export const agentReputation = onchainTable(
+	"agent_reputation",
+	t => ({
+		id: t.text().primaryKey(), // chainId-agentId-clientAddress-feedbackIndex
+		chainId: t.integer().notNull(),
+		agentId: t.bigint().notNull(),
+		clientAddress: t.hex().notNull(),
+		feedbackIndex: t.bigint().notNull(),
+		value: t.bigint().notNull(), // int128 stored as bigint
+		valueDecimals: t.integer().notNull(),
+		tag1: t.text().notNull(),
+		tag2: t.text().notNull(),
+		isRevoked: t.boolean().notNull().default(false),
+		timestamp: t.integer().notNull(),
+		transactionHash: t.text().notNull(),
+		blockNumber: t.bigint().notNull(),
+	}),
+	table => ({
+		agentIdIdx: index().on(table.agentId),
+		clientAddressIdx: index().on(table.clientAddress),
+		tag1Idx: index().on(table.tag1),
+		timestampIdx: index().on(table.timestamp),
 	})
 );
 
@@ -1303,6 +1331,9 @@ export const agentStats = onchainTable(
 		totalRepayAmount: t.bigint().default(BigInt(0)),
 		totalCollateralSupplied: t.bigint().default(BigInt(0)),
 		totalCollateralWithdrawn: t.bigint().default(BigInt(0)),
+		totalPredictions: t.integer().default(0),
+		totalPredictionVolume: t.bigint().default(BigInt(0)),
+		totalPredictionClaims: t.integer().default(0),
 		firstActivityTimestamp: t.integer(),
 		lastActivityTimestamp: t.integer(),
 		isActive: t.boolean().default(true),
@@ -1497,6 +1528,44 @@ export const agentLendingEventsRelations = relations(agentLendingEvents, ({ one 
 	token: one(currencies, {
 		fields: [agentLendingEvents.token, agentLendingEvents.chainId],
 		references: [currencies.address, currencies.chainId],
+	}),
+}));
+
+// Agent prediction events (delegated + self-funded predictions via AgentRouter)
+export const agentPredictionEvents = onchainTable(
+	"agent_prediction_events",
+	t => ({
+		id: t.text().primaryKey(), // chainId-txHash-logIndex
+		chainId: t.integer().notNull(),
+		owner: t.hex().notNull(),
+		agentTokenId: t.bigint().notNull(),
+		executor: t.hex().notNull(),
+		action: t.varchar().notNull(), // "PREDICT" or "CLAIM"
+		marketId: t.bigint().notNull(),
+		predictUp: t.boolean(), // null for claims
+		amount: t.bigint().notNull(), // stake for predict, payout for claim
+		timestamp: t.integer().notNull(),
+		transactionId: t.text().notNull(),
+		blockNumber: t.bigint().notNull(),
+	}),
+	table => ({
+		chainIdIdx: index().on(table.chainId),
+		ownerIdx: index().on(table.owner),
+		agentTokenIdIdx: index().on(table.agentTokenId),
+		marketIdIdx: index().on(table.marketId),
+		actionIdx: index().on(table.action),
+		timestampIdx: index().on(table.timestamp),
+	})
+);
+
+export const agentPredictionEventsRelations = relations(agentPredictionEvents, ({ one }) => ({
+	owner: one(users, {
+		fields: [agentPredictionEvents.owner, agentPredictionEvents.chainId],
+		references: [users.address, users.chainId],
+	}),
+	installation: one(agentInstallations, {
+		fields: [agentPredictionEvents.owner, agentPredictionEvents.agentTokenId, agentPredictionEvents.chainId],
+		references: [agentInstallations.owner, agentInstallations.agentTokenId, agentInstallations.chainId],
 	}),
 }));
 

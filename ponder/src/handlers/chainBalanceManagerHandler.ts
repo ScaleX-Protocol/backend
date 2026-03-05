@@ -46,7 +46,7 @@ async function publishChainBalanceEvent(
 }
 
 export async function handleDeposit({ event, context }: any) {
-  await updateIndexerStatus(context, 'ChainBalanceManager:Deposit', event);
+  // await updateIndexerStatus(context, 'ChainBalanceManager:Deposit', event); // perf
   try {
     const { depositor, recipient, token, amount } = event.args;
     const chainId = context.network.chainId;
@@ -183,7 +183,7 @@ export async function handleDeposit({ event, context }: any) {
 }
 
 export async function handleWithdraw({ event, context }: any) {
-  await updateIndexerStatus(context, 'ChainBalanceManager:Withdraw', event);
+  // await updateIndexerStatus(context, 'ChainBalanceManager:Withdraw', event); // perf
   try {
     const { user, token, amount } = event.args;
     const chainId = context.network.chainId;
@@ -269,7 +269,7 @@ export async function handleWithdraw({ event, context }: any) {
 }
 
 export async function handleUnlock({ event, context }: any) {
-  await updateIndexerStatus(context, 'ChainBalanceManager:Unlock', event);
+  // await updateIndexerStatus(context, 'ChainBalanceManager:Unlock', event); // perf
   try {
     const { user, token, amount } = event.args;
     const chainId = context.network.chainId;
@@ -355,7 +355,7 @@ export async function handleUnlock({ event, context }: any) {
 }
 
 export async function handleClaim({ event, context }: any) {
-  await updateIndexerStatus(context, 'ChainBalanceManager:Claim', event);
+  // await updateIndexerStatus(context, 'ChainBalanceManager:Claim', event); // perf
   try {
     const { user, token, amount } = event.args;
     const chainId = context.network.chainId;
@@ -441,7 +441,7 @@ export async function handleClaim({ event, context }: any) {
 }
 
 export async function handleTokenWhitelisted({ event, context }: any) {
-  await updateIndexerStatus(context, 'ChainBalanceManager:TokenWhitelisted', event);
+  // await updateIndexerStatus(context, 'ChainBalanceManager:TokenWhitelisted', event); // perf
   try {
     const { token } = event.args;
     const chainId = context.network.chainId;
@@ -486,7 +486,7 @@ export async function handleTokenWhitelisted({ event, context }: any) {
 }
 
 export async function handleTokenRemoved({ event, context }: any) {
-  await updateIndexerStatus(context, 'ChainBalanceManager:TokenRemoved', event);
+  // await updateIndexerStatus(context, 'ChainBalanceManager:TokenRemoved', event); // perf
   try {
     const { token } = event.args;
     const chainId = context.network.chainId;
@@ -531,7 +531,7 @@ export async function handleTokenRemoved({ event, context }: any) {
 }
 
 export async function handleOwnershipTransferred({ event, context }: any) {
-  await updateIndexerStatus(context, 'ChainBalanceManager:OwnershipTransferred', event);
+  // await updateIndexerStatus(context, 'ChainBalanceManager:OwnershipTransferred', event); // perf
   try {
     const { previousOwner, newOwner } = event.args;
     const chainId = context.network.chainId;
@@ -544,7 +544,7 @@ export async function handleOwnershipTransferred({ event, context }: any) {
 }
 
 export async function handleInitialized({ event, context }: any) {
-  await updateIndexerStatus(context, 'ChainBalanceManager:Initialized', event);
+  // await updateIndexerStatus(context, 'ChainBalanceManager:Initialized', event); // perf
   try {
     const { version } = event.args;
     const chainId = context.network.chainId;

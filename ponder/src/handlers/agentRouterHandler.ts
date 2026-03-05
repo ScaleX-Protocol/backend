@@ -5,10 +5,12 @@ import {
 	agentInstallations,
 	agentOrders,
 	agentLendingEvents,
+	agentPredictionEvents,
 	agentPolicies,
 	agentStats,
 	agentCircuitBreakers,
 	agentPolicyViolations,
+	agentRegistry,
 } from "ponder:schema";
 
 const logger = createLogger('agentRouterHandler.ts');
@@ -929,6 +931,178 @@ export async function handleAgentSelfRepayExecuted({ event, context }: any) {
 }
 
 // =============================================================
+//        AGENT PREDICTION EVENTS
+// =============================================================
+
+export async function handleAgentPredictionPlaced({ event, context }: any) {
+	try {
+		const { user, strategyAgentId, executor, marketId, predictUp, amount, timestamp } = event.args;
+		const chainId = context.network.chainId;
+		const eventId = `${chainId}-${event.transaction.hash}-${event.log.logIndex}`;
+
+		logger.info(
+			`Agent prediction placed - Owner: ${user}, AgentTokenId: ${strategyAgentId}, MarketId: ${marketId}, PredictUp: ${predictUp}, Amount: ${amount}`,
+			LogLabel.EVENT_HANDLER,
+			'handleAgentPredictionPlaced'
+		);
+
+		await context.db.insert(agentPredictionEvents).values({
+			id: eventId,
+			chainId,
+			owner: user as `0x${string}`,
+			agentTokenId: strategyAgentId,
+			executor: executor as `0x${string}`,
+			action: "PREDICT",
+			marketId: BigInt(marketId),
+			predictUp,
+			amount,
+			timestamp: Number(timestamp),
+			transactionId: event.transaction.hash,
+			blockNumber: BigInt(event.block.number),
+		});
+
+		await upsertAgentStats(context.db, chainId, user, strategyAgentId, Number(timestamp), {
+			totalPredictions: 1,
+			totalPredictionVolume: amount,
+		});
+	} catch (error) {
+		logger.error(
+			`Failed to handle AgentPredictionPlaced event`,
+			LogLabel.EVENT_HANDLER,
+			'handleAgentPredictionPlaced',
+			{ error: error instanceof Error ? error.message : String(error) }
+		);
+		throw error;
+	}
+}
+
+export async function handleAgentPredictionClaimed({ event, context }: any) {
+	try {
+		const { user, strategyAgentId, executor, marketId, payout, timestamp } = event.args;
+		const chainId = context.network.chainId;
+		const eventId = `${chainId}-${event.transaction.hash}-${event.log.logIndex}`;
+
+		logger.info(
+			`Agent prediction claimed - Owner: ${user}, AgentTokenId: ${strategyAgentId}, MarketId: ${marketId}, Payout: ${payout}`,
+			LogLabel.EVENT_HANDLER,
+			'handleAgentPredictionClaimed'
+		);
+
+		await context.db.insert(agentPredictionEvents).values({
+			id: eventId,
+			chainId,
+			owner: user as `0x${string}`,
+			agentTokenId: strategyAgentId,
+			executor: executor as `0x${string}`,
+			action: "CLAIM",
+			marketId: BigInt(marketId),
+			predictUp: null,
+			amount: payout,
+			timestamp: Number(timestamp),
+			transactionId: event.transaction.hash,
+			blockNumber: BigInt(event.block.number),
+		});
+
+		await upsertAgentStats(context.db, chainId, user, strategyAgentId, Number(timestamp), {
+			totalPredictionClaims: 1,
+		});
+	} catch (error) {
+		logger.error(
+			`Failed to handle AgentPredictionClaimed event`,
+			LogLabel.EVENT_HANDLER,
+			'handleAgentPredictionClaimed',
+			{ error: error instanceof Error ? error.message : String(error) }
+		);
+		throw error;
+	}
+}
+
+export async function handleAgentSelfPredictionPlaced({ event, context }: any) {
+	try {
+		const { strategyAgentId, agentWallet, marketId, predictUp, amount } = event.args;
+		const chainId = context.network.chainId;
+		const eventId = `${chainId}-${event.transaction.hash}-${event.log.logIndex}`;
+		const timestamp = Number(event.block.timestamp);
+
+		logger.info(
+			`Agent self prediction placed - AgentWallet: ${agentWallet}, StrategyAgentId: ${strategyAgentId}, MarketId: ${marketId}, PredictUp: ${predictUp}, Amount: ${amount}`,
+			LogLabel.EVENT_HANDLER,
+			'handleAgentSelfPredictionPlaced'
+		);
+
+		await context.db.insert(agentPredictionEvents).values({
+			id: eventId,
+			chainId,
+			owner: agentWallet as `0x${string}`,
+			agentTokenId: strategyAgentId,
+			executor: agentWallet as `0x${string}`,
+			action: "PREDICT",
+			marketId: BigInt(marketId),
+			predictUp,
+			amount,
+			timestamp,
+			transactionId: event.transaction.hash,
+			blockNumber: BigInt(event.block.number),
+		});
+
+		await upsertAgentStats(context.db, chainId, agentWallet, strategyAgentId, timestamp, {
+			totalPredictions: 1,
+			totalPredictionVolume: amount,
+		});
+	} catch (error) {
+		logger.error(
+			`Failed to handle AgentSelfPredictionPlaced event`,
+			LogLabel.EVENT_HANDLER,
+			'handleAgentSelfPredictionPlaced',
+			{ error: error instanceof Error ? error.message : String(error) }
+		);
+		throw error;
+	}
+}
+
+export async function handleAgentSelfPredictionClaimed({ event, context }: any) {
+	try {
+		const { strategyAgentId, agentWallet, marketId, payout } = event.args;
+		const chainId = context.network.chainId;
+		const eventId = `${chainId}-${event.transaction.hash}-${event.log.logIndex}`;
+		const timestamp = Number(event.block.timestamp);
+
+		logger.info(
+			`Agent self prediction claimed - AgentWallet: ${agentWallet}, StrategyAgentId: ${strategyAgentId}, MarketId: ${marketId}, Payout: ${payout}`,
+			LogLabel.EVENT_HANDLER,
+			'handleAgentSelfPredictionClaimed'
+		);
+
+		await context.db.insert(agentPredictionEvents).values({
+			id: eventId,
+			chainId,
+			owner: agentWallet as `0x${string}`,
+			agentTokenId: strategyAgentId,
+			executor: agentWallet as `0x${string}`,
+			action: "CLAIM",
+			marketId: BigInt(marketId),
+			predictUp: null,
+			amount: payout,
+			timestamp,
+			transactionId: event.transaction.hash,
+			blockNumber: BigInt(event.block.number),
+		});
+
+		await upsertAgentStats(context.db, chainId, agentWallet, strategyAgentId, timestamp, {
+			totalPredictionClaims: 1,
+		});
+	} catch (error) {
+		logger.error(
+			`Failed to handle AgentSelfPredictionClaimed event`,
+			LogLabel.EVENT_HANDLER,
+			'handleAgentSelfPredictionClaimed',
+			{ error: error instanceof Error ? error.message : String(error) }
+		);
+		throw error;
+	}
+}
+
+// =============================================================
 //           AGENT MONITORING EVENTS
 // =============================================================
 
@@ -1113,6 +1287,62 @@ export async function handleStrategyAgentRevoked({ event, context }: any) {
 			`Failed to handle StrategyAgentRevoked event`,
 			LogLabel.EVENT_HANDLER,
 			'handleStrategyAgentRevoked',
+			{ error: error instanceof Error ? error.message : String(error) }
+		);
+		throw error;
+	}
+}
+
+// =============================================================
+//           MARKETPLACE LISTING EVENTS
+// =============================================================
+
+export async function handleAgentListedOnMarketplace({ event, context }: any) {
+	try {
+		const { strategyAgentId, owner, timestamp } = event.args;
+		const chainId = context.network.chainId;
+		const registryId = `${chainId}-${strategyAgentId}`;
+
+		logger.info(
+			`Agent listed on marketplace - StrategyAgentId: ${strategyAgentId}, Owner: ${owner}`,
+			LogLabel.EVENT_HANDLER,
+			'handleAgentListedOnMarketplace'
+		);
+
+		await context.db
+			.update(agentRegistry, { id: registryId })
+			.set({ isListedOnMarketplace: true });
+	} catch (error) {
+		logger.error(
+			`Failed to handle AgentListedOnMarketplace event`,
+			LogLabel.EVENT_HANDLER,
+			'handleAgentListedOnMarketplace',
+			{ error: error instanceof Error ? error.message : String(error) }
+		);
+		throw error;
+	}
+}
+
+export async function handleAgentDelistedFromMarketplace({ event, context }: any) {
+	try {
+		const { strategyAgentId, owner, timestamp } = event.args;
+		const chainId = context.network.chainId;
+		const registryId = `${chainId}-${strategyAgentId}`;
+
+		logger.info(
+			`Agent delisted from marketplace - StrategyAgentId: ${strategyAgentId}, Owner: ${owner}`,
+			LogLabel.EVENT_HANDLER,
+			'handleAgentDelistedFromMarketplace'
+		);
+
+		await context.db
+			.update(agentRegistry, { id: registryId })
+			.set({ isListedOnMarketplace: false });
+	} catch (error) {
+		logger.error(
+			`Failed to handle AgentDelistedFromMarketplace event`,
+			LogLabel.EVENT_HANDLER,
+			'handleAgentDelistedFromMarketplace',
 			{ error: error instanceof Error ? error.message : String(error) }
 		);
 		throw error;
