@@ -423,11 +423,14 @@ export class MarketService {
         const oneDayAgo = now - 86400;
 
         const [depthData, allDailyStats, allLatestTrades] = await Promise.all([
+            // Compute depth from live orders (order_book_depth table is no longer written)
             orderBookIds.length > 0
                 ? ponderDb.execute(sql`
-                    SELECT pool_id, side, SUM(quantity) as total_quantity
-                    FROM order_book_depth
+                    SELECT pool_id, side, SUM(quantity - filled) as total_quantity
+                    FROM orders
                     WHERE pool_id IN ${sql.raw(`(${orderBookIds.map(id => `'${id}'`).join(',')})`)}
+                      AND status IN ('OPEN', 'PARTIALLY_FILLED')
+                      AND price > 0
                     GROUP BY pool_id, side
                 `).then(r => (r as any).rows || r || [])
                 : Promise.resolve([]),
