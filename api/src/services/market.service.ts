@@ -416,47 +416,90 @@ export class MarketService {
     static async getMarkets() {
         const allPools = await ponderDb.select().from(pools).execute();
 
-        // Get order book depth for liquidity
-        const poolIds = allPools.flatMap(p => [p.id, p.orderBook].filter(Boolean));
-        
-        let depthData: any[] = [];
-        
-        if (poolIds.length > 0) {
-            const poolIdList = poolIds.map(p => `'${p}'`).join(',');
-            depthData = await ponderDb.execute(`
-                SELECT pool_id, side, SUM(quantity) as total_quantity
-                FROM order_book_depth
-                WHERE pool_id IN (${poolIdList})
-                GROUP BY pool_id, side
-            `);
-            depthData = depthData.rows || [];
-        }
+        const orderBookIds = allPools.map(p => p.orderBook).filter(Boolean) as string[];
 
-        const depthMap = new Map();
-        for (const row of depthData) {
+        // Get order book depth for liquidity + 24h volume + latest trades in parallel
+        const now = Math.floor(Date.now() / 1000);
+        const oneDayAgo = now - 86400;
+
+        const [depthData, allDailyStats, allLatestTrades] = await Promise.all([
+            orderBookIds.length > 0
+                ? ponderDb.execute(sql`
+                    SELECT pool_id, side, SUM(quantity) as total_quantity
+                    FROM order_book_depth
+                    WHERE pool_id IN ${sql.raw(`(${orderBookIds.map(id => `'${id}'`).join(',')})`)}
+                    GROUP BY pool_id, side
+                `).then(r => (r as any).rows || r || [])
+                : Promise.resolve([]),
+
+            orderBookIds.length > 0
+                ? ponderDb.selectDistinctOn([dailyBuckets.poolId])
+                    .from(dailyBuckets)
+                    .where(and(inArray(dailyBuckets.poolId, orderBookIds), gte(dailyBuckets.openTime, oneDayAgo)))
+                    .orderBy(dailyBuckets.poolId, desc(dailyBuckets.openTime))
+                    .execute()
+                : Promise.resolve([]),
+
+            orderBookIds.length > 0
+                ? ponderDb.selectDistinctOn([orderBookTrades.poolId], {
+                    poolId: orderBookTrades.poolId,
+                    price: orderBookTrades.price,
+                })
+                    .from(orderBookTrades)
+                    .where(inArray(orderBookTrades.poolId, orderBookIds))
+                    .orderBy(orderBookTrades.poolId, desc(orderBookTrades.timestamp))
+                    .execute()
+                : Promise.resolve([]),
+        ]);
+
+        const depthMap = new Map<string, { bid: string; ask: string }>();
+        for (const row of depthData as any[]) {
             if (!depthMap.has(row.pool_id)) {
                 depthMap.set(row.pool_id, { bid: "0", ask: "0" });
             }
-            const entry = depthMap.get(row.pool_id);
+            const entry = depthMap.get(row.pool_id)!;
             if (row.side === 'Buy') {
-                entry.bid = row.total_quantity || "0";
+                entry.bid = row.total_quantity?.toString() || "0";
             } else if (row.side === 'Sell') {
-                entry.ask = row.total_quantity || "0";
+                entry.ask = row.total_quantity?.toString() || "0";
             }
         }
 
-        const now = Math.floor(Date.now() / 1000);
+        const dailyStatsMap = new Map<string, any>();
+        for (const stat of allDailyStats) {
+            dailyStatsMap.set(stat.poolId, stat);
+        }
+
+        const latestTradeMap = new Map<string, any>();
+        for (const trade of allLatestTrades) {
+            if (trade.poolId) latestTradeMap.set(trade.poolId, trade);
+        }
 
         return allPools.map(pool => {
             const symbol = pool.coin || "";
             const symbolParts = symbol.split("/");
             const poolId = pool.id;
-            const depth = depthMap.get(pool.id) || depthMap.get(pool.orderBook) || { bid: "0", ask: "0" };
-            
-            const price = 0;
+            const orderBookId = pool.orderBook || pool.id;
+            const depth = depthMap.get(pool.id) || depthMap.get(orderBookId) || { bid: "0", ask: "0" };
+            const daily = dailyStatsMap.get(orderBookId);
+            const latestTrade = latestTradeMap.get(orderBookId);
+
+            // Use pool.price (from indexer), latest trade price, or 0
+            const latestPrice = latestTrade?.price?.toString() || pool.price?.toString() || "0";
+            const priceNum = Number(latestPrice);
+            const quoteDecimals = pool.quoteDecimals || 6;
+
+            // Volume from daily bucket (24h) or pool's cumulative volume
+            const dailyVolume = daily?.volume?.toString() || "0";
+            const dailyQuoteVolume = daily?.quoteVolume?.toString() || "0";
+
+            // Liquidity: sum of bid+ask depth, converted to quote value
             const bidLiqu = depth.bid ? Number(depth.bid) : 0;
             const askLiqu = depth.ask ? Number(depth.ask) : 0;
-            const totalLiquidityInQuote = price > 0 ? ((bidLiqu + askLiqu) * price / Math.pow(10, pool.baseDecimals || 18)).toString() : "0";
+            // bid/ask quantities are in base units; convert to quote using price
+            const totalLiquidityInQuote = priceNum > 0
+                ? ((bidLiqu * priceNum / Math.pow(10, pool.baseDecimals || 18)) + (askLiqu * priceNum / Math.pow(10, pool.baseDecimals || 18))).toString()
+                : (pool.volumeInQuote?.toString() || "0");
 
             return {
                 symbol: symbol.replace("/", ""),
@@ -465,9 +508,9 @@ export class MarketService {
                 poolId: poolId,
                 baseDecimals: pool.baseDecimals,
                 quoteDecimals: pool.quoteDecimals,
-                volume: "0",
-                volumeInQuote: "0",
-                latestPrice: "0",
+                volume: dailyVolume,
+                volumeInQuote: dailyQuoteVolume,
+                latestPrice: latestPrice,
                 bidLiquidity: depth.bid,
                 askLiquidity: depth.ask,
                 totalLiquidityInQuote: totalLiquidityInQuote,
