@@ -118,6 +118,22 @@ export const agentsRoutes = new Elysia({ prefix: '/api' })
             tags: ['Agents'],
         },
     })
+    .get('/agents/:agentTokenId/predictions', AgentsService.getAgentPredictions, {
+        params: t.Object({
+            agentTokenId: t.String(),
+        }),
+        query: t.Object({
+            chainId: t.Optional(t.String()),
+            action: t.Optional(t.String()),
+            limit: t.Optional(t.String()),
+            offset: t.Optional(t.String()),
+        }),
+        detail: {
+            summary: 'Get agent predictions',
+            description: 'Get prediction events for a specific agent with optional action filter (PREDICT/CLAIM)',
+            tags: ['Agents'],
+        },
+    })
     .get('/agents/:agentTokenId/analytics', AgentsService.getAgentAnalytics, {
         params: t.Object({
             agentTokenId: t.String(),

@@ -76,6 +76,28 @@ jobs:
           exit 1
         fi
 
+    - name: Set websocket enable block in Redis
+      run: |
+        ENV_FILE="ponder/.env.lisk-sepolia"
+        RPC_URL=$(grep "^CORE_DEVNET_ENDPOINT=" "$ENV_FILE" | cut -d'=' -f2- | cut -d',' -f1)
+
+        if [ -z "$RPC_URL" ]; then
+          echo "⚠️ Could not read RPC URL from env file — skipping Redis key set (env fallback will be used)"
+        else
+          HEX_BLOCK=$(curl -sf -X POST "$RPC_URL" \
+            -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
+            | grep -o '"result":"[^"]*"' | cut -d'"' -f4)
+
+          if [ -n "$HEX_BLOCK" ]; then
+            DEC_BLOCK=$(printf "%d" "$HEX_BLOCK")
+            docker exec redis redis-cli SET "websocket:enable:block" "$DEC_BLOCK"
+            echo "✅ websocket:enable:block = $DEC_BLOCK (skips all historical blocks during sync)"
+          else
+            echo "⚠️ RPC call failed — skipping Redis key set (env fallback START_WEBSOCKET_BLOCK will be used)"
+          fi
+        fi
+
     - name: Deploy to production
       env:
         POSTGRES_USER: ${{ secrets.POSTGRES_USER }}

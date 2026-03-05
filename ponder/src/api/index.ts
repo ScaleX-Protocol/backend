@@ -41,6 +41,7 @@ import schema, {
 	predictionMarkets,
 	predictionPositions,
 	predictionEvents,
+	agentPredictionEvents,
 } from "ponder:schema";
 import { createPublicClient, http } from "viem";
 import { base, baseSepolia, mainnet, sepolia } from "viem/chains";
@@ -3038,28 +3039,34 @@ app.get("/api/lending/dashboard/:user", async c => {
 
 /**
  * GET /api/agents
- * List all registered agents with aggregated summary across all users.
+ * List marketplace-listed agents with aggregated summary across all users.
  * Uses agentRegistry (IdentityRegistry) as primary source, enriched with installation/stats data.
- * Query params: chainId, limit, offset
+ * Query params: chainId, limit, offset, all (bypass marketplace filter for admin use)
  */
 app.get("/api/agents", async c => {
-	const { chainId, limit, offset } = c.req.query();
+	const { chainId, limit, offset, all } = c.req.query();
 
 	try {
 		const targetChainId = chainId ? Number(chainId) : 84532;
 		const queryLimit = limit ? Math.min(Number(limit), 100) : 50;
 		const queryOffset = offset ? Number(offset) : 0;
 
-		// 1. Get all registered agents from IdentityRegistry (primary source)
+		// 1. Get registered agents from IdentityRegistry (filter to marketplace-listed unless ?all=true)
+		const showAll = all === "true";
+		const whereCondition = showAll
+			? eq(agentRegistry.chainId, targetChainId)
+			: and(eq(agentRegistry.chainId, targetChainId), eq(agentRegistry.isListedOnMarketplace, true));
+
 		const registeredAgents = await db
 			.select({
 				tokenId: agentRegistry.tokenId,
 				owner: agentRegistry.owner,
 				metadataURI: agentRegistry.metadataURI,
 				registeredAt: agentRegistry.registeredAt,
+				isListedOnMarketplace: agentRegistry.isListedOnMarketplace,
 			})
 			.from(agentRegistry)
-			.where(eq(agentRegistry.chainId, targetChainId))
+			.where(whereCondition)
 			.orderBy(asc(agentRegistry.tokenId))
 			.limit(queryLimit)
 			.offset(queryOffset)
@@ -3104,7 +3111,7 @@ app.get("/api/agents", async c => {
 			db
 				.select({ count: sql<number>`count(*)::int` })
 				.from(agentRegistry)
-				.where(eq(agentRegistry.chainId, targetChainId))
+				.where(whereCondition)
 				.execute(),
 		]);
 
@@ -3121,6 +3128,7 @@ app.get("/api/agents", async c => {
 				owner: agent.owner,
 				metadataURI: agent.metadataURI,
 				registeredAt: agent.registeredAt,
+				isListedOnMarketplace: agent.isListedOnMarketplace,
 				totalUsers: install?.totalUsers ?? 0,
 				activeUsers: install?.activeUsers ?? 0,
 				firstInstalledAt: install?.firstInstalledAt ?? null,
@@ -4668,20 +4676,33 @@ app.get("/api/predictions/events/:marketId", async c => {
 		const limit = Math.min(Number(c.req.query("limit") || "50"), 250);
 
 		const events = await db
-			.select()
+			.select({
+				event: predictionEvents,
+				agentTokenId: agentPredictionEvents.agentTokenId,
+				agentExecutor: agentPredictionEvents.executor,
+			})
 			.from(predictionEvents)
+			.leftJoin(
+				agentPredictionEvents,
+				and(
+					eq(predictionEvents.transactionId, agentPredictionEvents.transactionId),
+					eq(predictionEvents.chainId, agentPredictionEvents.chainId),
+				),
+			)
 			.where(and(eq(predictionEvents.chainId, chainId), eq(predictionEvents.marketId, BigInt(marketIdParam))))
 			.orderBy(desc(predictionEvents.timestamp))
 			.limit(limit)
 			.execute();
 
 		return c.json({
-			events: events.map(e => ({
-				...e,
-				marketId: e.marketId.toString(),
-				amount: e.amount?.toString() ?? null,
-				payout: e.payout?.toString() ?? null,
-				blockNumber: e.blockNumber.toString(),
+			events: events.map(row => ({
+				...row.event,
+				marketId: row.event.marketId.toString(),
+				amount: row.event.amount?.toString() ?? null,
+				payout: row.event.payout?.toString() ?? null,
+				blockNumber: row.event.blockNumber.toString(),
+				agentTokenId: row.agentTokenId?.toString() ?? null,
+				agentExecutor: row.agentExecutor ?? null,
 			})),
 			count: events.length,
 		});

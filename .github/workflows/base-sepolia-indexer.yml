@@ -154,6 +154,31 @@ jobs:
             || echo "⚠️ Schema drop skipped (database may not exist yet - first deploy)"
         fi
 
+    - name: Set websocket enable block in Redis
+      run: |
+        # Fetch current chain tip and store in Redis so historical sync skips websocket ops.
+        # syncState.ts reads this key on first executeIfInSync call; if missing it falls back
+        # to START_WEBSOCKET_BLOCK env var. Setting it here ensures every deploy is fresh.
+        ENV_FILE="ponder/.env.base-sepolia"
+        RPC_URL=$(grep "^CORE_DEVNET_ENDPOINT=" "$ENV_FILE" | cut -d'=' -f2- | cut -d',' -f1)
+
+        if [ -z "$RPC_URL" ]; then
+          echo "⚠️ Could not read RPC URL from env file — skipping Redis key set (env fallback will be used)"
+        else
+          HEX_BLOCK=$(curl -sf -X POST "$RPC_URL" \
+            -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
+            | grep -o '"result":"[^"]*"' | cut -d'"' -f4)
+
+          if [ -n "$HEX_BLOCK" ]; then
+            DEC_BLOCK=$(printf "%d" "$HEX_BLOCK")
+            docker exec redis redis-cli SET "websocket:enable:block" "$DEC_BLOCK"
+            echo "✅ websocket:enable:block = $DEC_BLOCK (skips all historical blocks during sync)"
+          else
+            echo "⚠️ RPC call failed — skipping Redis key set (env fallback START_WEBSOCKET_BLOCK will be used)"
+          fi
+        fi
+
     - name: Start Base Sepolia services
       env:
         POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
@@ -232,9 +257,11 @@ jobs:
         echo "=== Creating composite indexes for query performance ==="
         echo "CONCURRENTLY means they build without blocking the running indexer."
 
+        # chain_id included: depthManager queries WHERE pool_id = ? AND chain_id = ? AND status IN (...)
         docker exec postgres-database psql -U $U -d $DB -c \
-          "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_orders_pool_status
-           ON ${SCHEMA}.orders (pool_id, status);" && echo "✅ idx_orders_pool_status" || echo "⚠️ idx_orders_pool_status failed"
+          "DROP INDEX CONCURRENTLY IF EXISTS ${SCHEMA}.idx_orders_pool_status;
+           CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_orders_pool_chain_status
+           ON ${SCHEMA}.orders (pool_id, chain_id, status);" && echo "✅ idx_orders_pool_chain_status" || echo "⚠️ idx_orders_pool_chain_status failed"
 
         docker exec postgres-database psql -U $U -d $DB -c \
           "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_minute_buckets_pool_time
@@ -271,7 +298,22 @@ jobs:
           "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_agent_orders_owner
            ON ${SCHEMA}.agent_orders (owner);" && echo "✅ idx_agent_orders_owner" || echo "⚠️ idx_agent_orders_owner failed"
 
-        echo "=== Index creation complete (9 indexes) ==="
+        # Prediction markets: find open markets on a chain sorted by end time
+        docker exec postgres-database psql -U $U -d $DB -c \
+          "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_prediction_markets_chain_status_endtime
+           ON ${SCHEMA}.prediction_markets (chain_id, status, end_time);" && echo "✅ idx_prediction_markets_chain_status_endtime" || echo "⚠️ idx_prediction_markets_chain_status_endtime failed"
+
+        # Prediction positions: find unclaimed winning positions for a user
+        docker exec postgres-database psql -U $U -d $DB -c \
+          "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_prediction_positions_user_claimed
+           ON ${SCHEMA}.prediction_positions (user_address, claimed);" && echo "✅ idx_prediction_positions_user_claimed" || echo "⚠️ idx_prediction_positions_user_claimed failed"
+
+        # Prediction events: fetch all events for a market ordered by time
+        docker exec postgres-database psql -U $U -d $DB -c \
+          "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_prediction_events_market_timestamp
+           ON ${SCHEMA}.prediction_events (market_id, timestamp DESC);" && echo "✅ idx_prediction_events_market_timestamp" || echo "⚠️ idx_prediction_events_market_timestamp failed"
+
+        echo "=== Index creation complete (12 indexes) ==="
         docker exec postgres-database psql -U $U -d $DB -c \
           "SELECT indexrelname, relname AS table FROM pg_stat_user_indexes
            WHERE schemaname='${SCHEMA_NAME}' AND indexrelname LIKE 'idx_%'

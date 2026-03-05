@@ -55,15 +55,15 @@ export class AgentsService {
                 return { success: true, data: [], count: 0, pagination: { limit, offset } };
             }
 
-            const agentTokenIds = agents.map(a => a.token_id).filter(id => id != null && String(id).trim() !== '');
-
+            const agentTokenIds = agents.map(a => a.token_id).filter(id => id && id.trim() !== '');
+            
             // Early return if no agents
             if (agentTokenIds.length === 0) {
                 return { success: true, data: [], count: 0, pagination: { limit, offset } };
             }
 
             const agentIdArray = `{${agentTokenIds.join(',')}}`;
-
+            
             const installations = await runQuery<{ agent_token_id: string; total_users: number; active_users: number; first_installed_at: number | null }>(`
                 SELECT 
                     agent_token_id::text,
@@ -75,11 +75,14 @@ export class AgentsService {
                 GROUP BY agent_token_id
             `, [chainId, agentIdArray]);
 
-            const activityStats = await runQuery<{ agent_token_id: string; last_activity_at: number | null; total_trading_volume: string }>(`
+            const activityStats = await runQuery<{ agent_token_id: string; last_activity_at: number | null; total_trading_volume: string; total_predictions: number; total_prediction_volume: string; total_prediction_claims: number }>(`
                 SELECT
                     agent_token_id::text,
                     MAX(last_activity_timestamp)::integer as last_activity_at,
-                    COALESCE(SUM(total_trading_volume), 0)::text as total_trading_volume
+                    COALESCE(SUM(total_trading_volume), 0)::text as total_trading_volume,
+                    COALESCE(SUM(total_predictions), 0)::int as total_predictions,
+                    COALESCE(SUM(total_prediction_volume), 0)::text as total_prediction_volume,
+                    COALESCE(SUM(total_prediction_claims), 0)::int as total_prediction_claims
                 FROM agent_stats
                 WHERE chain_id = $1 AND agent_token_id = ANY($2::numeric[])
                 GROUP BY agent_token_id
@@ -96,21 +99,24 @@ export class AgentsService {
             const activityStatsMap = new Map(activityStats.map(a => [a.agent_token_id, a]));
             const ordersMap = new Map(orderCounts.map(o => [o.agent_token_id, o.order_count]));
 
-            const data = agents.map(Agent => {
-                const install = installationsMap.get(Agent.token_id);
-                const activity = activityStatsMap.get(Agent.token_id);
-                const orderCount = ordersMap.get(Agent.token_id) || 0;
+            const data = agents.map(agent => {
+                const install = installationsMap.get(agent.token_id);
+                const activity = activityStatsMap.get(agent.token_id);
+                const orderCount = ordersMap.get(agent.token_id) || 0;
                 return {
-                    agentTokenId: Agent.token_id,
-                    owner: Agent.owner,
-                    metadataURI: Agent.metadata_uri,
-                    registeredAt: Agent.registered_at,
+                    agentTokenId: agent.token_id,
+                    owner: agent.owner,
+                    metadataURI: agent.metadata_uri,
+                    registeredAt: agent.registered_at,
                     totalUsers: install?.total_users || 0,
                     activeUsers: install?.active_users || 0,
                     firstInstalledAt: install?.first_installed_at || null,
                     lastActivityAt: activity?.last_activity_at || null,
                     totalOrders: orderCount,
                     totalVolume: activity?.total_trading_volume || "0",
+                    totalPredictions: activity?.total_predictions || 0,
+                    totalPredictionVolume: activity?.total_prediction_volume || "0",
+                    totalPredictionClaims: activity?.total_prediction_claims || 0,
                 };
             });
 
@@ -150,18 +156,21 @@ export class AgentsService {
             `, [chainId, agentTokenId]);
 
             // Aggregate stats across all users
-            const statsAgg = await runQuery<{ 
-                total_market_orders: number; 
-                total_limit_orders: number; 
-                total_orders_cancelled: number; 
+            const statsAgg = await runQuery<{
+                total_market_orders: number;
+                total_limit_orders: number;
+                total_orders_cancelled: number;
                 total_trading_volume: string;
                 total_borrow_amount: string;
                 total_repay_amount: string;
                 total_collateral_supplied: string;
                 total_collateral_withdrawn: string;
+                total_predictions: number;
+                total_prediction_volume: string;
+                total_prediction_claims: number;
                 last_activity_at: number | null;
             }>(`
-                SELECT 
+                SELECT
                     COALESCE(SUM(total_market_orders), 0)::int as total_market_orders,
                     COALESCE(SUM(total_limit_orders), 0)::int as total_limit_orders,
                     COALESCE(SUM(total_orders_cancelled), 0)::int as total_orders_cancelled,
@@ -170,6 +179,9 @@ export class AgentsService {
                     COALESCE(SUM(total_repay_amount), 0)::text as total_repay_amount,
                     COALESCE(SUM(total_collateral_supplied), 0)::text as total_collateral_supplied,
                     COALESCE(SUM(total_collateral_withdrawn), 0)::text as total_collateral_withdrawn,
+                    COALESCE(SUM(total_predictions), 0)::int as total_predictions,
+                    COALESCE(SUM(total_prediction_volume), 0)::text as total_prediction_volume,
+                    COALESCE(SUM(total_prediction_claims), 0)::int as total_prediction_claims,
                     MAX(last_activity_timestamp)::integer as last_activity_at
                 FROM agent_stats
                 WHERE chain_id = $1 AND agent_token_id = $2
@@ -201,7 +213,7 @@ export class AgentsService {
             return {
                 success: true,
                 data: {
-                    agentTokenId: registry?.token_id?.toString() || agentTokenId,
+                    agentTokenId: registry?.token_id || agentTokenId,
                     chainId,
                     totalUsers: install?.total_users || 0,
                     activeUsers: install?.active_users || 0,
@@ -216,6 +228,9 @@ export class AgentsService {
                         totalRepayAmount: stats?.total_repay_amount || "0",
                         totalCollateralSupplied: stats?.total_collateral_supplied || "0",
                         totalCollateralWithdrawn: stats?.total_collateral_withdrawn || "0",
+                        totalPredictions: stats?.total_predictions || 0,
+                        totalPredictionVolume: stats?.total_prediction_volume || "0",
+                        totalPredictionClaims: stats?.total_prediction_claims || 0,
                     },
                     ordersByStatus: ordersByStatusMap,
                 }
@@ -286,18 +301,19 @@ export class AgentsService {
             `, [agentTokenId, chainId, limit, offset]);
 
             const data = lendingEvents.map(event => ({
+                ...event,
                 id: event.id,
-                chainId: event.chain_id,
-                agentTokenId: event.agent_token_id?.toString(),
+                chainId: event.chainId,
+                agentTokenId: event.agentTokenId?.toString(),
                 owner: event.owner,
                 executor: event.executor,
                 action: event.action,
                 token: event.token,
                 amount: event.amount?.toString(),
-                newHealthFactor: event.new_health_factor?.toString(),
+                newHealthFactor: event.newHealthFactor?.toString(),
                 timestamp: event.timestamp,
-                transactionId: event.transaction_id,
-                blockNumber: event.block_number?.toString(),
+                transactionId: event.transactionId,
+                blockNumber: event.blockNumber?.toString(),
             }));
 
             const countResult = await runQuery<{ count: string }>(`
@@ -349,23 +365,13 @@ export class AgentsService {
             const data = policies.map(p => ({
                 id: p.id,
                 owner: p.owner,
-                chainId: p.chain_id,
-                agentTokenId: p.agent_token_id?.toString(),
-                maxOrderSize: p.max_order_size?.toString() || null,
-                minOrderSize: p.min_order_size?.toString() || null,
-                dailyVolumeLimit: p.daily_volume_limit?.toString() || null,
-                weeklyVolumeLimit: p.weekly_volume_limit?.toString() || null,
-                whitelistedTokens: p.whitelisted_tokens || [],
-                blacklistedTokens: p.blacklisted_tokens || [],
-                allowMarketOrders: p.allow_market_orders ?? true,
-                allowLimitOrders: p.allow_limit_orders ?? true,
-                allowBuy: p.allow_buy ?? true,
-                allowSell: p.allow_sell ?? true,
-                maxSlippageBps: p.max_slippage_bps,
-                minTimeBetweenTrades: p.min_time_between_trades,
-                maxTradesPerDay: p.max_trades_per_day,
-                maxTradesPerHour: p.max_trades_per_hour,
-                minHealthFactor: p.min_health_factor?.toString() || null,
+                chainId: p.chainId,
+                agentTokenId: p.agentTokenId?.toString(),
+                maxTradeSize: p.maxTradeSize?.toString() || null,
+                maxDailyVolume: p.maxDailyVolume?.toString() || null,
+                allowedPools: p.allowedPools || [],
+                restrictedPools: p.restrictedPools || [],
+                enableCircuitBreaker: p.enableCircuitBreaker ?? true,
             }));
 
             return {
@@ -445,34 +451,24 @@ export class AgentsService {
                 return {
                     id: p.id,
                     owner: p.owner,
-                    chainId: p.chain_id,
-                    agentTokenId: p.agent_token_id?.toString(),
-                    maxOrderSize: p.max_order_size?.toString() || null,
-                    minOrderSize: p.min_order_size?.toString() || null,
-                    dailyVolumeLimit: p.daily_volume_limit?.toString() || null,
-                    weeklyVolumeLimit: p.weekly_volume_limit?.toString() || null,
-                    whitelistedTokens: p.whitelisted_tokens || [],
-                    blacklistedTokens: p.blacklisted_tokens || [],
-                    allowMarketOrders: p.allow_market_orders ?? true,
-                    allowLimitOrders: p.allow_limit_orders ?? true,
-                    allowBuy: p.allow_buy ?? true,
-                    allowSell: p.allow_sell ?? true,
-                    maxSlippageBps: p.max_slippage_bps,
-                    minTimeBetweenTrades: p.min_time_between_trades,
-                    maxTradesPerDay: p.max_trades_per_day,
-                    maxTradesPerHour: p.max_trades_per_hour,
-                    minHealthFactor: p.min_health_factor?.toString() || null,
+                    chainId: p.chainId,
+                    agentTokenId: p.agentTokenId?.toString(),
+                    maxTradeSize: p.maxTradeSize?.toString() || null,
+                    maxDailyVolume: p.maxDailyVolume?.toString() || null,
+                    allowedPools: p.allowedPools || [],
+                    restrictedPools: p.restrictedPools || [],
+                    enableCircuitBreaker: p.enableCircuitBreaker ?? true,
                 };
             };
 
             const data = installations.map(inst => ({
                 owner: inst.owner,
                 enabled: inst.enabled,
-                installedAt: inst.installed_at,
-                uninstalledAt: inst.uninstalled_at,
-                templateUsed: inst.template_used,
-                transactionId: inst.transaction_id,
-                blockNumber: inst.block_number?.toString(),
+                installedAt: inst.installedAt,
+                uninstalledAt: inst.uninstalledAt,
+                templateUsed: inst.templateUsed,
+                transactionId: inst.transactionId,
+                blockNumber: inst.blockNumber?.toString(),
                 policy: serializePolicy(policyMap.get(inst.owner)),
             }));
 
@@ -590,6 +586,99 @@ export class AgentsService {
             console.error('Error fetching circuit breakers:', error);
             ctx.set.status = 500;
             return { success: false, error: `Failed to fetch circuit breakers: ${error}` };
+        }
+    }
+
+    static async getAgentPredictions(ctx: Context) {
+        try {
+            const { params, query } = ctx as any;
+            const agentTokenId = params.agentTokenId;
+            const chainId = parseInt(query?.chainId as string) || 84532;
+            const action = query?.action as string | undefined;
+            const limit = Math.min(Math.max(parseInt(query?.limit as string ?? '50') || 50, 1), 100);
+            const offset = Math.max(parseInt(query?.offset as string ?? '0') || 0, 0);
+
+            // Validate action filter
+            if (action && !['PREDICT', 'CLAIM'].includes(action)) {
+                ctx.set.status = 400;
+                return { success: false, error: 'Invalid action. Must be: PREDICT or CLAIM' };
+            }
+
+            // Build query with optional action filter
+            const queryParams: unknown[] = [chainId, agentTokenId];
+            let actionFilter = '';
+            if (action) {
+                queryParams.push(action);
+                actionFilter = `AND ape.action = $3`;
+            }
+
+            // Count query
+            const countResult = await runQuery<{ count: number }>(`
+                SELECT COUNT(*)::int as count
+                FROM agent_prediction_events ape
+                WHERE ape.chain_id = $1 AND ape.agent_token_id = $2 ${actionFilter}
+            `, queryParams);
+
+            // Main query with market context JOIN
+            const predictions = await runQuery<any>(`
+                SELECT
+                    ape.id,
+                    ape.chain_id,
+                    ape.owner,
+                    ape.agent_token_id::text as agent_token_id,
+                    ape.executor,
+                    ape.action,
+                    ape.market_id::text as market_id,
+                    ape.predict_up,
+                    ape.amount::text as amount,
+                    ape."timestamp",
+                    ape.transaction_id,
+                    ape.block_number::text as block_number,
+                    pm.base_token,
+                    pm.strike_price::text as strike_price,
+                    pm.status as market_status,
+                    pm.outcome as market_outcome,
+                    pm.end_time as market_end_time
+                FROM agent_prediction_events ape
+                LEFT JOIN prediction_markets pm
+                    ON ape.market_id = pm.market_id AND ape.chain_id = pm.chain_id
+                WHERE ape.chain_id = $1 AND ape.agent_token_id = $2 ${actionFilter}
+                ORDER BY ape."timestamp" DESC
+                LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}
+            `, [...queryParams, limit, offset]);
+
+            const data = predictions.map((event: any) => ({
+                id: event.id,
+                chainId: event.chain_id,
+                owner: event.owner,
+                agentTokenId: event.agent_token_id,
+                executor: event.executor,
+                action: event.action,
+                marketId: event.market_id,
+                predictUp: event.predict_up,
+                amount: event.amount,
+                timestamp: event.timestamp,
+                transactionId: event.transaction_id,
+                blockNumber: event.block_number,
+                market: event.base_token ? {
+                    baseToken: event.base_token,
+                    strikePrice: event.strike_price,
+                    status: event.market_status,
+                    outcome: event.market_outcome,
+                    endTime: event.market_end_time,
+                } : null,
+            }));
+
+            return {
+                success: true,
+                data,
+                count: countResult[0]?.count || 0,
+                pagination: { limit, offset },
+            };
+        } catch (error) {
+            console.error('Error fetching agent predictions:', error);
+            ctx.set.status = 500;
+            return { success: false, error: `Failed to fetch agent predictions: ${error}` };
         }
     }
 

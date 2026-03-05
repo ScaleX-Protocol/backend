@@ -15,7 +15,8 @@ export const shouldEnableWebSocket = async (currentBlockNumber: number, callerFu
         if (!enabledWebSocket) return false;
 
         if (cachedEnabledBlockNumber === null) {
-            cachedEnabledBlockNumber = (await getCachedData<number>('websocket:enable:block', currentBlockNumber, callerFunction)) || 34293825;
+            const envFallback = parseInt(process.env.START_WEBSOCKET_BLOCK || '0') || 34293825;
+            cachedEnabledBlockNumber = (await getCachedData<number>('websocket:enable:block', currentBlockNumber, callerFunction)) || envFallback;
         }
 
         const enabledBlockNumber = cachedEnabledBlockNumber;

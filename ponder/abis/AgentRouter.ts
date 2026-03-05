@@ -176,5 +176,75 @@ export const AgentRouterABI = [
 			{ "name": "amount", "type": "uint256", "indexed": false, "internalType": "uint256" }
 		],
 		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "AgentListedOnMarketplace",
+		"inputs": [
+			{ "name": "strategyAgentId", "type": "uint256", "indexed": true, "internalType": "uint256" },
+			{ "name": "owner", "type": "address", "indexed": true, "internalType": "address" },
+			{ "name": "timestamp", "type": "uint256", "indexed": false, "internalType": "uint256" }
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "AgentDelistedFromMarketplace",
+		"inputs": [
+			{ "name": "strategyAgentId", "type": "uint256", "indexed": true, "internalType": "uint256" },
+			{ "name": "owner", "type": "address", "indexed": true, "internalType": "address" },
+			{ "name": "timestamp", "type": "uint256", "indexed": false, "internalType": "uint256" }
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "AgentPredictionPlaced",
+		"inputs": [
+			{ "name": "user", "type": "address", "indexed": true, "internalType": "address" },
+			{ "name": "strategyAgentId", "type": "uint256", "indexed": true, "internalType": "uint256" },
+			{ "name": "executor", "type": "address", "indexed": true, "internalType": "address" },
+			{ "name": "marketId", "type": "uint64", "indexed": false, "internalType": "uint64" },
+			{ "name": "predictUp", "type": "bool", "indexed": false, "internalType": "bool" },
+			{ "name": "amount", "type": "uint256", "indexed": false, "internalType": "uint256" },
+			{ "name": "timestamp", "type": "uint256", "indexed": false, "internalType": "uint256" }
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "AgentPredictionClaimed",
+		"inputs": [
+			{ "name": "user", "type": "address", "indexed": true, "internalType": "address" },
+			{ "name": "strategyAgentId", "type": "uint256", "indexed": true, "internalType": "uint256" },
+			{ "name": "executor", "type": "address", "indexed": true, "internalType": "address" },
+			{ "name": "marketId", "type": "uint64", "indexed": false, "internalType": "uint64" },
+			{ "name": "payout", "type": "uint256", "indexed": false, "internalType": "uint256" },
+			{ "name": "timestamp", "type": "uint256", "indexed": false, "internalType": "uint256" }
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "AgentSelfPredictionPlaced",
+		"inputs": [
+			{ "name": "strategyAgentId", "type": "uint256", "indexed": true, "internalType": "uint256" },
+			{ "name": "agentWallet", "type": "address", "indexed": true, "internalType": "address" },
+			{ "name": "marketId", "type": "uint64", "indexed": false, "internalType": "uint64" },
+			{ "name": "predictUp", "type": "bool", "indexed": false, "internalType": "bool" },
+			{ "name": "amount", "type": "uint256", "indexed": false, "internalType": "uint256" }
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "AgentSelfPredictionClaimed",
+		"inputs": [
+			{ "name": "strategyAgentId", "type": "uint256", "indexed": true, "internalType": "uint256" },
+			{ "name": "agentWallet", "type": "address", "indexed": true, "internalType": "address" },
+			{ "name": "marketId", "type": "uint64", "indexed": false, "internalType": "uint64" },
+			{ "name": "payout", "type": "uint256", "indexed": false, "internalType": "uint256" }
+		],
+		"anonymous": false
 	}
 ] as const;
