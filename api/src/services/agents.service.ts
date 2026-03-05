@@ -46,7 +46,7 @@ export class AgentsService {
             const agents = await runQuery<AgentRegistryRow>(`
                 SELECT id, chain_id, token_id, owner, metadata_uri, registered_at
                 FROM agent_registry
-                WHERE chain_id = $1 ${ownerFilter}
+                WHERE chain_id = $1 AND is_listed_on_marketplace = true ${ownerFilter}
                 ORDER BY token_id ASC
                 LIMIT $${params.length + 1} OFFSET $${params.length + 2}
             `, [...params, limit, offset]);
@@ -121,7 +121,7 @@ export class AgentsService {
             });
 
             const countResult = await runQuery<{ count: string }>(`
-                SELECT COUNT(*)::text as count FROM agent_registry WHERE chain_id = $1 ${ownerFilter}
+                SELECT COUNT(*)::text as count FROM agent_registry WHERE chain_id = $1 AND is_listed_on_marketplace = true ${ownerFilter}
             `, owner ? [chainId, owner.toLowerCase()] : [chainId]);
             const count = parseInt(countResult[0]?.count || '0');
 
