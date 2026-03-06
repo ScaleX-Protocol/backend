@@ -1,5 +1,6 @@
 import { Elysia } from 'elysia';
 import { ponderPool } from '../config/database';
+import { PredictionsService } from '../services/predictions.service';
 
 // Helper: run a parameterized SQL query against the Ponder DB
 async function runQuery<T extends object>(text: string, params: unknown[] = []): Promise<T[]> {
@@ -281,6 +282,15 @@ export const predictionsRoutes = new Elysia({ prefix: '/api' })
         detail: {
             summary: 'Get market positions',
             description: 'Get prediction positions for a specific market',
+            tags: ['Predictions'],
+        },
+    })
+
+    // GET /api/predictions/pending/:address — pending actions for a user
+    .get('/predictions/pending/:address', PredictionsService.getPendingActions, {
+        detail: {
+            summary: 'Get pending prediction actions',
+            description: 'Get markets awaiting settlement and claimable positions for a user',
             tags: ['Predictions'],
         },
     });
