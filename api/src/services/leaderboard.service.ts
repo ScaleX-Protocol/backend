@@ -143,12 +143,11 @@ async function fetchPnlRows(
         return query<PnlRow>(sql, params);
     }
 
-    // Agent leaderboard: aggregate user trades by their active agent installation.
-    // The OrderPlaced event always emits agentTokenId=0 for direct user orders,
-    // so we use agent_installations to correctly attribute trades to managing agents.
+    // Agent leaderboard: aggregate trades by the agent_token_id on orders.
+    // Orders placed by agents have agent_token_id > 0 set directly on the order.
     const sql = `
         SELECT
-            ai.agent_token_id::text AS entity_key,
+            o.agent_token_id::text AS entity_key,
             o.pool_id,
             o.side,
             coalesce(sum(t.quantity), 0)::text           AS total_quantity,
@@ -161,14 +160,12 @@ async function fetchPnlRows(
         FROM trades t
         INNER JOIN orders o  ON t.order_id = o.id
         INNER JOIN pools p   ON o.pool_id  = p.order_book
-        INNER JOIN agent_installations ai
-            ON lower(o.user_address) = lower(ai.owner)
-           AND o.chain_id = ai.chain_id
-           AND ai.enabled = true
         WHERE o.chain_id = $1
+          AND o.agent_token_id IS NOT NULL
+          AND o.agent_token_id > 0
           AND o.status IN ('FILLED', 'PARTIALLY_FILLED')
           ${windowFilter}
-        GROUP BY ai.agent_token_id, o.pool_id, o.side, p.base_decimals, p.quote_decimals, p.price, p.coin
+        GROUP BY o.agent_token_id, o.pool_id, o.side, p.base_decimals, p.quote_decimals, p.price, p.coin
     `;
     return query<PnlRow>(sql, params);
 }
@@ -199,20 +196,18 @@ async function fetchFillRows(
         return query<FillRow>(sql, params);
     }
 
-    // Agent leaderboard: fill rate based on managed users' orders.
+    // Agent leaderboard: fill rate based on orders placed by agents.
     const sql = `
         SELECT
-            ai.agent_token_id::text AS entity_key,
+            o.agent_token_id::text AS entity_key,
             o.status,
             count(*)::int AS cnt
         FROM orders o
-        INNER JOIN agent_installations ai
-            ON lower(o.user_address) = lower(ai.owner)
-           AND o.chain_id = ai.chain_id
-           AND ai.enabled = true
         WHERE o.chain_id = $1
+          AND o.agent_token_id IS NOT NULL
+          AND o.agent_token_id > 0
           ${windowFilter}
-        GROUP BY ai.agent_token_id, o.status
+        GROUP BY o.agent_token_id, o.status
     `;
     return query<FillRow>(sql, params);
 }
