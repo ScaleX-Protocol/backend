@@ -4711,6 +4711,43 @@ app.get("/api/predictions/events/:marketId", async c => {
 	}
 });
 
+// GET /api/predictions/markets/:marketId/positions — all positions in a market (across all users)
+app.get("/api/predictions/markets/:marketId/positions", async c => {
+	try {
+		const chainId = Number(c.req.query("chainId")) || 84532;
+		const marketIdParam = c.req.param("marketId");
+		const userAddress = c.req.query("userAddress")?.toLowerCase() || undefined;
+		const limit = Math.min(Number(c.req.query("limit") || "50"), 250);
+
+		const conditions: any[] = [
+			eq(predictionPositions.chainId, chainId),
+			eq(predictionPositions.marketId, BigInt(marketIdParam)),
+		];
+		if (userAddress) conditions.push(eq(predictionPositions.userAddress, userAddress));
+
+		const positions = await db
+			.select()
+			.from(predictionPositions)
+			.where(and(...conditions))
+			.orderBy(desc(predictionPositions.lastUpdated))
+			.limit(limit)
+			.execute();
+
+		return c.json({
+			positions: positions.map(p => ({
+				...p,
+				marketId: p.marketId.toString(),
+				stakeUp: p.stakeUp.toString(),
+				stakeDown: p.stakeDown.toString(),
+				payout: p.payout?.toString() ?? null,
+			})),
+			count: positions.length,
+		});
+	} catch (error) {
+		return c.json({ error: "Failed to fetch market positions" }, 500);
+	}
+});
+
 // GET /api/predictions/positions/:userAddress/:marketId — specific user position in a market
 app.get("/api/predictions/positions/:userAddress/:marketId", async c => {
 	try {
