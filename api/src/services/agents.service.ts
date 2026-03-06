@@ -248,34 +248,70 @@ export class AgentsService {
             const chainId = parseInt((ctx as any).query?.chainId as string) || 84532;
             const agentTokenId = params.agentTokenId;
 
-            const orderStats = await runQuery<{ total_orders: string; filled_orders: string; partial_orders: string; rejected_orders: string }>(`
-                SELECT 
+            const orderStats = await runQuery<{
+                total_orders: string; market_orders: string; limit_orders: string;
+                filled_orders: string; partial_orders: string; rejected_orders: string; cancelled_orders: string;
+            }>(`
+                SELECT
                     COUNT(*)::text as total_orders,
+                    COUNT(*) FILTER (WHERE type = 'Market')::text as market_orders,
+                    COUNT(*) FILTER (WHERE type = 'Limit')::text as limit_orders,
                     COUNT(*) FILTER (WHERE status = 'FILLED')::text as filled_orders,
                     COUNT(*) FILTER (WHERE status = 'PARTIALLY_FILLED')::text as partial_orders,
-                    COUNT(*) FILTER (WHERE status = 'REJECTED')::text as rejected_orders
+                    COUNT(*) FILTER (WHERE status = 'REJECTED')::text as rejected_orders,
+                    COUNT(*) FILTER (WHERE status = 'CANCELLED')::text as cancelled_orders
                 FROM orders WHERE chain_id = $1 AND agent_token_id = $2
             `, [chainId, agentTokenId]);
 
-            const tradeStats = await runQuery<{ total_trades: string; total_volume: string }>(`
-                SELECT COUNT(*)::text as total_trades, COALESCE(SUM(t.quantity * t.price), 0)::text as total_volume
+            // Compute volume per pool with proper decimal normalization
+            const volumeRows = await runQuery<{ total_volume: string; base_decimals: number; quote_decimals: number }>(`
+                SELECT
+                    COALESCE(SUM(t.quantity * t.price), 0)::text as total_volume,
+                    p.base_decimals,
+                    p.quote_decimals
+                FROM trades t
+                INNER JOIN orders o ON t.order_id = o.id
+                INNER JOIN pools p ON o.pool_id = p.order_book
+                WHERE o.chain_id = $1 AND o.agent_token_id = $2
+                GROUP BY p.base_decimals, p.quote_decimals
+            `, [chainId, agentTokenId]);
+
+            let totalTradingVolume = 0;
+            let totalTrades = 0;
+            for (const row of volumeRows) {
+                const rawVol = BigInt(row.total_volume.split('.')[0] || '0');
+                const divisor = BigInt(10) ** BigInt(row.base_decimals + row.quote_decimals);
+                totalTradingVolume += Number(rawVol) / Number(divisor);
+            }
+
+            const tradeCountRows = await runQuery<{ total_trades: string }>(`
+                SELECT COUNT(*)::text as total_trades
                 FROM trades t INNER JOIN orders o ON t.order_id = o.id
                 WHERE o.chain_id = $1 AND o.agent_token_id = $2
             `, [chainId, agentTokenId]);
+            totalTrades = parseInt(tradeCountRows[0]?.total_trades || '0');
 
-            const stats = orderStats[0] || { total_orders: '0', filled_orders: '0', partial_orders: '0', rejected_orders: '0' };
-            const trades = tradeStats[0] || { total_trades: '0', total_volume: '0' };
+            const stats = orderStats[0] || { total_orders: '0', market_orders: '0', limit_orders: '0', filled_orders: '0', partial_orders: '0', rejected_orders: '0', cancelled_orders: '0' };
 
             return {
                 success: true,
                 data: {
-                    agentTokenId,
-                    totalOrders: parseInt(stats.total_orders),
-                    filledOrders: parseInt(stats.filled_orders),
-                    partialOrders: parseInt(stats.partial_orders),
-                    rejectedOrders: parseInt(stats.rejected_orders),
-                    totalTrades: parseInt(trades.total_trades),
-                    totalVolume: trades.total_volume,
+                    agentStats: {
+                        agentTokenId,
+                        chainId,
+                        totalMarketOrders: parseInt(stats.market_orders),
+                        totalLimitOrders: parseInt(stats.limit_orders),
+                        totalOrdersCancelled: parseInt(stats.cancelled_orders),
+                        totalTradingVolume: totalTradingVolume.toFixed(6),
+                    },
+                    ordersByStatus: {
+                        OPEN: parseInt(stats.total_orders) - parseInt(stats.filled_orders) - parseInt(stats.partial_orders) - parseInt(stats.rejected_orders) - parseInt(stats.cancelled_orders),
+                        FILLED: parseInt(stats.filled_orders),
+                        PARTIALLY_FILLED: parseInt(stats.partial_orders),
+                        REJECTED: parseInt(stats.rejected_orders),
+                        CANCELLED: parseInt(stats.cancelled_orders),
+                    },
+                    totalTrades,
                 }
             };
         } catch (error) {
