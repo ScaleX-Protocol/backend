@@ -487,24 +487,24 @@ export class AgentsService {
                 return {
                     id: p.id,
                     owner: p.owner,
-                    chainId: p.chainId,
-                    agentTokenId: p.agentTokenId?.toString(),
-                    maxTradeSize: p.maxTradeSize?.toString() || null,
-                    maxDailyVolume: p.maxDailyVolume?.toString() || null,
-                    allowedPools: p.allowedPools || [],
-                    restrictedPools: p.restrictedPools || [],
-                    enableCircuitBreaker: p.enableCircuitBreaker ?? true,
+                    chainId: p.chain_id,
+                    agentTokenId: p.agent_token_id?.toString(),
+                    maxTradeSize: p.max_trade_size?.toString() || null,
+                    maxDailyVolume: p.max_daily_volume?.toString() || null,
+                    allowedPools: p.allowed_pools || [],
+                    restrictedPools: p.restricted_pools || [],
+                    enableCircuitBreaker: p.enable_circuit_breaker ?? true,
                 };
             };
 
             const data = installations.map(inst => ({
                 owner: inst.owner,
                 enabled: inst.enabled,
-                installedAt: inst.installedAt,
-                uninstalledAt: inst.uninstalledAt,
-                templateUsed: inst.templateUsed,
-                transactionId: inst.transactionId,
-                blockNumber: inst.blockNumber?.toString(),
+                installedAt: inst.installed_at,
+                uninstalledAt: inst.uninstalled_at,
+                templateUsed: inst.template_used,
+                transactionId: inst.transaction_id,
+                blockNumber: inst.block_number?.toString(),
                 policy: serializePolicy(policyMap.get(inst.owner)),
             }));
 
