@@ -92,6 +92,89 @@ function formatSymbol(symbol: string): string {
 }
 
 export const lendingRoutes = new Elysia({ prefix: '/api' })
+    .get('/lending/stats', async (ctx) => {
+        try {
+            const chainId = ctx.query?.chainId ? parseInt(ctx.query.chainId as string) : 84532;
+
+            // Get pool lending stats
+            const poolStats = await runQuery<any>(`
+                SELECT DISTINCT ON (token, chain_id)
+                    token, total_supply as "totalSupply", total_borrow as "totalBorrow",
+                    supply_rate as "supplyRate", borrow_rate as "borrowRate",
+                    utilization_rate as "utilizationRate",
+                    active_lenders as "activeLenders", active_borrowers as "activeBorrowers"
+                FROM pool_lending_stats
+                WHERE chain_id = $1
+                ORDER BY token, chain_id, supply_rate DESC
+            `, [chainId]);
+
+            // Get currencies for symbol resolution
+            const currencies = await runQuery<any>(`
+                SELECT DISTINCT ON (address, chain_id)
+                    address, symbol, decimals
+                FROM currencies
+                WHERE chain_id = $1
+            `, [chainId]);
+
+            const currencyMap = new Map();
+            currencies.forEach((c: any) => {
+                currencyMap.set(c.address?.toLowerCase(), c);
+            });
+
+            // Aggregate totals
+            let totalSupply = 0n;
+            let totalBorrow = 0n;
+            let bestSupplyAPY = 0;
+            let totalActiveLenders = 0;
+            let totalActiveBorrowers = 0;
+
+            const pools = poolStats.map((stat: any) => {
+                const token = stat.token?.toLowerCase();
+                const currency = currencyMap.get(token) || { symbol: 'UNKNOWN', decimals: 18 };
+                const supplyRate = Number(stat.supplyRate || 0) / 100;
+                const borrowRate = Number(stat.borrowRate || 0) / 100;
+                const utilizationRate = Number(stat.utilizationRate || 0) / 10000;
+
+                totalSupply += BigInt(stat.totalSupply || 0);
+                totalBorrow += BigInt(stat.totalBorrow || 0);
+                if (supplyRate > bestSupplyAPY) bestSupplyAPY = supplyRate;
+                totalActiveLenders += Number(stat.activeLenders || 0);
+                totalActiveBorrowers += Number(stat.activeBorrowers || 0);
+
+                return {
+                    token,
+                    symbol: formatSymbol(currency.symbol),
+                    totalSupply: stat.totalSupply?.toString() || '0',
+                    totalBorrow: stat.totalBorrow?.toString() || '0',
+                    supplyRate,
+                    borrowRate,
+                    utilizationRate,
+                };
+            });
+
+            // Sort pools by supplyRate descending
+            pools.sort((a: any, b: any) => b.supplyRate - a.supplyRate);
+
+            return {
+                totalSupply: totalSupply.toString(),
+                totalBorrow: totalBorrow.toString(),
+                bestSupplyAPY,
+                activeLenders: totalActiveLenders,
+                activeBorrowers: totalActiveBorrowers,
+                pools,
+            };
+        } catch (error) {
+            console.error('Error fetching lending stats:', error);
+            ctx.set.status = 500;
+            return { error: `Failed to fetch lending stats: ${error}` };
+        }
+    }, {
+        detail: {
+            summary: 'Get platform-wide lending stats',
+            description: 'Get aggregate lending statistics across all pools without requiring a user address',
+            tags: ['Lending'],
+        },
+    })
     .get('/lending/dashboard/:user', async (ctx) => {
         try {
             const { user } = ctx.params;
