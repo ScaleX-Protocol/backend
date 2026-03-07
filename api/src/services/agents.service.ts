@@ -36,11 +36,25 @@ export class AgentsService {
             const limit = Math.min(Math.max(parseInt(query.limit as string ?? '50') || 50, 1), 100);
             const offset = Math.max(parseInt(query.offset as string ?? '0') || 0, 0);
 
+            // If owner is provided, look up agents the owner has installed (not created).
+            let installedTokenIds: string[] | null = null;
+            if (owner) {
+                const rows = await runQuery<{ agent_token_id: string }>(`
+                    SELECT DISTINCT agent_token_id::text
+                    FROM agent_installations
+                    WHERE chain_id = $1 AND LOWER(owner) = $2
+                `, [chainId, owner.toLowerCase()]);
+                if (rows.length === 0) {
+                    return { success: true, data: [], count: 0, pagination: { limit, offset } };
+                }
+                installedTokenIds = rows.map(r => r.agent_token_id);
+            }
+
             const params: unknown[] = [chainId];
             let ownerFilter = '';
-            if (owner) {
-                params.push(owner.toLowerCase());
-                ownerFilter = 'AND LOWER(owner) = $2';
+            if (installedTokenIds) {
+                params.push(`{${installedTokenIds.join(',')}}`);
+                ownerFilter = 'AND token_id = ANY($2::numeric[])';
             }
 
             const agents = await runQuery<AgentRegistryRow>(`
@@ -122,7 +136,7 @@ export class AgentsService {
 
             const countResult = await runQuery<{ count: string }>(`
                 SELECT COUNT(*)::text as count FROM agent_registry WHERE chain_id = $1 AND is_listed_on_marketplace = true ${ownerFilter}
-            `, owner ? [chainId, owner.toLowerCase()] : [chainId]);
+            `, installedTokenIds ? [chainId, `{${installedTokenIds.join(',')}}`] : [chainId]);
             const count = parseInt(countResult[0]?.count || '0');
 
             return { success: true, data, count, pagination: { limit, offset } };
