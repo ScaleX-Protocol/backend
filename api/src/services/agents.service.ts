@@ -36,50 +36,110 @@ export class AgentsService {
             const limit = Math.min(Math.max(parseInt(query.limit as string ?? '50') || 50, 1), 100);
             const offset = Math.max(parseInt(query.offset as string ?? '0') || 0, 0);
 
-            // If owner is provided, look up agents the owner has installed (not created).
-            let installedTokenIds: string[] | null = null;
+            // Owner view: return per-user AgentInstallation data
             if (owner) {
-                const rows = await runQuery<{ agent_token_id: string }>(`
-                    SELECT DISTINCT agent_token_id::text
+                const userInstallations = await runQuery<{ agent_token_id: string; enabled: boolean; installed_at: number; uninstalled_at: number | null; template_used: string | null; transaction_id: string; block_number: string }>(`
+                    SELECT agent_token_id::text, enabled, installed_at, uninstalled_at, template_used, transaction_id, block_number::text
                     FROM agent_installations
-                    WHERE chain_id = $1 AND LOWER(owner) = $2
-                `, [chainId, owner.toLowerCase()]);
-                if (rows.length === 0) {
+                    WHERE chain_id = $1 AND LOWER(owner) = LOWER($2) AND (uninstalled_at IS NULL OR enabled = true)
+                    ORDER BY installed_at DESC
+                    LIMIT $3 OFFSET $4
+                `, [chainId, owner, limit, offset]);
+
+                if (userInstallations.length === 0) {
                     return { success: true, data: [], count: 0, pagination: { limit, offset } };
                 }
-                installedTokenIds = rows.map(r => r.agent_token_id);
+
+                const agentTokenIds = userInstallations.map(i => i.agent_token_id);
+                const agentIdArray = `{${agentTokenIds.join(',')}}`;
+
+                const [registryRows, activityStats, orderCounts, countResult] = await Promise.all([
+                    runQuery<AgentRegistryRow>(`
+                        SELECT id, chain_id, token_id, owner, metadata_uri, registered_at
+                        FROM agent_registry
+                        WHERE chain_id = $1 AND token_id = ANY($2::numeric[])
+                    `, [chainId, agentIdArray]),
+                    runQuery<{ agent_token_id: string; last_activity_at: number | null; total_trading_volume: string; total_predictions: number; total_prediction_volume: string; total_prediction_claims: number; total_borrows: number; total_repays: number; total_collateral_supplied: number }>(`
+                        SELECT
+                            agent_token_id::text,
+                            MAX(last_activity_timestamp)::integer as last_activity_at,
+                            COALESCE(SUM(total_trading_volume), 0)::text as total_trading_volume,
+                            COALESCE(SUM(total_predictions), 0)::int as total_predictions,
+                            COALESCE(SUM(total_prediction_volume), 0)::text as total_prediction_volume,
+                            COALESCE(SUM(total_prediction_claims), 0)::int as total_prediction_claims,
+                            COALESCE(SUM(total_borrow_amount), 0)::int as total_borrows,
+                            COALESCE(SUM(total_repay_amount), 0)::int as total_repays,
+                            COALESCE(SUM(total_collateral_supplied), 0)::int as total_collateral_supplied
+                        FROM agent_stats
+                        WHERE chain_id = $1 AND LOWER(owner) = LOWER($2) AND agent_token_id = ANY($3::numeric[])
+                        GROUP BY agent_token_id
+                    `, [chainId, owner, agentIdArray]),
+                    runQuery<AgentOrdersRow>(`
+                        SELECT agent_token_id::text, COUNT(*)::int as order_count
+                        FROM orders
+                        WHERE chain_id = $1 AND LOWER(user_address) = LOWER($2) AND agent_token_id = ANY($3::numeric[]) AND agent_token_id > 0
+                        GROUP BY agent_token_id
+                    `, [chainId, owner, agentIdArray]),
+                    runQuery<{ count: string }>(`
+                        SELECT COUNT(*)::text as count FROM agent_installations
+                        WHERE chain_id = $1 AND LOWER(owner) = LOWER($2) AND (uninstalled_at IS NULL OR enabled = true)
+                    `, [chainId, owner]),
+                ]);
+
+                const registryMap = new Map(registryRows.map(r => [r.token_id, r]));
+                const activityMap = new Map(activityStats.map(a => [a.agent_token_id, a]));
+                const ordersMap = new Map(orderCounts.map(o => [o.agent_token_id, o.order_count]));
+
+                const data = userInstallations.map(inst => {
+                    const reg = registryMap.get(inst.agent_token_id);
+                    const activity = activityMap.get(inst.agent_token_id);
+                    const orderCount = ordersMap.get(inst.agent_token_id) || 0;
+                    return {
+                        agentTokenId: inst.agent_token_id,
+                        owner,
+                        metadataURI: reg?.metadata_uri || null,
+                        registeredAt: reg?.registered_at || null,
+                        enabled: inst.enabled,
+                        installedAt: inst.installed_at,
+                        uninstalledAt: inst.uninstalled_at,
+                        templateUsed: inst.template_used,
+                        transactionId: inst.transaction_id,
+                        blockNumber: inst.block_number,
+                        lastActivityAt: activity?.last_activity_at || null,
+                        totalOrders: orderCount,
+                        totalVolume: activity?.total_trading_volume || "0",
+                        totalPredictions: activity?.total_predictions || 0,
+                        totalPredictionClaims: activity?.total_prediction_claims || 0,
+                        totalBorrows: activity?.total_borrows || 0,
+                    };
+                });
+
+                const count = parseInt(countResult[0]?.count || '0');
+                return { success: true, data, count, pagination: { limit, offset } };
             }
 
-            const params: unknown[] = [chainId];
-            let ownerFilter = '';
-            if (installedTokenIds) {
-                params.push(`{${installedTokenIds.join(',')}}`);
-                ownerFilter = 'AND token_id = ANY($2::numeric[])';
-            }
-
+            // No owner — marketplace view: only listed agents
             const agents = await runQuery<AgentRegistryRow>(`
                 SELECT id, chain_id, token_id, owner, metadata_uri, registered_at
                 FROM agent_registry
-                WHERE chain_id = $1 ${ownerFilter}
+                WHERE chain_id = $1 AND is_listed_on_marketplace = true
                 ORDER BY token_id ASC
-                LIMIT $${params.length + 1} OFFSET $${params.length + 2}
-            `, [...params, limit, offset]);
+                LIMIT $2 OFFSET $3
+            `, [chainId, limit, offset]);
 
             if (agents.length === 0) {
                 return { success: true, data: [], count: 0, pagination: { limit, offset } };
             }
 
             const agentTokenIds = agents.map(a => a.token_id).filter(id => id && id.trim() !== '');
-            
-            // Early return if no agents
             if (agentTokenIds.length === 0) {
                 return { success: true, data: [], count: 0, pagination: { limit, offset } };
             }
 
             const agentIdArray = `{${agentTokenIds.join(',')}}`;
-            
+
             const installations = await runQuery<{ agent_token_id: string; total_users: number; active_users: number; first_installed_at: number | null }>(`
-                SELECT 
+                SELECT
                     agent_token_id::text,
                     COUNT(DISTINCT owner)::int as total_users,
                     COUNT(DISTINCT CASE WHEN enabled = true THEN owner END)::int as active_users,
@@ -135,8 +195,8 @@ export class AgentsService {
             });
 
             const countResult = await runQuery<{ count: string }>(`
-                SELECT COUNT(*)::text as count FROM agent_registry WHERE chain_id = $1 ${ownerFilter}
-            `, installedTokenIds ? [chainId, `{${installedTokenIds.join(',')}}`] : [chainId]);
+                SELECT COUNT(*)::text as count FROM agent_registry WHERE chain_id = $1 AND is_listed_on_marketplace = true
+            `, [chainId]);
             const count = parseInt(countResult[0]?.count || '0');
 
             return { success: true, data, count, pagination: { limit, offset } };
