@@ -102,6 +102,12 @@ ponder.on(PonderEvents.PREDICTION_MARKET_SETTLED, pricePredictionHandler.handleM
 ponder.on(PonderEvents.PREDICTION_CLAIMED, pricePredictionHandler.handleClaimed);
 ponder.on(PonderEvents.PREDICTION_MARKET_CANCELLED, pricePredictionHandler.handleMarketCancelled);
 
+// CRE Pending Order Gateway Events
+ponder.on(PonderEvents.PENDING_ORDER_QUEUED, withEventValidator(agentRouterHandler.handleOrderQueued, 'orderQueued'));
+ponder.on(PonderEvents.PENDING_ORDER_APPROVED, withEventValidator(agentRouterHandler.handleOrderApproved, 'orderApproved'));
+ponder.on(PonderEvents.PENDING_ORDER_REJECTED, withEventValidator(agentRouterHandler.handleOrderRejected, 'orderRejected'));
+ponder.on(PonderEvents.PENDING_ORDER_CANCELLED, withEventValidator(agentRouterHandler.handleOrderCancelled, 'orderCancelled'));
+
 console.log("✅ Core Chain indexer initialized - Chain ID: 84532");
 console.log("📊 Monitoring: OrderBook, PoolManager, Hyperlane cross-chain events, TokenRegistry mappings");
 console.log("🏦 Monitoring: LendingManager and Oracle events for lending protocol data");

@@ -246,5 +246,49 @@ export const AgentRouterABI = [
 			{ "name": "payout", "type": "uint256", "indexed": false, "internalType": "uint256" }
 		],
 		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "OrderQueued",
+		"inputs": [
+			{ "name": "pendingOrderId", "type": "uint256", "indexed": true, "internalType": "uint256" },
+			{ "name": "user", "type": "address", "indexed": true, "internalType": "address" },
+			{ "name": "strategyAgentId", "type": "uint256", "indexed": true, "internalType": "uint256" },
+			{ "name": "isMarketOrder", "type": "bool", "indexed": false, "internalType": "bool" },
+			{ "name": "orderBook", "type": "address", "indexed": false, "internalType": "address" },
+			{ "name": "side", "type": "uint8", "indexed": false, "internalType": "uint8" },
+			{ "name": "quantity", "type": "uint128", "indexed": false, "internalType": "uint128" },
+			{ "name": "timestamp", "type": "uint256", "indexed": false, "internalType": "uint256" }
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "OrderApproved",
+		"inputs": [
+			{ "name": "pendingOrderId", "type": "uint256", "indexed": true, "internalType": "uint256" },
+			{ "name": "timestamp", "type": "uint256", "indexed": false, "internalType": "uint256" }
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "OrderRejected",
+		"inputs": [
+			{ "name": "pendingOrderId", "type": "uint256", "indexed": true, "internalType": "uint256" },
+			{ "name": "reason", "type": "string", "indexed": false, "internalType": "string" },
+			{ "name": "timestamp", "type": "uint256", "indexed": false, "internalType": "uint256" }
+		],
+		"anonymous": false
+	},
+	{
+		"type": "event",
+		"name": "OrderCancelled",
+		"inputs": [
+			{ "name": "pendingOrderId", "type": "uint256", "indexed": true, "internalType": "uint256" },
+			{ "name": "cancelledBy", "type": "address", "indexed": false, "internalType": "address" },
+			{ "name": "timestamp", "type": "uint256", "indexed": false, "internalType": "uint256" }
+		],
+		"anonymous": false
 	}
 ] as const;

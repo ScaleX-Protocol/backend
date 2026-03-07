@@ -11,6 +11,7 @@ import {
 	agentCircuitBreakers,
 	agentPolicyViolations,
 	agentRegistry,
+	agentPendingOrders,
 } from "ponder:schema";
 
 const logger = createLogger('agentRouterHandler.ts');
@@ -1343,6 +1344,128 @@ export async function handleAgentDelistedFromMarketplace({ event, context }: any
 			`Failed to handle AgentDelistedFromMarketplace event`,
 			LogLabel.EVENT_HANDLER,
 			'handleAgentDelistedFromMarketplace',
+			{ error: error instanceof Error ? error.message : String(error) }
+		);
+		throw error;
+	}
+}
+
+// =============================================================
+//           CRE PENDING ORDER GATEWAY EVENT HANDLERS
+// =============================================================
+
+export async function handleOrderQueued({ event, context }: any) {
+	try {
+		const { pendingOrderId, user, strategyAgentId, isMarketOrder, orderBook, side, quantity, timestamp } = event.args;
+		const chainId = context.network.chainId;
+		const id = `${chainId}-${pendingOrderId}`;
+
+		logger.info(
+			`Order queued for CRE validation - PendingOrderId: ${pendingOrderId}, Agent: ${strategyAgentId}`,
+			LogLabel.EVENT_HANDLER,
+			'handleOrderQueued'
+		);
+
+		await context.db
+			.insert(agentPendingOrders)
+			.values({
+				id,
+				chainId,
+				pendingOrderId,
+				agentTokenId: strategyAgentId,
+				user: user.toLowerCase(),
+				orderBook: orderBook.toLowerCase(),
+				side: side === 0 ? 'BUY' : 'SELL',
+				quantity,
+				isMarketOrder,
+				status: 'PENDING',
+				queuedAt: Number(timestamp),
+				updatedAt: null,
+			})
+			.onConflictDoNothing();
+	} catch (error) {
+		logger.error(
+			`Failed to handle OrderQueued event`,
+			LogLabel.EVENT_HANDLER,
+			'handleOrderQueued',
+			{ error: error instanceof Error ? error.message : String(error) }
+		);
+		throw error;
+	}
+}
+
+export async function handleOrderApproved({ event, context }: any) {
+	try {
+		const { pendingOrderId, timestamp } = event.args;
+		const chainId = context.network.chainId;
+		const id = `${chainId}-${pendingOrderId}`;
+
+		logger.info(
+			`Order approved by CRE - PendingOrderId: ${pendingOrderId}`,
+			LogLabel.EVENT_HANDLER,
+			'handleOrderApproved'
+		);
+
+		await context.db
+			.update(agentPendingOrders, { id })
+			.set({ status: 'APPROVED', updatedAt: Number(timestamp) });
+	} catch (error) {
+		logger.error(
+			`Failed to handle OrderApproved event`,
+			LogLabel.EVENT_HANDLER,
+			'handleOrderApproved',
+			{ error: error instanceof Error ? error.message : String(error) }
+		);
+		throw error;
+	}
+}
+
+export async function handleOrderRejected({ event, context }: any) {
+	try {
+		const { pendingOrderId, timestamp } = event.args;
+		const chainId = context.network.chainId;
+		const id = `${chainId}-${pendingOrderId}`;
+
+		logger.info(
+			`Order rejected by CRE - PendingOrderId: ${pendingOrderId}`,
+			LogLabel.EVENT_HANDLER,
+			'handleOrderRejected'
+		);
+
+		await context.db
+			.update(agentPendingOrders, { id })
+			.set({ status: 'REJECTED', updatedAt: Number(timestamp) });
+	} catch (error) {
+		logger.error(
+			`Failed to handle OrderRejected event`,
+			LogLabel.EVENT_HANDLER,
+			'handleOrderRejected',
+			{ error: error instanceof Error ? error.message : String(error) }
+		);
+		throw error;
+	}
+}
+
+export async function handleOrderCancelled({ event, context }: any) {
+	try {
+		const { pendingOrderId, cancelledBy, timestamp } = event.args;
+		const chainId = context.network.chainId;
+		const id = `${chainId}-${pendingOrderId}`;
+
+		logger.info(
+			`Order cancelled - PendingOrderId: ${pendingOrderId}, By: ${cancelledBy}`,
+			LogLabel.EVENT_HANDLER,
+			'handleOrderCancelled'
+		);
+
+		await context.db
+			.update(agentPendingOrders, { id })
+			.set({ status: 'CANCELLED', updatedAt: Number(timestamp) });
+	} catch (error) {
+		logger.error(
+			`Failed to handle OrderCancelled event`,
+			LogLabel.EVENT_HANDLER,
+			'handleOrderCancelled',
 			{ error: error instanceof Error ? error.message : String(error) }
 		);
 		throw error;

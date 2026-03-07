@@ -109,6 +109,12 @@ export const PonderEvents = {
 	CIRCUIT_BREAKER_TRIGGERED: ponderEvent("AgentRouter:CircuitBreakerTriggered"),
 	POLICY_VIOLATION: ponderEvent("AgentRouter:PolicyViolation"),
 
+	// AgentRouter CRE Pending Order Gateway Events
+	PENDING_ORDER_QUEUED: ponderEvent("AgentRouter:OrderQueued"),
+	PENDING_ORDER_APPROVED: ponderEvent("AgentRouter:OrderApproved"),
+	PENDING_ORDER_REJECTED: ponderEvent("AgentRouter:OrderRejected"),
+	PENDING_ORDER_CANCELLED: ponderEvent("AgentRouter:OrderCancelled"),
+
 	// IdentityRegistry Events (ERC-8004 Agent Identity)
 	AGENT_REGISTERED: ponderEvent("IdentityRegistry:Registered"),
 	AGENT_URI_UPDATED: ponderEvent("IdentityRegistry:URIUpdated"),
