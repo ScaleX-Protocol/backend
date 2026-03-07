@@ -264,13 +264,17 @@ export async function handleClaimed({ event, context }: any) {
 
   const positionId = createPositionId(chainId, marketId, user);
 
-  await db
-    .update(predictionPositions, { id: positionId })
-    .set(() => ({
-      claimed: true,
-      payout,
-      lastUpdated: timestamp,
-    }));
+  // Guard: position may not exist if indexer started after the Predicted event
+  const existingPosition = await db.find(predictionPositions, { id: positionId });
+  if (existingPosition) {
+    await db
+      .update(predictionPositions, { id: positionId })
+      .set(() => ({
+        claimed: true,
+        payout,
+        lastUpdated: timestamp,
+      }));
+  }
 
   await db
     .insert(predictionEvents)
