@@ -135,6 +135,18 @@ export const agentsRoutes = new Elysia({ prefix: '/api' })
             tags: ['Agents'],
         },
     })
+    .get('/pending-orders', AgentsService.getPendingOrders, {
+        query: t.Object({
+            chainId: t.Optional(t.String()),
+            limit: t.Optional(t.String()),
+            offset: t.Optional(t.String()),
+        }),
+        detail: {
+            summary: 'Get pending orders awaiting CRE validation',
+            description: 'Returns all PENDING agent orders for the CRE workflow to validate (oldest first)',
+            tags: ['Agents'],
+        },
+    })
     .get('/agents/:agentTokenId/analytics', AgentsService.getAgentAnalytics, {
         params: t.Object({
             agentTokenId: t.String(),

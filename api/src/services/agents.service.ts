@@ -514,13 +514,16 @@ export class AgentsService {
             const data = policies.map(p => ({
                 id: p.id,
                 owner: p.owner,
-                chainId: p.chainId,
-                agentTokenId: p.agentTokenId?.toString(),
-                maxTradeSize: p.maxTradeSize?.toString() || null,
-                maxDailyVolume: p.maxDailyVolume?.toString() || null,
-                allowedPools: p.allowedPools || [],
-                restrictedPools: p.restrictedPools || [],
-                enableCircuitBreaker: p.enableCircuitBreaker ?? true,
+                chainId: p.chain_id ?? p.chainId,
+                agentTokenId: (p.agent_token_id ?? p.agentTokenId)?.toString(),
+                maxTradeSize: (p.max_trade_size ?? p.maxTradeSize)?.toString() || "0",
+                maxDailyVolume: (p.max_daily_volume ?? p.maxDailyVolume)?.toString() || "0",
+                allowedPools: p.allowed_pools ?? p.allowedPools ?? [],
+                restrictedPools: p.restricted_pools ?? p.restrictedPools ?? [],
+                enableCircuitBreaker: p.enable_circuit_breaker ?? p.enableCircuitBreaker ?? true,
+                enabled: p.enabled ?? true,
+                requiresChainlinkFunctions: p.requires_chainlink_functions ?? p.requiresChainlinkFunctions ?? false,
+                minWinRateBps: p.min_win_rate_bps ?? p.minWinRateBps ?? 0,
             }));
 
             return {
@@ -1062,6 +1065,46 @@ export class AgentsService {
             console.error('Error computing agent analytics:', error);
             ctx.set.status = 500;
             return { success: false, error: `Failed to compute agent analytics: ${error}` };
+        }
+    }
+
+    static async getPendingOrders(ctx: any) {
+        try {
+            const { query } = ctx as any;
+            const chainId = parseInt(query?.chainId as string) || 84532;
+            const limit = Math.min(Math.max(parseInt(query?.limit as string ?? '100') || 100, 1), 200);
+            const offset = Math.max(parseInt(query?.offset as string ?? '0') || 0, 0);
+
+            const rows = await runQuery<any>(`
+                SELECT
+                    id,
+                    chain_id         AS "chainId",
+                    pending_order_id::text AS "pendingOrderId",
+                    agent_token_id::text   AS "agentTokenId",
+                    "user",
+                    order_book       AS "orderBook",
+                    side,
+                    quantity::text,
+                    is_market_order  AS "isMarketOrder",
+                    status,
+                    queued_at::text  AS "queuedAt",
+                    updated_at::text AS "updatedAt"
+                FROM agent_pending_orders
+                WHERE chain_id = $1 AND status = 'PENDING'
+                ORDER BY queued_at ASC
+                LIMIT $2 OFFSET $3
+            `, [chainId, limit, offset]);
+
+            return {
+                success: true,
+                data: rows,
+                count: rows.length,
+                pagination: { limit, offset },
+            };
+        } catch (error) {
+            console.error('Error fetching pending orders:', error);
+            (ctx as any).set.status = 500;
+            return { success: false, error: `Failed to fetch pending orders: ${error}` };
         }
     }
 }

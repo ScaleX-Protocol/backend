@@ -1660,3 +1660,28 @@ export const predictionEvents = onchainTable(
 		userTimestampIdx: index().on(table.userAddress, table.timestamp),
 	})
 );
+
+// CRE pending order queue — orders awaiting off-chain validation
+export const agentPendingOrders = onchainTable(
+	"agent_pending_orders",
+	t => ({
+		id: t.text().primaryKey(),           // "chainId-pendingOrderId"
+		chainId: t.integer().notNull(),
+		pendingOrderId: t.bigint().notNull(),
+		agentTokenId: t.bigint().notNull(),
+		user: t.hex().notNull(),
+		orderBook: t.hex().notNull(),        // IOrderBook address
+		side: t.varchar().notNull(),         // "BUY" | "SELL"
+		quantity: t.bigint().notNull(),
+		isMarketOrder: t.boolean().notNull(),
+		status: t.varchar().notNull(),       // PENDING | APPROVED | REJECTED | CANCELLED
+		queuedAt: t.integer().notNull(),
+		updatedAt: t.integer(),
+	}),
+	table => ({
+		agentStatusIdx: index().on(table.agentTokenId, table.status),
+		chainStatusIdx: index().on(table.chainId, table.status),
+		userIdx: index().on(table.user),
+		queuedAtIdx: index().on(table.queuedAt),
+	})
+);
