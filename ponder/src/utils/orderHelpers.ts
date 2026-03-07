@@ -151,10 +151,13 @@ export async function findActiveOrder(
 }
 
 export async function insertOrder(db: any, orderData: any) {
-	await db.insert(orders).values(orderData).onConflictDoNothing();
+	// Write to cache synchronously BEFORE the async DB insert so that concurrent
+	// event handlers (e.g. OrderMatched for the same block) can find the order
+	// in cache without hitting the DB or logging a spurious cache-miss warning.
 	if (!liveModeActive) {
 		orderCache.set(orderData.id, { ...orderData });
 	}
+	await db.insert(orders).values(orderData).onConflictDoNothing();
 }
 
 export async function upsertOrderHistory(db: any, historyData: any) {

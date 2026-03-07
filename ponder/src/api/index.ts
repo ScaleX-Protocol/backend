@@ -3044,12 +3044,88 @@ app.get("/api/lending/dashboard/:user", async c => {
  * Query params: chainId, limit, offset, all (bypass marketplace filter for admin use)
  */
 app.get("/api/agents", async c => {
-	const { chainId, limit, offset, all } = c.req.query();
+	const { chainId, limit, offset, all, owner } = c.req.query();
 
 	try {
 		const targetChainId = chainId ? Number(chainId) : 84532;
 		const queryLimit = limit ? Math.min(Number(limit), 100) : 50;
 		const queryOffset = offset ? Number(offset) : 0;
+
+		// If owner is provided, return only agents that address has installed.
+		if (owner) {
+			const normalizedOwner = owner.toLowerCase() as `0x${string}`;
+			const installations = await db
+				.select({ agentTokenId: agentInstallations.agentTokenId })
+				.from(agentInstallations)
+				.where(and(
+					eq(agentInstallations.chainId, targetChainId),
+					eq(agentInstallations.owner, normalizedOwner),
+				))
+				.execute();
+
+			if (installations.length === 0) {
+				return c.json({ success: true, data: [], count: 0, pagination: { limit: queryLimit, offset: queryOffset } });
+			}
+
+			const tokenIds = installations.map(i => i.agentTokenId);
+
+			const registeredAgents = await db
+				.select({
+					tokenId: agentRegistry.tokenId,
+					owner: agentRegistry.owner,
+					metadataURI: agentRegistry.metadataURI,
+					registeredAt: agentRegistry.registeredAt,
+					isListedOnMarketplace: agentRegistry.isListedOnMarketplace,
+				})
+				.from(agentRegistry)
+				.where(and(eq(agentRegistry.chainId, targetChainId), inArray(agentRegistry.tokenId, tokenIds)))
+				.orderBy(asc(agentRegistry.tokenId))
+				.execute();
+
+			const [installAgg, statsAgg] = await Promise.all([
+				db.select({
+					agentTokenId: agentInstallations.agentTokenId,
+					totalUsers: sql<number>`count(*)::int`,
+					activeUsers: sql<number>`count(*) filter (where ${agentInstallations.enabled})::int`,
+					firstInstalledAt: sql<string>`min(${agentInstallations.installedAt})`,
+				}).from(agentInstallations)
+					.where(and(eq(agentInstallations.chainId, targetChainId), inArray(agentInstallations.agentTokenId, tokenIds)))
+					.groupBy(agentInstallations.agentTokenId).execute(),
+				db.select({
+					agentTokenId: agentStats.agentTokenId,
+					lastActivityAt: sql<number>`max(${agentStats.lastActivityTimestamp})`,
+					totalTradingVolume: sql<string>`coalesce(sum(${agentStats.totalTradingVolume}), 0)::text`,
+					totalMarketOrders: sql<number>`coalesce(sum(${agentStats.totalMarketOrders}), 0)::int`,
+					totalLimitOrders: sql<number>`coalesce(sum(${agentStats.totalLimitOrders}), 0)::int`,
+				}).from(agentStats)
+					.where(and(eq(agentStats.chainId, targetChainId), inArray(agentStats.agentTokenId, tokenIds)))
+					.groupBy(agentStats.agentTokenId).execute(),
+			]);
+
+			const installMap = new Map(installAgg.map(i => [String(i.agentTokenId), i]));
+			const statsMap = new Map(statsAgg.map(s => [String(s.agentTokenId), s]));
+
+			const data = registeredAgents.map(agent => {
+				const key = String(agent.tokenId);
+				const install = installMap.get(key);
+				const stats = statsMap.get(key);
+				return {
+					agentTokenId: agent.tokenId?.toString(),
+					owner: agent.owner,
+					metadataURI: agent.metadataURI,
+					registeredAt: agent.registeredAt,
+					isListedOnMarketplace: agent.isListedOnMarketplace,
+					totalUsers: install?.totalUsers ?? 0,
+					activeUsers: install?.activeUsers ?? 0,
+					firstInstalledAt: install?.firstInstalledAt ?? null,
+					lastActivityAt: stats?.lastActivityAt ?? null,
+					totalOrders: (stats?.totalMarketOrders ?? 0) + (stats?.totalLimitOrders ?? 0),
+					totalVolume: stats?.totalTradingVolume ?? "0",
+				};
+			});
+
+			return c.json({ success: true, data, count: data.length, pagination: { limit: queryLimit, offset: queryOffset } });
+		}
 
 		// 1. Get registered agents from IdentityRegistry (filter to marketplace-listed unless ?all=true)
 		const showAll = all === "true";
