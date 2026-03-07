@@ -100,6 +100,12 @@ ponder.on(PonderEvents.AGENT_URI_UPDATED, withEventValidator(identityRegistryHan
 ponder.on(PonderEvents.REPUTATION_NEW_FEEDBACK, withEventValidator(reputationRegistryHandler.handleNewFeedback, 'reputationNewFeedback'));
 ponder.on(PonderEvents.REPUTATION_FEEDBACK_REVOKED, withEventValidator(reputationRegistryHandler.handleFeedbackRevoked, 'reputationFeedbackRevoked'));
 
+// CRE Pending Order Events - Chainlink Runtime Environment order queue
+ponder.on(PonderEvents.PENDING_ORDER_QUEUED, withEventValidator(agentRouterHandler.handleOrderQueued, 'orderQueued'));
+ponder.on(PonderEvents.PENDING_ORDER_APPROVED, withEventValidator(agentRouterHandler.handleOrderApproved, 'orderApproved'));
+ponder.on(PonderEvents.PENDING_ORDER_REJECTED, withEventValidator(agentRouterHandler.handleOrderRejected, 'orderRejected'));
+ponder.on(PonderEvents.PENDING_ORDER_CANCELLED, withEventValidator(agentRouterHandler.handleOrderCancelled, 'orderCancelled'));
+
 // PricePrediction Events - Yield-Bearing Binary Markets (Phase 6)
 ponder.on(PonderEvents.PREDICTION_MARKET_CREATED, pricePredictionHandler.handleMarketCreated);
 ponder.on(PonderEvents.PREDICTION_PREDICTED, pricePredictionHandler.handlePredicted);
