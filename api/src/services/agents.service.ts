@@ -95,12 +95,12 @@ export class AgentsService {
                 }>(`
                     SELECT
                         agent_token_id::text,
-                        COUNT(*) FILTER (WHERE event_type = 'PREDICT')::int as prediction_count,
-                        COUNT(*) FILTER (WHERE event_type = 'CLAIM')::int as claim_count
-                    FROM prediction_events
+                        COUNT(*) FILTER (WHERE action = 'PREDICT')::int as prediction_count,
+                        COUNT(*) FILTER (WHERE action = 'CLAIM')::int as claim_count
+                    FROM agent_prediction_events
                     WHERE chain_id = $1
                         AND agent_token_id = ANY($2::numeric[])
-                        AND LOWER(user_address) = $3
+                        AND LOWER(owner) = $3
                     GROUP BY agent_token_id
                 `, [chainId, agentIdArray, owner.toLowerCase()]);
 
@@ -113,13 +113,13 @@ export class AgentsService {
                 }>(`
                     SELECT
                         agent_token_id::text,
-                        COUNT(*) FILTER (WHERE event_type = 'BORROW')::int as borrow_count,
-                        COUNT(*) FILTER (WHERE event_type = 'REPAY')::int as repay_count,
-                        COUNT(*) FILTER (WHERE event_type = 'SUPPLY_COLLATERAL')::int as supply_count
-                    FROM lending_events
+                        COUNT(*) FILTER (WHERE action = 'BORROW')::int as borrow_count,
+                        COUNT(*) FILTER (WHERE action = 'REPAY')::int as repay_count,
+                        COUNT(*) FILTER (WHERE action = 'SUPPLY')::int as supply_count
+                    FROM agent_lending_events
                     WHERE chain_id = $1
                         AND agent_token_id = ANY($2::numeric[])
-                        AND LOWER(user_address) = $3
+                        AND LOWER(owner) = $3
                     GROUP BY agent_token_id
                 `, [chainId, agentIdArray, owner.toLowerCase()]);
 
