@@ -79,6 +79,7 @@ export const agentsRoutes = new Elysia({ prefix: '/api' })
         query: t.Object({
             chainId: t.Optional(t.String()),
             status: t.Optional(t.String()),
+            owner: t.Optional(t.String()),
             limit: t.Optional(t.String()),
             offset: t.Optional(t.String()),
         }),

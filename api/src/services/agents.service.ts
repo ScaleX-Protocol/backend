@@ -542,6 +542,7 @@ export class AgentsService {
             const agentTokenId = params.agentTokenId;
             const chainId = parseInt(query?.chainId as string) || 84532;
             const status = query?.status;
+            const owner = query?.owner as string | undefined;
             const limit = Math.min(Math.max(parseInt(query?.limit as string ?? '50') || 50, 1), 100);
             const offset = Math.max(parseInt(query?.offset as string ?? '0') || 0, 0);
 
@@ -551,6 +552,11 @@ export class AgentsService {
             if (status) {
                 conditions += ` AND UPPER(status) = UPPER($${paramsArr.length + 1})`;
                 paramsArr.push(status);
+            }
+
+            if (owner) {
+                conditions += ` AND LOWER(user_address) = LOWER($${paramsArr.length + 1})`;
+                paramsArr.push(owner);
             }
 
             const orderLimitOffset = `ORDER BY "timestamp" DESC LIMIT $${paramsArr.length + 1} OFFSET $${paramsArr.length + 2}`;
