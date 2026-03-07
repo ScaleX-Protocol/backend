@@ -37,50 +37,148 @@ export class AgentsService {
             const limit = Math.min(Math.max(parseInt(query.limit as string ?? '50') || 50, 1), 100);
             const offset = Math.max(parseInt(query.offset as string ?? '0') || 0, 0);
 
-            // If owner is provided, look up agents the owner has installed (not created).
-            let installedTokenIds: string[] | null = null;
+            // When owner is provided, return the owner's personal installation records
+            // with their own installedAt, enabled, templateUsed, and per-user activity stats.
             if (owner) {
-                const rows = await runQuery<{ agent_token_id: string }>(`
-                    SELECT DISTINCT agent_token_id::text
-                    FROM agent_installations
-                    WHERE chain_id = $1 AND LOWER(owner) = $2
-                `, [chainId, owner.toLowerCase()]);
-                if (rows.length === 0) {
+                const installations = await runQuery<{
+                    agent_token_id: string;
+                    enabled: boolean;
+                    installed_at: number;
+                    uninstalled_at: number | null;
+                    template_used: string | null;
+                    metadata_uri: string | null;
+                }>(`
+                    SELECT
+                        ai.agent_token_id::text,
+                        ai.enabled,
+                        ai.installed_at::integer,
+                        ai.uninstalled_at::integer,
+                        ai.template_used,
+                        ar.metadata_uri
+                    FROM agent_installations ai
+                    LEFT JOIN agent_registry ar
+                        ON ar.chain_id = ai.chain_id AND ar.token_id = ai.agent_token_id
+                    WHERE ai.chain_id = $1 AND LOWER(ai.owner) = $2
+                    ORDER BY ai.installed_at DESC
+                    LIMIT $3 OFFSET $4
+                `, [chainId, owner.toLowerCase(), limit, offset]);
+
+                if (installations.length === 0) {
                     return { success: true, data: [], count: 0, pagination: { limit, offset } };
                 }
-                installedTokenIds = rows.map(r => r.agent_token_id);
+
+                const agentTokenIds = installations.map(i => i.agent_token_id);
+                const agentIdArray = `{${agentTokenIds.join(',')}}`;
+
+                // Per-user order counts and volume
+                const orderStats = await runQuery<{
+                    agent_token_id: string;
+                    order_count: number;
+                    total_volume: string;
+                }>(`
+                    SELECT
+                        agent_token_id::text,
+                        COUNT(*)::int as order_count,
+                        COALESCE(SUM(quantity::numeric), 0)::text as total_volume
+                    FROM orders
+                    WHERE chain_id = $1
+                        AND agent_token_id = ANY($2::numeric[])
+                        AND LOWER(user_address) = $3
+                    GROUP BY agent_token_id
+                `, [chainId, agentIdArray, owner.toLowerCase()]);
+
+                // Per-user prediction counts
+                const predictionStats = await runQuery<{
+                    agent_token_id: string;
+                    prediction_count: number;
+                    claim_count: number;
+                }>(`
+                    SELECT
+                        agent_token_id::text,
+                        COUNT(*) FILTER (WHERE event_type = 'PREDICT')::int as prediction_count,
+                        COUNT(*) FILTER (WHERE event_type = 'CLAIM')::int as claim_count
+                    FROM prediction_events
+                    WHERE chain_id = $1
+                        AND agent_token_id = ANY($2::numeric[])
+                        AND LOWER(user_address) = $3
+                    GROUP BY agent_token_id
+                `, [chainId, agentIdArray, owner.toLowerCase()]);
+
+                // Per-user lending/borrow counts
+                const lendingStats = await runQuery<{
+                    agent_token_id: string;
+                    borrow_count: number;
+                    repay_count: number;
+                    supply_count: number;
+                }>(`
+                    SELECT
+                        agent_token_id::text,
+                        COUNT(*) FILTER (WHERE event_type = 'BORROW')::int as borrow_count,
+                        COUNT(*) FILTER (WHERE event_type = 'REPAY')::int as repay_count,
+                        COUNT(*) FILTER (WHERE event_type = 'SUPPLY_COLLATERAL')::int as supply_count
+                    FROM lending_events
+                    WHERE chain_id = $1
+                        AND agent_token_id = ANY($2::numeric[])
+                        AND LOWER(user_address) = $3
+                    GROUP BY agent_token_id
+                `, [chainId, agentIdArray, owner.toLowerCase()]);
+
+                const orderMap = new Map(orderStats.map(o => [o.agent_token_id, o]));
+                const predMap = new Map(predictionStats.map(p => [p.agent_token_id, p]));
+                const lendMap = new Map(lendingStats.map(l => [l.agent_token_id, l]));
+
+                const countResult = await runQuery<{ count: string }>(`
+                    SELECT COUNT(*)::text as count FROM agent_installations
+                    WHERE chain_id = $1 AND LOWER(owner) = $2
+                `, [chainId, owner.toLowerCase()]);
+                const count = parseInt(countResult[0]?.count || '0');
+
+                const data = installations.map(inst => {
+                    const orders = orderMap.get(inst.agent_token_id);
+                    const preds = predMap.get(inst.agent_token_id);
+                    const lend = lendMap.get(inst.agent_token_id);
+                    return {
+                        agentTokenId: inst.agent_token_id,
+                        metadataURI: inst.metadata_uri,
+                        enabled: inst.enabled,
+                        installedAt: inst.installed_at,
+                        uninstalledAt: inst.uninstalled_at,
+                        templateUsed: inst.template_used || 'custom',
+                        totalOrders: orders?.order_count || 0,
+                        totalVolume: orders?.total_volume || '0',
+                        totalPredictions: preds?.prediction_count || 0,
+                        totalPredictionClaims: preds?.claim_count || 0,
+                        totalBorrows: lend?.borrow_count || 0,
+                        totalRepays: lend?.repay_count || 0,
+                        totalCollateralSupplied: lend?.supply_count || 0,
+                    };
+                });
+
+                return { success: true, data, count, pagination: { limit, offset } };
             }
 
-            const params: unknown[] = [chainId];
-            let ownerFilter = '';
-            if (installedTokenIds) {
-                params.push(`{${installedTokenIds.join(',')}}`);
-                ownerFilter = 'AND token_id = ANY($2::numeric[])';
-            }
-
+            // Marketplace listing (no owner filter)
             const agents = await runQuery<AgentRegistryRow>(`
                 SELECT id, chain_id, token_id, owner, metadata_uri, registered_at
                 FROM agent_registry
-                WHERE chain_id = $1 AND is_listed_on_marketplace = true ${ownerFilter}
+                WHERE chain_id = $1 AND is_listed_on_marketplace = true
                 ORDER BY token_id ASC
-                LIMIT $${params.length + 1} OFFSET $${params.length + 2}
-            `, [...params, limit, offset]);
+                LIMIT $2 OFFSET $3
+            `, [chainId, limit, offset]);
 
             if (agents.length === 0) {
                 return { success: true, data: [], count: 0, pagination: { limit, offset } };
             }
 
             const agentTokenIds = agents.map(a => a.token_id).filter(id => id && id.trim() !== '');
-            
-            // Early return if no agents
             if (agentTokenIds.length === 0) {
                 return { success: true, data: [], count: 0, pagination: { limit, offset } };
             }
 
             const agentIdArray = `{${agentTokenIds.join(',')}}`;
-            
+
             const installations = await runQuery<{ agent_token_id: string; total_users: number; active_users: number; first_installed_at: number | null }>(`
-                SELECT 
+                SELECT
                     agent_token_id::text,
                     COUNT(DISTINCT owner)::int as total_users,
                     COUNT(DISTINCT CASE WHEN enabled = true THEN owner END)::int as active_users,
@@ -136,8 +234,8 @@ export class AgentsService {
             });
 
             const countResult = await runQuery<{ count: string }>(`
-                SELECT COUNT(*)::text as count FROM agent_registry WHERE chain_id = $1 AND is_listed_on_marketplace = true ${ownerFilter}
-            `, installedTokenIds ? [chainId, `{${installedTokenIds.join(',')}}`] : [chainId]);
+                SELECT COUNT(*)::text as count FROM agent_registry WHERE chain_id = $1 AND is_listed_on_marketplace = true
+            `, [chainId]);
             const count = parseInt(countResult[0]?.count || '0');
 
             return { success: true, data, count, pagination: { limit, offset } };
