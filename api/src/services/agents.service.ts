@@ -1,4 +1,3 @@
-// v2
 import { Context } from 'elysia';
 import { ponderPool } from '../config/database';
 
@@ -37,148 +36,50 @@ export class AgentsService {
             const limit = Math.min(Math.max(parseInt(query.limit as string ?? '50') || 50, 1), 100);
             const offset = Math.max(parseInt(query.offset as string ?? '0') || 0, 0);
 
-            // When owner is provided, return the owner's personal installation records
-            // with their own installedAt, enabled, templateUsed, and per-user activity stats.
+            // If owner is provided, look up agents the owner has installed (not created).
+            let installedTokenIds: string[] | null = null;
             if (owner) {
-                const installations = await runQuery<{
-                    agent_token_id: string;
-                    enabled: boolean;
-                    installed_at: number;
-                    uninstalled_at: number | null;
-                    template_used: string | null;
-                    metadata_uri: string | null;
-                }>(`
-                    SELECT
-                        ai.agent_token_id::text,
-                        ai.enabled,
-                        ai.installed_at::integer,
-                        ai.uninstalled_at::integer,
-                        ai.template_used,
-                        ar.metadata_uri
-                    FROM agent_installations ai
-                    LEFT JOIN agent_registry ar
-                        ON ar.chain_id = ai.chain_id AND ar.token_id = ai.agent_token_id
-                    WHERE ai.chain_id = $1 AND LOWER(ai.owner) = $2
-                    ORDER BY ai.installed_at DESC
-                    LIMIT $3 OFFSET $4
-                `, [chainId, owner.toLowerCase(), limit, offset]);
-
-                if (installations.length === 0) {
-                    return { success: true, data: [], count: 0, pagination: { limit, offset } };
-                }
-
-                const agentTokenIds = installations.map(i => i.agent_token_id);
-                const agentIdArray = `{${agentTokenIds.join(',')}}`;
-
-                // Per-user order counts and volume
-                const orderStats = await runQuery<{
-                    agent_token_id: string;
-                    order_count: number;
-                    total_volume: string;
-                }>(`
-                    SELECT
-                        agent_token_id::text,
-                        COUNT(*)::int as order_count,
-                        COALESCE(SUM(quantity::numeric), 0)::text as total_volume
-                    FROM orders
-                    WHERE chain_id = $1
-                        AND agent_token_id = ANY($2::numeric[])
-                        AND LOWER(user_address) = $3
-                    GROUP BY agent_token_id
-                `, [chainId, agentIdArray, owner.toLowerCase()]);
-
-                // Per-user prediction counts
-                const predictionStats = await runQuery<{
-                    agent_token_id: string;
-                    prediction_count: number;
-                    claim_count: number;
-                }>(`
-                    SELECT
-                        agent_token_id::text,
-                        COUNT(*) FILTER (WHERE action = 'PREDICT')::int as prediction_count,
-                        COUNT(*) FILTER (WHERE action = 'CLAIM')::int as claim_count
-                    FROM agent_prediction_events
-                    WHERE chain_id = $1
-                        AND agent_token_id = ANY($2::numeric[])
-                        AND LOWER(owner) = $3
-                    GROUP BY agent_token_id
-                `, [chainId, agentIdArray, owner.toLowerCase()]);
-
-                // Per-user lending/borrow counts
-                const lendingStats = await runQuery<{
-                    agent_token_id: string;
-                    borrow_count: number;
-                    repay_count: number;
-                    supply_count: number;
-                }>(`
-                    SELECT
-                        agent_token_id::text,
-                        COUNT(*) FILTER (WHERE action = 'BORROW')::int as borrow_count,
-                        COUNT(*) FILTER (WHERE action = 'REPAY')::int as repay_count,
-                        COUNT(*) FILTER (WHERE action = 'SUPPLY')::int as supply_count
-                    FROM agent_lending_events
-                    WHERE chain_id = $1
-                        AND agent_token_id = ANY($2::numeric[])
-                        AND LOWER(owner) = $3
-                    GROUP BY agent_token_id
-                `, [chainId, agentIdArray, owner.toLowerCase()]);
-
-                const orderMap = new Map(orderStats.map(o => [o.agent_token_id, o]));
-                const predMap = new Map(predictionStats.map(p => [p.agent_token_id, p]));
-                const lendMap = new Map(lendingStats.map(l => [l.agent_token_id, l]));
-
-                const countResult = await runQuery<{ count: string }>(`
-                    SELECT COUNT(*)::text as count FROM agent_installations
+                const rows = await runQuery<{ agent_token_id: string }>(`
+                    SELECT DISTINCT agent_token_id::text
+                    FROM agent_installations
                     WHERE chain_id = $1 AND LOWER(owner) = $2
                 `, [chainId, owner.toLowerCase()]);
-                const count = parseInt(countResult[0]?.count || '0');
-
-                const data = installations.map(inst => {
-                    const orders = orderMap.get(inst.agent_token_id);
-                    const preds = predMap.get(inst.agent_token_id);
-                    const lend = lendMap.get(inst.agent_token_id);
-                    return {
-                        agentTokenId: inst.agent_token_id,
-                        metadataURI: inst.metadata_uri,
-                        enabled: inst.enabled,
-                        installedAt: inst.installed_at,
-                        uninstalledAt: inst.uninstalled_at,
-                        templateUsed: inst.template_used || 'custom',
-                        totalOrders: orders?.order_count || 0,
-                        totalVolume: orders?.total_volume || '0',
-                        totalPredictions: preds?.prediction_count || 0,
-                        totalPredictionClaims: preds?.claim_count || 0,
-                        totalBorrows: lend?.borrow_count || 0,
-                        totalRepays: lend?.repay_count || 0,
-                        totalCollateralSupplied: lend?.supply_count || 0,
-                    };
-                });
-
-                return { success: true, data, count, pagination: { limit, offset } };
+                if (rows.length === 0) {
+                    return { success: true, data: [], count: 0, pagination: { limit, offset } };
+                }
+                installedTokenIds = rows.map(r => r.agent_token_id);
             }
 
-            // Marketplace listing (no owner filter)
+            const params: unknown[] = [chainId];
+            let ownerFilter = '';
+            if (installedTokenIds) {
+                params.push(`{${installedTokenIds.join(',')}}`);
+                ownerFilter = 'AND token_id = ANY($2::numeric[])';
+            }
+
             const agents = await runQuery<AgentRegistryRow>(`
                 SELECT id, chain_id, token_id, owner, metadata_uri, registered_at
                 FROM agent_registry
-                WHERE chain_id = $1 AND is_listed_on_marketplace = true
+                WHERE chain_id = $1 ${ownerFilter}
                 ORDER BY token_id ASC
-                LIMIT $2 OFFSET $3
-            `, [chainId, limit, offset]);
+                LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+            `, [...params, limit, offset]);
 
             if (agents.length === 0) {
                 return { success: true, data: [], count: 0, pagination: { limit, offset } };
             }
 
             const agentTokenIds = agents.map(a => a.token_id).filter(id => id && id.trim() !== '');
+            
+            // Early return if no agents
             if (agentTokenIds.length === 0) {
                 return { success: true, data: [], count: 0, pagination: { limit, offset } };
             }
 
             const agentIdArray = `{${agentTokenIds.join(',')}}`;
-
+            
             const installations = await runQuery<{ agent_token_id: string; total_users: number; active_users: number; first_installed_at: number | null }>(`
-                SELECT
+                SELECT 
                     agent_token_id::text,
                     COUNT(DISTINCT owner)::int as total_users,
                     COUNT(DISTINCT CASE WHEN enabled = true THEN owner END)::int as active_users,
@@ -234,8 +135,8 @@ export class AgentsService {
             });
 
             const countResult = await runQuery<{ count: string }>(`
-                SELECT COUNT(*)::text as count FROM agent_registry WHERE chain_id = $1 AND is_listed_on_marketplace = true
-            `, [chainId]);
+                SELECT COUNT(*)::text as count FROM agent_registry WHERE chain_id = $1 ${ownerFilter}
+            `, installedTokenIds ? [chainId, `{${installedTokenIds.join(',')}}`] : [chainId]);
             const count = parseInt(countResult[0]?.count || '0');
 
             return { success: true, data, count, pagination: { limit, offset } };
@@ -361,70 +262,34 @@ export class AgentsService {
             const chainId = parseInt((ctx as any).query?.chainId as string) || 84532;
             const agentTokenId = params.agentTokenId;
 
-            const orderStats = await runQuery<{
-                total_orders: string; market_orders: string; limit_orders: string;
-                filled_orders: string; partial_orders: string; rejected_orders: string; cancelled_orders: string;
-            }>(`
-                SELECT
+            const orderStats = await runQuery<{ total_orders: string; filled_orders: string; partial_orders: string; rejected_orders: string }>(`
+                SELECT 
                     COUNT(*)::text as total_orders,
-                    COUNT(*) FILTER (WHERE type = 'Market')::text as market_orders,
-                    COUNT(*) FILTER (WHERE type = 'Limit')::text as limit_orders,
                     COUNT(*) FILTER (WHERE status = 'FILLED')::text as filled_orders,
                     COUNT(*) FILTER (WHERE status = 'PARTIALLY_FILLED')::text as partial_orders,
-                    COUNT(*) FILTER (WHERE status = 'REJECTED')::text as rejected_orders,
-                    COUNT(*) FILTER (WHERE status = 'CANCELLED')::text as cancelled_orders
+                    COUNT(*) FILTER (WHERE status = 'REJECTED')::text as rejected_orders
                 FROM orders WHERE chain_id = $1 AND agent_token_id = $2
             `, [chainId, agentTokenId]);
 
-            // Compute volume per pool with proper decimal normalization
-            const volumeRows = await runQuery<{ total_volume: string; base_decimals: number; quote_decimals: number }>(`
-                SELECT
-                    COALESCE(SUM(t.quantity * t.price), 0)::text as total_volume,
-                    p.base_decimals,
-                    p.quote_decimals
-                FROM trades t
-                INNER JOIN orders o ON t.order_id = o.id
-                INNER JOIN pools p ON o.pool_id = p.order_book
-                WHERE o.chain_id = $1 AND o.agent_token_id = $2
-                GROUP BY p.base_decimals, p.quote_decimals
-            `, [chainId, agentTokenId]);
-
-            let totalTradingVolume = 0;
-            let totalTrades = 0;
-            for (const row of volumeRows) {
-                const rawVol = BigInt(row.total_volume.split('.')[0] || '0');
-                const divisor = BigInt(10) ** BigInt(row.base_decimals + row.quote_decimals);
-                totalTradingVolume += Number(rawVol) / Number(divisor);
-            }
-
-            const tradeCountRows = await runQuery<{ total_trades: string }>(`
-                SELECT COUNT(*)::text as total_trades
-                FROM trades t INNER JOIN orders o ON t.order_id = o.id
+            const tradeStats = await runQuery<{ total_trades: string; total_volume: string }>(`
+                SELECT COUNT(*)::text as total_trades, COALESCE(SUM(t.quantity * t.price), 0)::text as total_volume
+                FROM trades t INNER JOIN orders o ON t."orderId" = o.id
                 WHERE o.chain_id = $1 AND o.agent_token_id = $2
             `, [chainId, agentTokenId]);
-            totalTrades = parseInt(tradeCountRows[0]?.total_trades || '0');
 
-            const stats = orderStats[0] || { total_orders: '0', market_orders: '0', limit_orders: '0', filled_orders: '0', partial_orders: '0', rejected_orders: '0', cancelled_orders: '0' };
+            const stats = orderStats[0] || { total_orders: '0', filled_orders: '0', partial_orders: '0', rejected_orders: '0' };
+            const trades = tradeStats[0] || { total_trades: '0', total_volume: '0' };
 
             return {
                 success: true,
                 data: {
-                    agentStats: {
-                        agentTokenId,
-                        chainId,
-                        totalMarketOrders: parseInt(stats.market_orders),
-                        totalLimitOrders: parseInt(stats.limit_orders),
-                        totalOrdersCancelled: parseInt(stats.cancelled_orders),
-                        totalTradingVolume: totalTradingVolume.toFixed(6),
-                    },
-                    ordersByStatus: {
-                        OPEN: parseInt(stats.total_orders) - parseInt(stats.filled_orders) - parseInt(stats.partial_orders) - parseInt(stats.rejected_orders) - parseInt(stats.cancelled_orders),
-                        FILLED: parseInt(stats.filled_orders),
-                        PARTIALLY_FILLED: parseInt(stats.partial_orders),
-                        REJECTED: parseInt(stats.rejected_orders),
-                        CANCELLED: parseInt(stats.cancelled_orders),
-                    },
-                    totalTrades,
+                    agentTokenId,
+                    totalOrders: parseInt(stats.total_orders),
+                    filledOrders: parseInt(stats.filled_orders),
+                    partialOrders: parseInt(stats.partial_orders),
+                    rejectedOrders: parseInt(stats.rejected_orders),
+                    totalTrades: parseInt(trades.total_trades),
+                    totalVolume: trades.total_volume,
                 }
             };
         } catch (error) {
@@ -514,16 +379,13 @@ export class AgentsService {
             const data = policies.map(p => ({
                 id: p.id,
                 owner: p.owner,
-                chainId: p.chain_id ?? p.chainId,
-                agentTokenId: (p.agent_token_id ?? p.agentTokenId)?.toString(),
-                maxTradeSize: (p.max_trade_size ?? p.maxTradeSize)?.toString() || "0",
-                maxDailyVolume: (p.max_daily_volume ?? p.maxDailyVolume)?.toString() || "0",
-                allowedPools: p.allowed_pools ?? p.allowedPools ?? [],
-                restrictedPools: p.restricted_pools ?? p.restrictedPools ?? [],
-                enableCircuitBreaker: p.enable_circuit_breaker ?? p.enableCircuitBreaker ?? true,
-                enabled: p.enabled ?? true,
-                requiresChainlinkFunctions: p.requires_chainlink_functions ?? p.requiresChainlinkFunctions ?? false,
-                minWinRateBps: p.min_win_rate_bps ?? p.minWinRateBps ?? 0,
+                chainId: p.chainId,
+                agentTokenId: p.agentTokenId?.toString(),
+                maxTradeSize: p.maxTradeSize?.toString() || null,
+                maxDailyVolume: p.maxDailyVolume?.toString() || null,
+                allowedPools: p.allowedPools || [],
+                restrictedPools: p.restrictedPools || [],
+                enableCircuitBreaker: p.enableCircuitBreaker ?? true,
             }));
 
             return {
@@ -603,24 +465,24 @@ export class AgentsService {
                 return {
                     id: p.id,
                     owner: p.owner,
-                    chainId: p.chain_id,
-                    agentTokenId: p.agent_token_id?.toString(),
-                    maxTradeSize: p.max_trade_size?.toString() || null,
-                    maxDailyVolume: p.max_daily_volume?.toString() || null,
-                    allowedPools: p.allowed_pools || [],
-                    restrictedPools: p.restricted_pools || [],
-                    enableCircuitBreaker: p.enable_circuit_breaker ?? true,
+                    chainId: p.chainId,
+                    agentTokenId: p.agentTokenId?.toString(),
+                    maxTradeSize: p.maxTradeSize?.toString() || null,
+                    maxDailyVolume: p.maxDailyVolume?.toString() || null,
+                    allowedPools: p.allowedPools || [],
+                    restrictedPools: p.restrictedPools || [],
+                    enableCircuitBreaker: p.enableCircuitBreaker ?? true,
                 };
             };
 
             const data = installations.map(inst => ({
                 owner: inst.owner,
                 enabled: inst.enabled,
-                installedAt: inst.installed_at,
-                uninstalledAt: inst.uninstalled_at,
-                templateUsed: inst.template_used,
-                transactionId: inst.transaction_id,
-                blockNumber: inst.block_number?.toString(),
+                installedAt: inst.installedAt,
+                uninstalledAt: inst.uninstalledAt,
+                templateUsed: inst.templateUsed,
+                transactionId: inst.transactionId,
+                blockNumber: inst.blockNumber?.toString(),
                 policy: serializePolicy(policyMap.get(inst.owner)),
             }));
 
@@ -643,7 +505,6 @@ export class AgentsService {
             const agentTokenId = params.agentTokenId;
             const chainId = parseInt(query?.chainId as string) || 84532;
             const status = query?.status;
-            const owner = query?.owner as string | undefined;
             const limit = Math.min(Math.max(parseInt(query?.limit as string ?? '50') || 50, 1), 100);
             const offset = Math.max(parseInt(query?.offset as string ?? '0') || 0, 0);
 
@@ -655,11 +516,6 @@ export class AgentsService {
                 paramsArr.push(status);
             }
 
-            if (owner) {
-                conditions += ` AND LOWER(user_address) = LOWER($${paramsArr.length + 1})`;
-                paramsArr.push(owner);
-            }
-
             const orderLimitOffset = `ORDER BY "timestamp" DESC LIMIT $${paramsArr.length + 1} OFFSET $${paramsArr.length + 2}`;
             paramsArr.push(limit, offset);
 
@@ -669,13 +525,13 @@ export class AgentsService {
 
             const data = orders.map(order => ({
                 ...order,
-                orderId: order.order_id?.toString(),
+                orderId: order.orderId?.toString(),
                 price: order.price?.toString(),
                 quantity: order.quantity?.toString(),
                 filled: order.filled?.toString(),
-                quoteQuantity: order.quote_quantity?.toString(),
-                executedQuoteQuantity: order.executed_quote_quantity?.toString(),
-                agentTokenId: order.agent_token_id?.toString(),
+                quoteQuantity: order.quoteQuantity?.toString(),
+                executedQuoteQuantity: order.executedQuoteQuantity?.toString(),
+                agentTokenId: order.agentTokenId?.toString(),
             }));
 
             return {
@@ -1065,46 +921,6 @@ export class AgentsService {
             console.error('Error computing agent analytics:', error);
             ctx.set.status = 500;
             return { success: false, error: `Failed to compute agent analytics: ${error}` };
-        }
-    }
-
-    static async getPendingOrders(ctx: any) {
-        try {
-            const { query } = ctx as any;
-            const chainId = parseInt(query?.chainId as string) || 84532;
-            const limit = Math.min(Math.max(parseInt(query?.limit as string ?? '100') || 100, 1), 200);
-            const offset = Math.max(parseInt(query?.offset as string ?? '0') || 0, 0);
-
-            const rows = await runQuery<any>(`
-                SELECT
-                    id,
-                    chain_id         AS "chainId",
-                    pending_order_id::text AS "pendingOrderId",
-                    agent_token_id::text   AS "agentTokenId",
-                    "user",
-                    order_book       AS "orderBook",
-                    side,
-                    quantity::text,
-                    is_market_order  AS "isMarketOrder",
-                    status,
-                    queued_at::text  AS "queuedAt",
-                    updated_at::text AS "updatedAt"
-                FROM agent_pending_orders
-                WHERE chain_id = $1 AND status = 'PENDING'
-                ORDER BY queued_at ASC
-                LIMIT $2 OFFSET $3
-            `, [chainId, limit, offset]);
-
-            return {
-                success: true,
-                data: rows,
-                count: rows.length,
-                pagination: { limit, offset },
-            };
-        } catch (error) {
-            console.error('Error fetching pending orders:', error);
-            (ctx as any).set.status = 500;
-            return { success: false, error: `Failed to fetch pending orders: ${error}` };
         }
     }
 }
