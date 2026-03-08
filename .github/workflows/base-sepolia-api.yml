@@ -20,7 +20,7 @@ jobs:
 
     steps:
     - name: Fix workspace permissions
-      run: sudo rm -rf logs/ || true
+      run: sudo rm -rf logs/ api/logs/ || true
 
     - name: Checkout code
       uses: actions/checkout@v4
