@@ -57,7 +57,7 @@ export class AgentsService {
                     runQuery<AgentRegistryRow>(`
                         SELECT id, chain_id, token_id, owner, metadata_uri, registered_at
                         FROM agent_registry
-                        WHERE chain_id = $1 AND token_id = ANY($2::numeric[])
+                        WHERE chain_id = $1 AND token_id = ANY($2[])
                     `, [chainId, agentIdArray]),
                     runQuery<{ agent_token_id: string; last_activity_at: number | null; total_trading_volume: string; total_predictions: number; total_prediction_volume: string; total_prediction_claims: number; total_borrows: number; total_repays: number; total_collateral_supplied: number }>(`
                         SELECT
@@ -145,7 +145,7 @@ export class AgentsService {
                     COUNT(DISTINCT CASE WHEN enabled = true THEN owner END)::int as active_users,
                     MIN(installed_at)::integer as first_installed_at
                 FROM agent_installations
-                WHERE chain_id = $1 AND agent_token_id = ANY($2::numeric[])
+                WHERE chain_id = $1 AND agent_token_id = ANY($2[])
                 GROUP BY agent_token_id
             `, [chainId, agentIdArray]);
 
@@ -158,14 +158,14 @@ export class AgentsService {
                     COALESCE(SUM(total_prediction_volume), 0)::text as total_prediction_volume,
                     COALESCE(SUM(total_prediction_claims), 0)::int as total_prediction_claims
                 FROM agent_stats
-                WHERE chain_id = $1 AND agent_token_id = ANY($2::numeric[])
+                WHERE chain_id = $1 AND agent_token_id = ANY($2[])
                 GROUP BY agent_token_id
             `, [chainId, agentIdArray]);
 
             const orderCounts = await runQuery<AgentOrdersRow>(`
                 SELECT agent_token_id::text, COUNT(*)::int as order_count
                 FROM orders
-                WHERE chain_id = $1 AND agent_token_id = ANY($2::numeric[]) AND agent_token_id > 0
+                WHERE chain_id = $1 AND agent_token_id = ANY($2[]) AND agent_token_id > 0
                 GROUP BY agent_token_id
             `, [chainId, agentIdArray]);
 
@@ -211,7 +211,7 @@ export class AgentsService {
         try {
             const { params } = ctx as any;
             const chainId = parseInt((ctx as any).query?.chainId as string) || 84532;
-            const agentTokenId = params.agentTokenId;
+            const agentTokenId = parseInt(params.agentTokenId);
 
             // Check agent exists in registry
             const agents = await runQuery<AgentRegistryRow>(`
@@ -320,7 +320,7 @@ export class AgentsService {
         try {
             const { params } = ctx as any;
             const chainId = parseInt((ctx as any).query?.chainId as string) || 84532;
-            const agentTokenId = params.agentTokenId;
+            const agentTokenId = parseInt(params.agentTokenId);
 
             const orderStats = await runQuery<{ total_orders: string; filled_orders: string; partial_orders: string; rejected_orders: string }>(`
                 SELECT 
@@ -328,13 +328,13 @@ export class AgentsService {
                     COUNT(*) FILTER (WHERE status = 'FILLED')::text as filled_orders,
                     COUNT(*) FILTER (WHERE status = 'PARTIALLY_FILLED')::text as partial_orders,
                     COUNT(*) FILTER (WHERE status = 'REJECTED')::text as rejected_orders
-                FROM orders WHERE chain_id = $1 AND agent_token_id = $2::numeric
+                FROM orders WHERE chain_id = $1 AND agent_token_id = $2
             `, [chainId, agentTokenId]);
 
             const tradeStats = await runQuery<{ total_trades: string; total_volume: string }>(`
                 SELECT COUNT(*)::text as total_trades, COALESCE(SUM(t.quantity * t.price), 0)::text as total_volume
                 FROM trades t INNER JOIN orders o ON t.order_id = o.order_id AND t.chain_id = o.chain_id
-                WHERE o.chain_id = $1 AND o.agent_token_id = $2::numeric
+                WHERE o.chain_id = $1 AND o.agent_token_id = $2
             `, [chainId, agentTokenId]);
 
             const stats = orderStats[0] || { total_orders: '0', filled_orders: '0', partial_orders: '0', rejected_orders: '0' };
@@ -362,7 +362,7 @@ export class AgentsService {
     static async getAgentLending(ctx: Context) {
         try {
             const { params, query } = ctx as any;
-            const agentTokenId = params.agentTokenId;
+            const agentTokenId = parseInt(params.agentTokenId);
             const chainId = parseInt(query?.chainId as string) || 84532;
             const limit = Math.min(Math.max(parseInt(query?.limit as string ?? '50') || 50, 1), 100);
             const offset = Math.max(parseInt(query?.offset as string ?? '0') || 0, 0);
@@ -410,7 +410,7 @@ export class AgentsService {
     static async getAgentPolicy(ctx: Context) {
         try {
             const { params, query } = ctx as any;
-            const agentTokenId = params.agentTokenId;
+            const agentTokenId = parseInt(params.agentTokenId);
             const chainId = parseInt(query?.chainId as string) || 84532;
             const owner = query?.owner as string | undefined;
 
@@ -463,7 +463,7 @@ export class AgentsService {
     static async getAgentUsers(ctx: Context) {
         try {
             const { params, query } = ctx as any;
-            const agentTokenId = params.agentTokenId;
+            const agentTokenId = parseInt(params.agentTokenId);
             const chainId = parseInt(query?.chainId as string) || 84532;
             const enabled = query?.enabled;
             const owner = query?.owner;
@@ -562,7 +562,7 @@ export class AgentsService {
     static async getAgentOrders(ctx: Context) {
         try {
             const { params, query } = ctx as any;
-            const agentTokenId = params.agentTokenId;
+            const agentTokenId = parseInt(params.agentTokenId);
             const chainId = parseInt(query?.chainId as string) || 84532;
             const status = query?.status;
             const limit = Math.min(Math.max(parseInt(query?.limit as string ?? '50') || 50, 1), 100);
@@ -610,7 +610,7 @@ export class AgentsService {
     static async getAgentViolations(ctx: Context) {
         try {
             const { params, query } = ctx as any;
-            const agentTokenId = params.agentTokenId;
+            const agentTokenId = parseInt(params.agentTokenId);
             const chainId = parseInt(query?.chainId as string) || 84532;
             const limit = Math.min(Math.max(parseInt(query?.limit as string ?? '50') || 50, 1), 100);
             const offset = Math.max(parseInt(query?.offset as string ?? '0') || 0, 0);
@@ -638,7 +638,7 @@ export class AgentsService {
     static async getAgentCircuitBreakers(ctx: Context) {
         try {
             const { params, query } = ctx as any;
-            const agentTokenId = params.agentTokenId;
+            const agentTokenId = parseInt(params.agentTokenId);
             const chainId = parseInt(query?.chainId as string) || 84532;
             const limit = Math.min(Math.max(parseInt(query?.limit as string ?? '50') || 50, 1), 100);
             const offset = Math.max(parseInt(query?.offset as string ?? '0') || 0, 0);
@@ -666,7 +666,7 @@ export class AgentsService {
     static async getAgentPredictions(ctx: Context) {
         try {
             const { params, query } = ctx as any;
-            const agentTokenId = params.agentTokenId;
+            const agentTokenId = parseInt(params.agentTokenId);
             const chainId = parseInt(query?.chainId as string) || 84532;
             const action = query?.action as string | undefined;
             const limit = Math.min(Math.max(parseInt(query?.limit as string ?? '50') || 50, 1), 100);
@@ -759,7 +759,7 @@ export class AgentsService {
     static async getAgentAnalytics(ctx: Context) {
         try {
             const { params, query } = ctx as any;
-            const agentTokenId = params.agentTokenId;
+            const agentTokenId = parseInt(params.agentTokenId);
             const chainId = parseInt(query?.chainId as string) || 84532;
             const window = query?.window || 'all';
 
