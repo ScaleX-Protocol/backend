@@ -20,7 +20,10 @@ jobs:
 
     steps:
     - name: Fix workspace permissions
-      run: sudo rm -rf logs/ api/logs/ || true
+      run: |
+        docker run --rm \
+          -v /opt/actions-runner/_work/backend/backend:/workspace \
+          alpine sh -c "rm -rf /workspace/logs /workspace/api/logs" || true
 
     - name: Checkout code
       uses: actions/checkout@v4
