@@ -26,7 +26,7 @@ export const policiesRoutes = new Elysia({ prefix: '/api' })
 
             const policies = await runQuery<any>(`
                 SELECT * FROM agent_policies 
-                WHERE LOWER(owner) = LOWER($1) AND "chainId" = $2
+                WHERE LOWER(owner) = LOWER($1) AND chain_id = $2
             `, [owner.toLowerCase(), chainId]);
 
             const data = policies.map(p => ({
@@ -311,13 +311,19 @@ export const agentOrdersRoutes = new Elysia({ prefix: '/api' })
         try {
             const { query } = ctx as any;
             const chainId = parseInt(query?.chainId as string) || 84532;
+            const owner = query?.owner;
             const executor = query?.executor;
             const status = query?.status;
             const limit = Math.min(Math.max(parseInt(query?.limit as string ?? '50') || 50, 1), 100);
             const offset = Math.max(parseInt(query?.offset as string ?? '0') || 0, 0);
 
-            let conditions = `WHERE "chainId" = $1 AND "agentTokenId" > 0`;
+            let conditions = `WHERE chain_id = $1 AND agent_token_id > 0`;
             const paramsArr: any[] = [chainId];
+
+            if (owner) {
+                conditions += ` AND LOWER(user_address) = LOWER($${paramsArr.length + 1})`;
+                paramsArr.push(owner.toLowerCase());
+            }
 
             if (executor) {
                 conditions += ` AND LOWER(executor) = LOWER($${paramsArr.length + 1})`;
@@ -329,7 +335,7 @@ export const agentOrdersRoutes = new Elysia({ prefix: '/api' })
                 paramsArr.push(status.toUpperCase());
             }
 
-            const orderLimitOffset = `ORDER BY "timestamp" DESC LIMIT $${paramsArr.length + 1} OFFSET $${paramsArr.length + 2}`;
+            const orderLimitOffset = `ORDER BY timestamp DESC LIMIT $${paramsArr.length + 1} OFFSET $${paramsArr.length + 2}`;
             paramsArr.push(limit, offset);
 
             const orders = await runQuery<any>(`

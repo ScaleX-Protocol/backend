@@ -7,3 +7,4 @@ export * from './leaderboard.routes';
 export * from './agents.routes';
 export * from './lending.routes';
 export * from './policies.routes';
+export * from './activity.routes';
