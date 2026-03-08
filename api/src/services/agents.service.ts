@@ -990,6 +990,54 @@ export class AgentsService {
             return { success: false, error: `Failed to compute agent analytics: ${error}` };
         }
     }
+
+    static async getPendingOrders(ctx: Context) {
+        try {
+            const { chainId, limit = '100', offset = '0' } = ctx.query as Record<string, string>;
+            const params: unknown[] = ['PENDING', parseInt(limit), parseInt(offset)];
+            let where = 'WHERE status = $1';
+            if (chainId) {
+                params.push(parseInt(chainId));
+                where += ` AND chain_id = $${params.length}`;
+            }
+            const rows = await runQuery<{
+                id: string;
+                chain_id: number;
+                pending_order_id: string;
+                agent_token_id: string;
+                user: string;
+                order_book: string;
+                side: string;
+                quantity: string;
+                is_market_order: boolean;
+                status: string;
+                queued_at: number;
+                updated_at: number | null;
+            }>(
+                `SELECT * FROM agent_pending_orders ${where} ORDER BY queued_at ASC LIMIT $2 OFFSET $3`,
+                params
+            );
+            return {
+                success: true,
+                data: rows.map(r => ({
+                    pendingOrderId: r.pending_order_id,
+                    agentTokenId: r.agent_token_id,
+                    user: r.user,
+                    orderBook: r.order_book,
+                    side: r.side,
+                    quantity: r.quantity,
+                    isMarketOrder: r.is_market_order,
+                    status: r.status,
+                    queuedAt: r.queued_at,
+                })),
+                count: rows.length,
+            };
+        } catch (error) {
+            console.error('Error fetching pending orders:', error);
+            ctx.set.status = 500;
+            return { success: false, error: 'Failed to fetch pending orders' };
+        }
+    }
 }
 
 function getWindowStartTimestamp(window: string): number | null {
