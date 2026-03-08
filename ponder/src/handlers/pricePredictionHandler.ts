@@ -5,6 +5,11 @@ import { getAddress } from "viem";
 
 const logger = createLogger('pricePredictionHandler.ts');
 
+// In-memory set of known market IDs (populated on MarketCreated).
+// Used to skip updates for markets whose MarketCreated event was never indexed
+// (e.g. indexer started after the market was created).
+const knownMarkets = new Set<string>();
+
 // Market status values matching the contract enum
 const MARKET_STATUS = {
   OPEN: 0,
@@ -90,6 +95,8 @@ export async function handleMarketCreated({ event, context }: any) {
     })
     .onConflictDoNothing();
 
+  knownMarkets.add(id);
+
   log(LogLevel.INFO, `Market ${marketId} created (type=${marketType}, endTime=${endTime})`, LogLabel.EVENT_HANDLER, 'core-chain', { chainId, marketId: marketId.toString() }, 'pricePredictionHandler.ts', 'handleMarketCreated');
 }
 
@@ -108,19 +115,13 @@ export async function handlePredicted({ event, context }: any) {
   const marketDbId = createMarketId(chainId, marketId);
   const positionId = createPositionId(chainId, marketId, user);
 
-  // Update market totals
-  if (predictedUp) {
-    await db
-      .update(predictionMarkets, { id: marketDbId })
-      .set((row: any) => ({
-        totalUp: row.totalUp + amount,
-      }));
-  } else {
-    await db
-      .update(predictionMarkets, { id: marketDbId })
-      .set((row: any) => ({
-        totalDown: row.totalDown + amount,
-      }));
+  // Update market totals (skip if market was never indexed)
+  if (knownMarkets.has(marketDbId)) {
+    if (predictedUp) {
+      await db.update(predictionMarkets, { id: marketDbId }).set((row: any) => ({ totalUp: row.totalUp + amount }));
+    } else {
+      await db.update(predictionMarkets, { id: marketDbId }).set((row: any) => ({ totalDown: row.totalDown + amount }));
+    }
   }
 
   // Upsert position
@@ -180,11 +181,13 @@ export async function handleSettlementRequested({ event, context }: any) {
 
   const marketDbId = createMarketId(chainId, marketId);
 
-  await db
-    .update(predictionMarkets, { id: marketDbId })
-    .set(() => ({
-      status: MARKET_STATUS.SETTLEMENT_REQUESTED,
-    }));
+  if (knownMarkets.has(marketDbId)) {
+    await db
+      .update(predictionMarkets, { id: marketDbId })
+      .set(() => ({
+        status: MARKET_STATUS.SETTLEMENT_REQUESTED,
+      }));
+  }
 
   await db
     .insert(predictionEvents)
@@ -220,15 +223,17 @@ export async function handleMarketSettled({ event, context }: any) {
 
   const marketDbId = createMarketId(chainId, marketId);
 
-  await db
-    .update(predictionMarkets, { id: marketDbId })
-    .set(() => ({
-      status: MARKET_STATUS.SETTLED,
-      outcome,
-      totalUp,
-      totalDown,
-      protocolFee,
-    }));
+  if (knownMarkets.has(marketDbId)) {
+    await db
+      .update(predictionMarkets, { id: marketDbId })
+      .set(() => ({
+        status: MARKET_STATUS.SETTLED,
+        outcome,
+        totalUp,
+        totalDown,
+        protocolFee,
+      }));
+  }
 
   await db
     .insert(predictionEvents)
@@ -302,11 +307,13 @@ export async function handleMarketCancelled({ event, context }: any) {
 
   const marketDbId = createMarketId(chainId, marketId);
 
-  await db
-    .update(predictionMarkets, { id: marketDbId })
-    .set(() => ({
-      status: MARKET_STATUS.CANCELLED,
-    }));
+  if (knownMarkets.has(marketDbId)) {
+    await db
+      .update(predictionMarkets, { id: marketDbId })
+      .set(() => ({
+        status: MARKET_STATUS.CANCELLED,
+      }));
+  }
 
   await db
     .insert(predictionEvents)
