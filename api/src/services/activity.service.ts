@@ -80,8 +80,8 @@ export class ActivityService {
                         c.symbol as token_symbol,
                         o.transaction_id,
                         o.chain_id,
-                        false as is_agent,
-                        NULL as agent_token_id,
+                        CASE WHEN o.agent_token_id IS NOT NULL AND o.agent_token_id > 0 THEN true ELSE false END as is_agent,
+                        o.agent_token_id::text as agent_token_id,
                         jsonb_build_object(
                             'side', o.side,
                             'price', o.price::text,
@@ -96,7 +96,6 @@ export class ActivityService {
                     LEFT JOIN currencies c ON LOWER(p.base_currency) = LOWER(c.address) AND c.chain_id = o.chain_id
                     WHERE LOWER(o.user_address) = $1
                         AND o.chain_id = $2
-                        AND (o.agent_token_id IS NULL OR o.agent_token_id = 0)
                 `);
             }
 
