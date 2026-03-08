@@ -5,17 +5,11 @@ import { getAddress } from "viem";
 
 const logger = createLogger('pricePredictionHandler.ts');
 
-// In-memory set of known market IDs.
-// Populated on MarketCreated and lazily on first use via db.find() fallback,
-// so markets created before the indexer started are handled correctly.
+// In-memory set of known market IDs, populated on MarketCreated.
+// Ponder processes events in strict chronological order, so MarketCreated
+// always precedes any other event for the same market. A cache miss means
+// the market was never indexed — the DB won't have it either, so we skip.
 const knownMarkets = new Set<string>();
-
-async function marketExists(db: any, marketDbId: string): Promise<boolean> {
-  if (knownMarkets.has(marketDbId)) return true;
-  const row = await db.find(predictionMarkets, { id: marketDbId });
-  if (row) knownMarkets.add(marketDbId);
-  return !!row;
-}
 
 // Market status values matching the contract enum
 const MARKET_STATUS = {
@@ -123,7 +117,7 @@ export async function handlePredicted({ event, context }: any) {
   const positionId = createPositionId(chainId, marketId, user);
 
   // Update market totals (skip if market record doesn't exist)
-  if (await marketExists(db, marketDbId)) {
+  if (knownMarkets.has(marketDbId)) {
     if (predictedUp) {
       await db.update(predictionMarkets, { id: marketDbId }).set((row: any) => ({ totalUp: row.totalUp + amount }));
     } else {
@@ -188,7 +182,7 @@ export async function handleSettlementRequested({ event, context }: any) {
 
   const marketDbId = createMarketId(chainId, marketId);
 
-  if (await marketExists(db, marketDbId)) {
+  if (knownMarkets.has(marketDbId)) {
     await db
       .update(predictionMarkets, { id: marketDbId })
       .set(() => ({
@@ -230,7 +224,7 @@ export async function handleMarketSettled({ event, context }: any) {
 
   const marketDbId = createMarketId(chainId, marketId);
 
-  if (await marketExists(db, marketDbId)) {
+  if (knownMarkets.has(marketDbId)) {
     await db
       .update(predictionMarkets, { id: marketDbId })
       .set(() => ({
@@ -314,7 +308,7 @@ export async function handleMarketCancelled({ event, context }: any) {
 
   const marketDbId = createMarketId(chainId, marketId);
 
-  if (await marketExists(db, marketDbId)) {
+  if (knownMarkets.has(marketDbId)) {
     await db
       .update(predictionMarkets, { id: marketDbId })
       .set(() => ({
