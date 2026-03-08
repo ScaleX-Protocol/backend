@@ -344,13 +344,13 @@ export const agentOrdersRoutes = new Elysia({ prefix: '/api' })
 
             const data = orders.map(order => ({
                 ...order,
-                orderId: order.orderId?.toString(),
+                orderId: order.order_id?.toString(),
                 price: order.price?.toString(),
                 quantity: order.quantity?.toString(),
                 filled: order.filled?.toString(),
-                quoteQuantity: order.quoteQuantity?.toString(),
-                executedQuoteQuantity: order.executedQuoteQuantity?.toString(),
-                agentTokenId: order.agentTokenId?.toString(),
+                quoteQuantity: order.quote_quantity?.toString(),
+                executedQuoteQuantity: order.executed_quote_quantity?.toString(),
+                agentTokenId: order.agent_token_id?.toString(),
             }));
 
             return {
