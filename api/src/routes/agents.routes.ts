@@ -138,6 +138,7 @@ export const agentsRoutes = new Elysia({ prefix: '/api' })
     .get('/pending-orders', AgentsService.getPendingOrders, {
         query: t.Object({
             chainId: t.Optional(t.String()),
+            user: t.Optional(t.String()),
             limit: t.Optional(t.String()),
             offset: t.Optional(t.String()),
         }),

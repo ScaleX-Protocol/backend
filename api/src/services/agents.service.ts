@@ -993,12 +993,16 @@ export class AgentsService {
 
     static async getPendingOrders(ctx: Context) {
         try {
-            const { chainId, limit = '100', offset = '0' } = ctx.query as Record<string, string>;
+            const { chainId, user, limit = '100', offset = '0' } = ctx.query as Record<string, string>;
             const params: unknown[] = ['PENDING', parseInt(limit), parseInt(offset)];
             let where = 'WHERE status = $1';
             if (chainId) {
                 params.push(parseInt(chainId));
                 where += ` AND chain_id = $${params.length}`;
+            }
+            if (user) {
+                params.push(user.toLowerCase());
+                where += ` AND LOWER("user") = $${params.length}`;
             }
             const rows = await runQuery<{
                 id: string;
