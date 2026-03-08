@@ -57,7 +57,7 @@ export class AgentsService {
                     runQuery<AgentRegistryRow>(`
                         SELECT id, chain_id, token_id, owner, metadata_uri, registered_at
                         FROM agent_registry
-                        WHERE chain_id = $1 AND token_id = ANY($2[])
+                        WHERE chain_id = $1 AND token_id = ANY($2::numeric[])
                     `, [chainId, agentIdArray]),
                     runQuery<{ agent_token_id: string; last_activity_at: number | null; total_trading_volume: string; total_predictions: number; total_prediction_volume: string; total_prediction_claims: number; total_borrows: number; total_repays: number; total_collateral_supplied: number }>(`
                         SELECT
@@ -145,7 +145,7 @@ export class AgentsService {
                     COUNT(DISTINCT CASE WHEN enabled = true THEN owner END)::int as active_users,
                     MIN(installed_at)::integer as first_installed_at
                 FROM agent_installations
-                WHERE chain_id = $1 AND agent_token_id = ANY($2[])
+                WHERE chain_id = $1 AND agent_token_id = ANY($2::numeric[])
                 GROUP BY agent_token_id
             `, [chainId, agentIdArray]);
 
@@ -158,14 +158,14 @@ export class AgentsService {
                     COALESCE(SUM(total_prediction_volume), 0)::text as total_prediction_volume,
                     COALESCE(SUM(total_prediction_claims), 0)::int as total_prediction_claims
                 FROM agent_stats
-                WHERE chain_id = $1 AND agent_token_id = ANY($2[])
+                WHERE chain_id = $1 AND agent_token_id = ANY($2::numeric[])
                 GROUP BY agent_token_id
             `, [chainId, agentIdArray]);
 
             const orderCounts = await runQuery<AgentOrdersRow>(`
                 SELECT agent_token_id::text, COUNT(*)::int as order_count
                 FROM orders
-                WHERE chain_id = $1 AND agent_token_id = ANY($2[]) AND agent_token_id > 0
+                WHERE chain_id = $1 AND agent_token_id = ANY($2::numeric[]) AND agent_token_id > 0
                 GROUP BY agent_token_id
             `, [chainId, agentIdArray]);
 
