@@ -229,35 +229,40 @@ export class AgentsService {
                 WHERE chain_id = $1 AND agent_token_id = $2
             `, [chainId, agentTokenId]);
 
-            // Aggregate stats across all users
-            const statsAgg = await runQuery<{
+            // Aggregate stats directly from source tables
+            const orderStatsAgg = await runQuery<{
                 total_market_orders: number;
                 total_limit_orders: number;
                 total_orders_cancelled: number;
-                total_trading_volume: string;
+                last_activity_at: number | null;
+            }>(`
+                SELECT
+                    COUNT(*) FILTER (WHERE type = 'MARKET')::int as total_market_orders,
+                    COUNT(*) FILTER (WHERE type = 'LIMIT')::int as total_limit_orders,
+                    COUNT(*) FILTER (WHERE status = 'CANCELLED')::int as total_orders_cancelled,
+                    MAX(timestamp)::integer as last_activity_at
+                FROM orders
+                WHERE chain_id = $1 AND agent_token_id = $2
+            `, [chainId, agentTokenId]);
+
+            const tradeVolumeAgg = await runQuery<{ total_trading_volume: string }>(`
+                SELECT COALESCE(SUM(t.quantity * t.price), 0)::text as total_trading_volume
+                FROM trades t INNER JOIN orders o ON t.order_id = o.id
+                WHERE o.chain_id = $1 AND o.agent_token_id = $2
+            `, [chainId, agentTokenId]);
+
+            const lendingAgg = await runQuery<{
                 total_borrow_amount: string;
                 total_repay_amount: string;
                 total_collateral_supplied: string;
                 total_collateral_withdrawn: string;
-                total_predictions: number;
-                total_prediction_volume: string;
-                total_prediction_claims: number;
-                last_activity_at: number | null;
             }>(`
                 SELECT
-                    COALESCE(SUM(total_market_orders), 0)::int as total_market_orders,
-                    COALESCE(SUM(total_limit_orders), 0)::int as total_limit_orders,
-                    COALESCE(SUM(total_orders_cancelled), 0)::int as total_orders_cancelled,
-                    COALESCE(SUM(total_trading_volume), 0)::text as total_trading_volume,
-                    COALESCE(SUM(total_borrow_amount), 0)::text as total_borrow_amount,
-                    COALESCE(SUM(total_repay_amount), 0)::text as total_repay_amount,
-                    COALESCE(SUM(total_collateral_supplied), 0)::text as total_collateral_supplied,
-                    COALESCE(SUM(total_collateral_withdrawn), 0)::text as total_collateral_withdrawn,
-                    COALESCE(SUM(total_predictions), 0)::int as total_predictions,
-                    COALESCE(SUM(total_prediction_volume), 0)::text as total_prediction_volume,
-                    COALESCE(SUM(total_prediction_claims), 0)::int as total_prediction_claims,
-                    MAX(last_activity_timestamp)::integer as last_activity_at
-                FROM agent_stats
+                    COALESCE(SUM(amount) FILTER (WHERE action = 'BORROW'), 0)::text as total_borrow_amount,
+                    COALESCE(SUM(amount) FILTER (WHERE action = 'REPAY'), 0)::text as total_repay_amount,
+                    COALESCE(SUM(amount) FILTER (WHERE action = 'SUPPLY_COLLATERAL'), 0)::text as total_collateral_supplied,
+                    COALESCE(SUM(amount) FILTER (WHERE action = 'WITHDRAW_COLLATERAL'), 0)::text as total_collateral_withdrawn
+                FROM agent_lending_events
                 WHERE chain_id = $1 AND agent_token_id = $2
             `, [chainId, agentTokenId]);
 
@@ -271,7 +276,9 @@ export class AgentsService {
 
             const registry = agents[0];
             const install = installAgg[0];
-            const stats = statsAgg[0];
+            const stats = orderStatsAgg[0];
+            const volume = tradeVolumeAgg[0];
+            const lending = lendingAgg[0];
 
             // Agent must exist in registry OR have installations
             if (!registry && (!install || install.total_users === 0)) {
@@ -297,14 +304,14 @@ export class AgentsService {
                         totalMarketOrders: stats?.total_market_orders || 0,
                         totalLimitOrders: stats?.total_limit_orders || 0,
                         totalOrdersCancelled: stats?.total_orders_cancelled || 0,
-                        totalTradingVolume: stats?.total_trading_volume || "0",
-                        totalBorrowAmount: stats?.total_borrow_amount || "0",
-                        totalRepayAmount: stats?.total_repay_amount || "0",
-                        totalCollateralSupplied: stats?.total_collateral_supplied || "0",
-                        totalCollateralWithdrawn: stats?.total_collateral_withdrawn || "0",
-                        totalPredictions: stats?.total_predictions || 0,
-                        totalPredictionVolume: stats?.total_prediction_volume || "0",
-                        totalPredictionClaims: stats?.total_prediction_claims || 0,
+                        totalTradingVolume: volume?.total_trading_volume || "0",
+                        totalBorrowAmount: lending?.total_borrow_amount || "0",
+                        totalRepayAmount: lending?.total_repay_amount || "0",
+                        totalCollateralSupplied: lending?.total_collateral_supplied || "0",
+                        totalCollateralWithdrawn: lending?.total_collateral_withdrawn || "0",
+                        totalPredictions: 0,
+                        totalPredictionVolume: "0",
+                        totalPredictionClaims: 0,
                     },
                     ordersByStatus: ordersByStatusMap,
                 }
