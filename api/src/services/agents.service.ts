@@ -246,9 +246,9 @@ export class AgentsService {
             `, [chainId, agentTokenId]);
 
             const tradeVolumeAgg = await runQuery<{ total_trading_volume: string }>(`
-                SELECT COALESCE(SUM(t.quantity * t.price), 0)::text as total_trading_volume
-                FROM trades t INNER JOIN orders o ON t.order_id = o.id
-                WHERE o.chain_id = $1 AND o.agent_token_id = $2
+                SELECT COALESCE(SUM(total_trading_volume), 0)::text as total_trading_volume
+                FROM agent_stats
+                WHERE chain_id = $1 AND agent_token_id = $2
             `, [chainId, agentTokenId]);
 
             const lendingAgg = await runQuery<{
