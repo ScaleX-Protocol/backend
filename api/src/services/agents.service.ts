@@ -328,13 +328,13 @@ export class AgentsService {
                     COUNT(*) FILTER (WHERE status = 'FILLED')::text as filled_orders,
                     COUNT(*) FILTER (WHERE status = 'PARTIALLY_FILLED')::text as partial_orders,
                     COUNT(*) FILTER (WHERE status = 'REJECTED')::text as rejected_orders
-                FROM orders WHERE chain_id = $1 AND agent_token_id = $2
+                FROM orders WHERE chain_id = $1 AND agent_token_id = $2::numeric
             `, [chainId, agentTokenId]);
 
             const tradeStats = await runQuery<{ total_trades: string; total_volume: string }>(`
                 SELECT COUNT(*)::text as total_trades, COALESCE(SUM(t.quantity * t.price), 0)::text as total_volume
                 FROM trades t INNER JOIN orders o ON t.order_id = o.order_id AND t.chain_id = o.chain_id
-                WHERE o.chain_id = $1 AND o.agent_token_id = $2
+                WHERE o.chain_id = $1 AND o.agent_token_id = $2::numeric
             `, [chainId, agentTokenId]);
 
             const stats = orderStats[0] || { total_orders: '0', filled_orders: '0', partial_orders: '0', rejected_orders: '0' };
