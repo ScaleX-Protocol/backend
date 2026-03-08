@@ -237,8 +237,8 @@ export class AgentsService {
                 last_activity_at: number | null;
             }>(`
                 SELECT
-                    COUNT(*) FILTER (WHERE type = 'MARKET')::int as total_market_orders,
-                    COUNT(*) FILTER (WHERE type = 'LIMIT')::int as total_limit_orders,
+                    COUNT(*) FILTER (WHERE LOWER(type) = 'market')::int as total_market_orders,
+                    COUNT(*) FILTER (WHERE LOWER(type) = 'limit')::int as total_limit_orders,
                     COUNT(*) FILTER (WHERE status = 'CANCELLED')::int as total_orders_cancelled,
                     MAX(timestamp)::integer as last_activity_at
                 FROM orders
