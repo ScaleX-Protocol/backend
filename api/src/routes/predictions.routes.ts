@@ -146,8 +146,7 @@ export const predictionsRoutes = new Elysia({ prefix: '/api' })
                     event_type as "eventType", user_address as "userAddress",
                     amount, predicted_up as "predictedUp", outcome,
                     payout, timestamp, transaction_id as "transactionId",
-                    block_number as "blockNumber",
-                    agent_token_id as "agentTokenId", agent_executor as "agentExecutor"
+                    block_number as "blockNumber"
                 FROM prediction_events
                 WHERE market_id = $1
                 ORDER BY timestamp DESC
@@ -162,7 +161,6 @@ export const predictionsRoutes = new Elysia({ prefix: '/api' })
                 amount: e.amount?.toString() || null,
                 payout: e.payout?.toString() || null,
                 blockNumber: e.blockNumber?.toString() || '0',
-                agentTokenId: e.agentTokenId?.toString() || null,
             }));
 
             return { events: formatted, count: formatted.length };
