@@ -333,7 +333,7 @@ export class AgentsService {
 
             const tradeStats = await runQuery<{ total_trades: string; total_volume: string }>(`
                 SELECT COUNT(*)::text as total_trades, COALESCE(SUM(t.quantity * t.price), 0)::text as total_volume
-                FROM trades t INNER JOIN orders o ON t.order_id = o.order_id AND t.chain_id = o.chain_id
+                FROM trades t INNER JOIN orders o ON t.order_id::numeric = o.order_id AND t.chain_id = o.chain_id
                 WHERE o.chain_id = $1 AND o.agent_token_id = $2
             `, [chainId, agentTokenId]);
 
