@@ -43,8 +43,6 @@ services:
     networks:
       - infrastructure
     restart: unless-stopped
-    volumes:
-      - ./api/logs:/app/logs
     labels:
       # Traefik configuration
       - traefik.enable=true
